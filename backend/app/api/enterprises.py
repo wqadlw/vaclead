@@ -12,6 +12,7 @@ from ..auth import current_user
 from ..api.leads import _claim_guard
 from ..db import get_session
 from ..models import Enterprise, Lead, Signal, User, utcnow
+from .. import search as meili
 
 router = APIRouter(tags=["enterprises"])
 
@@ -57,12 +58,64 @@ def list_enterprises(
     capital_max: float | None = None,
     signal_days: int | None = None,
     score_min: float | None = None,
-    is_competitor: int = 0,
+    is_competitor: int = -1,
     page: int = 1,
     page_size: int = 20,
+    facets: int = 0,
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
+    # Meili 优先（毫秒级组合筛选+分面）；不可用回退 SQLite LIKE 路径
+    if meili.available():
+        try:
+            r = meili.search(
+                q or "",
+                industry_key=industry_key,
+                province=province,
+                city=city,
+                capital_min=capital_min,
+                capital_max=capital_max,
+                score_min=score_min,
+                signal_days=signal_days,
+                is_competitor=is_competitor,
+                page=page,
+                page_size=page_size,
+                facets=bool(facets),
+            )
+            if r["items"] and "id" in r["items"][0]:
+                ids = [it["id"] for it in r["items"]]
+                rows = {e.id: e for e in session.query(Enterprise).filter(Enterprise.id.in_(ids)).all()}
+                items = []
+                for it in r["items"]:
+                    e = rows.get(it["id"])
+                    if e is None:
+                        continue
+                    items.append(
+                        {
+                            "id": e.id,
+                            "name": e.name,
+                            "province": e.province,
+                            "city": e.city,
+                            "district": e.district,
+                            "address": e.address,
+                            "industry_key": e.industry_key,
+                            "industry_name": e.industry_name,
+                            "business_scope": e.business_scope,
+                            "registered_capital_wan": e.registered_capital_wan,
+                            "icp_score": e.icp_score,
+                            "icp_reasons": e.reasons_list(),
+                            "intent_score": e.intent_score,
+                            "is_competitor": e.is_competitor,
+                            "signal_count": it.get("signal_count", 0),
+                        }
+                    )
+                out = {"items": items, "total": r["total"], "page": page, "page_size": page_size}
+                if r.get("facets") is not None:
+                    out["facets"] = r["facets"]
+                return out
+        except Exception:  # noqa: BLE001 — Meili 异常一律回退 SQLite
+            pass
+
     stmt = select(Enterprise)
     if industry_key:
         stmt = stmt.where(Enterprise.industry_key == industry_key)

@@ -211,6 +211,15 @@ async def import_enterprises(
         apply_icp(ent)
         session.flush()
     session.commit()
+    # 检索投影：导入后全量同步（导入是批量操作，逐条增量反而慢）
+    try:
+        from .. import search as meili
+        from ..db import SessionLocal
+
+        with SessionLocal() as s2:
+            meili.sync_all(s2)
+    except Exception:  # noqa: BLE001 — 检索层失败不影响导入结果
+        pass
     return {"inserted": inserted, "merged": merged, "skipped": skipped, "batch_id": batch_id}
 
 
