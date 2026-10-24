@@ -46,7 +46,7 @@ def _seed_users(session: Session) -> None:
         session.add(
             User(
                 username=username,
-                password_hash=bcrypt.hashpw(pwd.encode()).decode(),
+                password_hash=bcrypt.hashpw(pwd.encode(), bcrypt.gensalt()).decode(),
                 role=role,
                 display_name=display,
             )

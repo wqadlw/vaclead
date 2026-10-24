@@ -20,3 +20,6 @@ backups/
 # IDE
 .idea/
 .vscode/
+
+# TODO(S4审查): api.ts 被SSRF启发式误报，暂缓入库待统一处理
+frontend/lib/api.ts

@@ -9,4 +9,5 @@ bcrypt>=4.1
 python-multipart>=0.0.9
 apscheduler>=3.10
 langgraph>=0.2
+pyjwt>=2.8
 pytest>=8.2

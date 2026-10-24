@@ -1,14 +1,14 @@
 {
   "schemaVersion": "mimosa-hook-status/v1",
-  "recordedAt": "2026-10-24T11:32:16.308Z",
+  "recordedAt": "2026-10-24T12:11:07.581Z",
   "sessionId": "session_ad1dd5e7940b55af0f8abfb468fad948",
   "event": "PostToolUse",
-  "toolName": "Edit",
-  "file": "backend/requirements.txt",
-  "outcome": "inconclusive",
-  "coverage": "partial",
+  "toolName": "Write",
+  "file": "C:/Users/Lenovo/AppData/Local/Temp/vaclead-scenario.json",
+  "outcome": "clear",
+  "coverage": "complete",
   "findingCount": 0,
-  "durationMs": 20,
+  "durationMs": 16,
   "hostState": "hook_complete",
   "reportHint": ".mimosa/reports/"
 }
