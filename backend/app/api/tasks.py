@@ -22,6 +22,60 @@ from .imports import apply_icp, recompute_intent
 
 router = APIRouter(tags=["tasks"])
 
+# ---- SSE 进程内推送（学自 AI_Find_Customer sse.py/routes.py）----
+# 任务线程回调通过 loop.call_soon_threadsafe 广播到订阅队列；
+# checkpoint 轮询保留作断线兜底与重启恢复。
+_TASK_QUEUES: dict[str, list[asyncio.Queue]] = {}
+_MAIN_LOOP: asyncio.AbstractEventLoop | None = None
+_TASK_LOGS: dict[str, list[str]] = {}
+_TASK_EVENTS: dict[str, list[dict]] = {}
+
+
+def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """lifespan 启动时记录主事件循环，供任务线程广播。"""
+    global _MAIN_LOOP
+    _MAIN_LOOP = loop
+
+
+def _broadcast(task_id: str, event: dict) -> None:
+    """把事件推给该任务的所有订阅者（线程安全，无订阅者时静默）。"""
+    _TASK_EVENTS.setdefault(task_id, []).append(event)
+    if len(_TASK_EVENTS[task_id]) > 500:
+        del _TASK_EVENTS[task_id][:200]
+    if _MAIN_LOOP is None:
+        return
+    for q in list(_TASK_QUEUES.get(task_id, [])):
+        try:
+            _MAIN_LOOP.call_soon_threadsafe(q.put_nowait, event)
+        except RuntimeError:
+            pass  # 主循环已关闭
+
+
+def _log(task_id: str, log: str) -> None:
+    _TASK_LOGS.setdefault(task_id, []).append(log)
+    if len(_TASK_LOGS[task_id]) > 300:
+        del _TASK_LOGS[task_id][:100]
+    _broadcast(task_id, {"type": "progress", "progress": None, "log": log})
+
+
+def mark_task_cancelled(task_id: str) -> bool:
+    """协作式取消标记；执行线程周期检查。"""
+    with SessionLocal() as s:
+        cp = s.get(TaskCheckpoint, task_id)
+        if cp is None or cp.status not in ("running", "queued"):
+            return False
+        cp.status = "cancelling"
+        cp.updated_at = utcnow()
+        s.commit()
+    _broadcast(task_id, {"type": "log", "log": "取消请求已受理，等待执行停止…"})
+    return True
+
+
+def is_cancel_requested(task_id: str) -> bool:
+    with SessionLocal() as s:
+        cp = s.get(TaskCheckpoint, task_id)
+        return bool(cp and cp.status == "cancelling")
+
 
 def _get_setting(session: Session, key: str) -> str | None:
     row = session.get(SettingsKV, key)
@@ -47,6 +101,14 @@ class PoiTaskIn(BaseModel):
     districts: list[str] | None = None  # 给定时启用真四叉树（区县 bbox 递归）
 
 
+class TaskCancelled(Exception):
+    """协作式取消信号（学自 AI_Find_Customer JobCancelledError）。"""
+
+    def __init__(self, task_id: str) -> None:
+        super().__init__(f"task {task_id} cancelled")
+        self.task_id = task_id
+
+
 def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, districts: list[str] | None = None) -> None:
     """后台线程：采集 → 归一入库 → ICP 打分。进度写 checkpoint。"""
     import asyncio
@@ -62,7 +124,11 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, d
             if done and total:
                 pct = int(done / total * 80)
                 _checkpoint(task_id, progress=max(pct, 5), state_json=json.dumps({"done": done, "total": total}, ensure_ascii=False))
+                _broadcast(task_id, {"type": "progress", "progress": max(pct, 5), "log": log})
+            _log(task_id, log)
             logs.append(log)
+            if is_cancel_requested(task_id):
+                raise TaskCancelled(task_id)
 
         if districts:
             pois = await collect_city_quadtree(city, districts, keywords, amap_key, progress_cb=cb)
@@ -70,6 +136,9 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, d
             pois = await collect_pois(city, keywords, amap_key, progress_cb=cb)
         with SessionLocal() as s:
             for i, poi in enumerate(pois):
+                if (i + 1) % 20 == 0 and is_cancel_requested(task_id):
+                    raise TaskCancelled(task_id)
+                ent, is_new = resolve_enterprise(s, poi["name"], source="poi")
                 ent, is_new = resolve_enterprise(s, poi["name"], source="poi")
                 if is_new:
                     inserted += 1
@@ -104,11 +173,20 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, d
                 {"inserted": inserted, "merged": merged, "logs": logs[-20:]}, ensure_ascii=False
             ),
         )
+        _broadcast(task_id, {"type": "done", "inserted": inserted, "merged": merged})
 
     try:
         asyncio.run(_main())
+    except TaskCancelled:
+        _checkpoint(
+            task_id,
+            status="cancelled",
+            state_json=json.dumps({"logs": logs[-20:]}, ensure_ascii=False),
+        )
+        _broadcast(task_id, {"type": "done", "cancelled": True})
     except Exception as exc:  # noqa: BLE001 — 后台任务需兜底记录
         _checkpoint(task_id, status="error", state_json=json.dumps({"error": str(exc)}, ensure_ascii=False))
+        _broadcast(task_id, {"type": "error", "message": str(exc)})
 
 
 @router.post("/tasks/poi")
@@ -134,12 +212,42 @@ def start_poi_task(
     cp = TaskCheckpoint(task_id=task_id, kind="poi", status="running", progress=0)
     session.add(cp)
     session.commit()
+
+    districts: list[str] | None = None
+    if body.districts:
+        # “全部区县”→ 用 district API 解析真实区县名；解析失败退化为城市级
+        districts = _resolve_districts(body.city, amap_key) or None
+        _log(task_id, f"四叉树细分：解析到 {len(districts or [])} 个区县")
+
     threading.Thread(
         target=_run_poi_task,
-        args=(task_id, body.city, keywords[:20], amap_key, body.districts),
+        args=(task_id, body.city, keywords[:20], amap_key, districts),
         daemon=True,
     ).start()
     return {"task_id": task_id}
+
+
+def _resolve_districts(city: str, amap_key: str) -> list[str]:
+    """把“全部区县”占位解析为该市真实区县名列表（district API，一次拉取）。"""
+    import asyncio
+
+    import httpx as _httpx
+
+    from ..collectors.amap_poi import KeyRotator, fetch_district_bboxes
+
+    async def _fetch():
+        client = _httpx.AsyncClient(timeout=15.0)
+        try:
+            rotator = KeyRotator(amap_key)
+            bboxes = await fetch_district_bboxes(client, rotator, city)
+            return [k for k in bboxes.keys() if k and k != city]
+        finally:
+            await client.aclose()
+
+    try:
+        return asyncio.run(_fetch())
+    except Exception:  # noqa: BLE001 — 解析失败则退化为城市级采集
+        return []
 
 
 class TenderScanIn(BaseModel):
@@ -214,40 +322,70 @@ def start_tender_scan(
     return {"task_id": task_id}
 
 
+@router.post("/tasks/{task_id}/cancel")
+def cancel_task(
+    task_id: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    cp = session.get(TaskCheckpoint, task_id)
+    if cp is None:
+        raise HTTPException(404, "任务不存在")
+    if cp.status not in ("running", "queued", "cancelling"):
+        raise HTTPException(422, f"任务状态为 {cp.status}，无法取消")
+    mark_task_cancelled(task_id)
+    return {"ok": True, "status": "cancelling"}
+
+
 @router.get("/tasks/{task_id}/events")
 async def task_events(
     task_id: str,
     session: Session = Depends(get_session),
     user: User = Depends(admin_only),
 ):
-    if session.get(TaskCheckpoint, task_id) is None:
+    cp = session.get(TaskCheckpoint, task_id)
+    if cp is None:
         raise HTTPException(404, "任务不存在")
 
+    queue: asyncio.Queue = asyncio.Queue()
+    _TASK_QUEUES.setdefault(task_id, []).append(queue)
+
     async def gen() -> AsyncIterator[bytes]:
-        last_progress = -1
-        for _ in range(600):  # 最长 5 分钟
+        try:
+            # 1) 快照：当前状态 + 历史事件回放（晚加入不丢上下文）
             with SessionLocal() as s:
-                cp = s.get(TaskCheckpoint, task_id)
-            if cp is None:
-                break
-            if cp.progress != last_progress:
-                last_progress = cp.progress
-                state = json.loads(cp.state_json or "{}")
-                log = ""
-                if isinstance(state, dict):
-                    log = state.get("log", "") or (
-                        f"进度 {cp.progress}%"
-                        + (f"（新增{state.get('inserted', '?')}家）" if "inserted" in state else "")
-                    )
-                yield f"data: {json.dumps({'type': 'progress', 'progress': cp.progress, 'log': log}, ensure_ascii=False)}\n\n".encode()
-            if cp.status == "done":
-                yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n".encode()
+                cur = s.get(TaskCheckpoint, task_id)
+            state = json.loads(cur.state_json or "{}") if cur else {}
+            snap = {
+                "type": "snapshot",
+                "progress": cur.progress if cur else 0,
+                "status": cur.status if cur else "unknown",
+                "log": (state.get("log") or "") if isinstance(state, dict) else "",
+            }
+            yield f"data: {json.dumps(snap, ensure_ascii=False)}\n\n".encode()
+            for ev in _TASK_EVENTS.get(task_id, []):
+                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n".encode()
+            # 已结束：补终态即收
+            if cur and cur.status in ("done", "error", "cancelled"):
+                yield f"data: {json.dumps({'type': 'done' if cur.status == 'done' else 'error', 'message': state.get('error', '') if isinstance(state, dict) else ''}, ensure_ascii=False)}\n\n".encode()
                 return
-            if cp.status == "error":
-                state = json.loads(cp.state_json or "{}")
-                yield f"data: {json.dumps({'type': 'error', 'message': state.get('error', '未知错误')}, ensure_ascii=False)}\n\n".encode()
-                return
-            await asyncio.sleep(0.5)
-        yield f"data: {json.dumps({'type': 'error', 'message': '任务超时未完成'}, ensure_ascii=False)}\n\n".encode()
+            # 2) 推送主通道：30s 无事件发 heartbeat 保活
+            while True:
+                with SessionLocal() as s:
+                    cur = s.get(TaskCheckpoint, task_id)
+                if cur is None or cur.status in ("done", "error", "cancelled"):
+                    yield f"data: {json.dumps({'type': 'done' if (cur and cur.status == 'done') else 'error', 'message': (json.loads(cur.state_json or '{}').get('error', '') if cur else 'unknown')}, ensure_ascii=False)}\n\n".encode()
+                    return
+                try:
+                    ev = await asyncio.wait_for(queue.get(), timeout=30)
+                    ev = {**ev, "progress": ev.get("progress") if ev.get("progress") is not None else (cur.progress if cur else None)}
+                    yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n".encode()
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'heartbeat'}, ensure_ascii=False)}\n\n".encode()
+        finally:
+            try:
+                _TASK_QUEUES.get(task_id, []).remove(queue)
+            except ValueError:
+                pass
 
     return StreamingResponse(gen(), media_type="text/event-stream")

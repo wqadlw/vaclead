@@ -10,9 +10,11 @@ import { INDUSTRY_OPTIONS, POI_CITIES } from "@/lib/constants";
 export default function TasksPage() {
   const [city, setCity] = useState<string>("苏州");
   const [industries, setIndustries] = useState<string[]>(["semiconductor"]);
+  const [useQuadtree, setUseQuadtree] = useState(false);
   const [starting, setStarting] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [taskId, setTaskId] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   const subscribeTask = (taskId: string) => {
@@ -20,22 +22,32 @@ export default function TasksPage() {
     const base = "http://127.0.0.1:8000";
     const es = new EventSource(`${base}/api/tasks/${taskId}/events`);
     esRef.current = es;
+    setTaskId(taskId);
     es.onmessage = (ev) => {
       try {
         const payload = JSON.parse(ev.data);
-        if (payload.type === "progress") {
-          setProgress(payload.progress ?? 0);
+        if (payload.type === "snapshot") {
+          if (typeof payload.progress === "number") setProgress(payload.progress);
+          if (payload.log) setLogs((prev) => [...prev, String(payload.log)]);
+        } else if (payload.type === "progress") {
+          if (typeof payload.progress === "number") setProgress(payload.progress);
           if (payload.log) setLogs((prev) => [...prev.slice(-200), String(payload.log)]);
         } else if (payload.type === "done") {
           setProgress(100);
-          setLogs((prev) => [...prev, "✅ 任务完成"]);
+          const summary = payload.cancelled
+            ? "⏹ 任务已取消"
+            : `✅ 任务完成：新增 ${payload.inserted ?? "?"} 家，合并 ${payload.merged ?? "?"} 家`;
+          setLogs((prev) => [...prev, summary]);
           es.close();
           setStarting(false);
+          setTaskId(null);
         } else if (payload.type === "error") {
           setLogs((prev) => [...prev, `❌ ${payload.message}`]);
           es.close();
           setStarting(false);
+          setTaskId(null);
         }
+        /* heartbeat / log 类型无需特殊处理 */
       } catch {
         /* 非 JSON 帧忽略 */
       }
@@ -44,6 +56,16 @@ export default function TasksPage() {
       es.close();
       setStarting(false);
     };
+  };
+
+  const cancelTask = async () => {
+    if (!taskId) return;
+    try {
+      await api.post(`/api/tasks/${taskId}/cancel`);
+      Toast.info("取消请求已发送");
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "取消失败");
+    }
   };
 
   const startPoi = async () => {
@@ -55,7 +77,11 @@ export default function TasksPage() {
     setProgress(0);
     setLogs(["任务提交中…"]);
     try {
-      const res = await api.post<{ task_id: string }>("/api/tasks/poi", { city, industry_keys: industries });
+      const res = await api.post<{ task_id: string }>("/api/tasks/poi", {
+        city,
+        industry_keys: industries,
+        districts: useQuadtree ? ["全部区县"] : undefined,
+      });
       Toast.success("任务已启动");
       subscribeTask(res.task_id);
     } catch (e) {
@@ -136,12 +162,27 @@ export default function TasksPage() {
                 value={industries}
                 onChange={(v) => setIndustries(v as string[])}
               />
-              <Button theme="solid" loading={starting} onClick={startPoi}>
-                开始采集
-              </Button>
+              <label className="flex items-center gap-1.5 text-[12.5px] text-[var(--muted)] cursor-pointer select-none shrink-0">
+                <input
+                  type="checkbox"
+                  checked={useQuadtree}
+                  onChange={(e) => setUseQuadtree(e.target.checked)}
+                  className="accent-[var(--accent)]"
+                />
+                四叉树细分
+              </label>
+              {starting && taskId ? (
+                <Button type="danger" theme="outline" onClick={cancelTask}>
+                  取消
+                </Button>
+              ) : (
+                <Button theme="solid" loading={starting} onClick={startPoi}>
+                  开始采集
+                </Button>
+              )}
             </div>
             <p className="text-slate-400 text-[12px] leading-5 mt-3.5">
-              按行业关键词扫描所选城市的工厂 POI，自动入库、归一去重、ICP 打分。需在「设置」配置高德 Key。
+              按行业关键词扫描所选城市的工厂 POI，自动入库、归一去重、ICP 打分；勾选四叉树后，宽词在大城市按区县边界递归细分不漏数据。需在「设置」配置高德 Key。
             </p>
           </Card>
 

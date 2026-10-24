@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api import enterprises, imports, leads, misc, tasks
 from .db import SessionLocal, init_db
-from .models import Enterprise, Lead, utcnow
+from .models import Enterprise, Lead, TaskCheckpoint, utcnow
 
 
 def _recycle_leads() -> None:
@@ -90,10 +90,32 @@ def _inject_tools() -> None:
             TOOL_REGISTRY.register_function(name, fn)
 
 
+def _recover_interrupted_tasks() -> None:
+    """启动恢复（学自 AI_Find_Customer recover_interrupted_running_jobs）：
+    把上次进程退出时残留的 running 任务标记为 error，避免永远卡住。"""
+    with SessionLocal() as s:
+        stale = s.query(TaskCheckpoint).filter(TaskCheckpoint.status == "running").all()
+        for cp in stale:
+            cp.status = "error"
+            cp.state_json = json.dumps(
+                {"error": "进程重启导致任务中断，请重新发起"},
+                ensure_ascii=False,
+            )
+            cp.updated_at = utcnow()
+        s.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     _inject_tools()
+    _recover_interrupted_tasks()
+    # 记录主事件循环：采集线程用它把 SSE 事件推回订阅者
+    import asyncio
+
+    from .api.tasks import set_main_loop
+
+    set_main_loop(asyncio.get_running_loop())
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
 
