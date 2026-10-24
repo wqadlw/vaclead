@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from .models import Base, User
+from .models import Base, PoolSetting, User
 
 _DB_PATH = os.environ.get(
     "VACLEAD_DB", os.path.join(os.path.dirname(__file__), "..", "..", "data", "vaclead.db")
@@ -34,23 +34,24 @@ def _set_pragmas(dbapi_conn, _record) -> None:  # pragma: no cover
     cur.close()
 
 
-def _seed_users(session: Session) -> None:
+def _seed_defaults(session: Session) -> None:
     import bcrypt
 
-    if session.query(User).count() > 0:
-        return
-    for username, pwd, role, display in [
-        ("admin", "admin123", "admin", "管理员"),
-        ("sales", "sales123", "sales", "销售"),
-    ]:
-        session.add(
-            User(
-                username=username,
-                password_hash=bcrypt.hashpw(pwd.encode(), bcrypt.gensalt()).decode(),
-                role=role,
-                display_name=display,
+    if session.query(User).count() == 0:
+        for username, pwd, role, display in [
+            ("admin", "admin123", "admin", "管理员"),
+            ("sales", "sales123", "sales", "销售"),
+        ]:
+            session.add(
+                User(
+                    username=username,
+                    password_hash=bcrypt.hashpw(pwd.encode(), bcrypt.gensalt()).decode(),
+                    role=role,
+                    display_name=display,
+                )
             )
-        )
+    if session.query(PoolSetting).count() == 0:
+        session.add(PoolSetting(name="默认公海", recycle_days=30, receive_limit=0, remind_days=3))
 
 
 def init_db(seed: bool = True) -> None:
@@ -91,7 +92,7 @@ def init_db(seed: bool = True) -> None:
         conn.commit()
     if seed:
         with SessionLocal() as session:
-            _seed_users(session)
+            _seed_defaults(session)
             session.commit()
 
 

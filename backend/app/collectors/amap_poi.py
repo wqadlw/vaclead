@@ -28,10 +28,13 @@ import httpx
 logger = logging.getLogger("vaclead.collectors.amap")
 
 AMAP_PLACE_TEXT_URL = "https://restapi.amap.com/v3/place/text"
+AMAP_PLACE_POLYGON_URL = "https://restapi.amap.com/v3/place/polygon"
+AMAP_DISTRICT_URL = "https://restapi.amap.com/v3/config/district"
 PAGE_SIZE = 25                    # 高德单页条数（offset）
 MAX_PER_KEYWORD = 200             # 单关键词条数上限（8 页 × 25）
 MIN_REQUEST_INTERVAL = 0.34       # 相邻请求最小间隔（秒），QPS ≤ 3
 REQUEST_TIMEOUT = httpx.Timeout(15.0)
+MAX_QUADTREE_DEPTH = 6            # 四叉树递归深度上限（城市尺度足够）
 
 ProgressCB = Callable[[int, int, str], None]
 
@@ -109,21 +112,36 @@ async def _fetch_page(
     rotator: KeyRotator,
     *,
     keyword: str,
-    location: str,
+    location: str | None,
     page: int,
+    polygon: str | None = None,
 ) -> dict | None:
-    """请求一页 place/text；网络/解码失败返回 None（由上层优雅跳过）。"""
-    params = {
-        "keywords": keyword,
-        "city": location,
-        "citylimit": "true",
-        "offset": str(PAGE_SIZE),
-        "page": str(page),
-        "key": rotator.next_key(),
-    }
+    """请求一页检索结果；polygon 给定时走多边形搜索，否则走 city + citylimit。
+
+    网络/解码失败返回 None（由上层优雅跳过）。
+    """
+    if polygon:
+        params = {
+            "polygon": polygon,
+            "keywords": keyword,
+            "offset": str(PAGE_SIZE),
+            "page": str(page),
+            "key": rotator.next_key(),
+        }
+        url = AMAP_PLACE_POLYGON_URL
+    else:
+        params = {
+            "keywords": keyword,
+            "city": location,
+            "citylimit": "true",
+            "offset": str(PAGE_SIZE),
+            "page": str(page),
+            "key": rotator.next_key(),
+        }
+        url = AMAP_PLACE_TEXT_URL
     await _throttle()
     try:
-        resp = await client.get(AMAP_PLACE_TEXT_URL, params=params)
+        resp = await client.get(url, params=params)
         resp.raise_for_status()
         return resp.json()
     except (httpx.HTTPError, ValueError) as exc:
@@ -136,12 +154,13 @@ async def _collect_keyword(
     rotator: KeyRotator,
     *,
     keyword: str,
-    location: str,
+    location: str | None,
     default_city: str,
     seen_ids: set[str],
     max_items: int = MAX_PER_KEYWORD,
+    polygon: str | None = None,
 ) -> tuple[list[dict], bool]:
-    """单个（关键词 × 地域）单元翻页采集。
+    """单个（关键词 × 地域/多边形）单元翻页采集。
 
     返回 (新增 POI 列表, 是否因达单关键词条数上限截断)。
     status!=1 / count==0 / 空页 → 优雅终止；poi_id 全局去重。
@@ -151,7 +170,9 @@ async def _collect_keyword(
     page = 1
     truncated = False
     while True:
-        data = await _fetch_page(client, rotator, keyword=keyword, location=location, page=page)
+        data = await _fetch_page(
+            client, rotator, keyword=keyword, location=location, page=page, polygon=polygon
+        )
         if data is None:
             break
         if str(data.get("status", "0")) != "1":
@@ -268,6 +289,154 @@ async def collect_city_by_district(
             )
             out.extend(new_pois)
             _report(progress_cb, i + 1, total, kw, new_pois, out, truncated, scope=f"{city}·{dist}")
+        return out
+
+    return await _run_with_client(http_client, _run)
+
+
+# ---- 真四叉树：多边形搜索 + 区县 bbox 递归（借鉴 GaoDe-poi-crawler） ----
+
+BBox = tuple[float, float, float, float]  # (min_lng, min_lat, max_lng, max_lat)
+
+
+def parse_polyline_bbox(polyline: str) -> BBox | None:
+    """高德 district polyline（'lng,lat;lng,lat|...'）→ 包围盒。"""
+    min_lng = min_lat = max_lng = max_lat = None
+    for ring in polyline.split("|"):
+        for point in ring.split(";"):
+            parts = point.split(",")
+            if len(parts) != 2:
+                continue
+            try:
+                lng, lat = float(parts[0]), float(parts[1])
+            except ValueError:
+                continue
+            min_lng = lng if min_lng is None else min(min_lng, lng)
+            min_lat = lat if min_lat is None else min(min_lat, lat)
+            max_lng = lng if max_lng is None else max(max_lng, lng)
+            max_lat = lat if max_lat is None else max(max_lat, lat)
+    if min_lng is None:
+        return None
+    return (min_lng, min_lat, max_lng, max_lat)
+
+
+def _bbox_to_polygon_str(bbox: BBox) -> str:
+    min_lng, min_lat, max_lng, max_lat = bbox
+    return (
+        f"{min_lng},{min_lat}|{max_lng},{min_lat}|{max_lng},{max_lat}|{min_lng},{max_lat}"
+    )
+
+
+def _split_bbox(bbox: BBox) -> list[BBox]:
+    """四分：返回 [西北, 东北, 西南, 东南] 四个子包围盒。"""
+    min_lng, min_lat, max_lng, max_lat = bbox
+    mid_lng = (min_lng + max_lng) / 2
+    mid_lat = (min_lat + max_lat) / 2
+    return [
+        (min_lng, mid_lat, mid_lng, max_lat),  # 西北
+        (mid_lng, mid_lat, max_lng, max_lat),  # 东北
+        (min_lng, min_lat, mid_lng, mid_lat),  # 西南
+        (mid_lng, min_lat, max_lng, mid_lat),  # 东南
+    ]
+
+
+async def fetch_district_bboxes(
+    client: httpx.AsyncClient,
+    rotator: KeyRotator,
+    city: str,
+) -> dict[str, BBox]:
+    """拉取城市下辖区县的包围盒（district API 的 polyline 字段）。"""
+    await _throttle()
+    try:
+        resp = await client.get(
+            AMAP_DISTRICT_URL,
+            params={"keywords": city, "subdistrict": "2", "key": rotator.next_key(), "extensions": "all"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("高德 district 查询失败 city=%s: %s", city, exc)
+        return {}
+    if str(data.get("status", "0")) != "1":
+        return {}
+    out: dict[str, BBox] = {}
+    top = (data.get("districts") or [{}])[0]
+    for d in top.get("districts") or []:
+        # 地级市下可能再包一层"市辖区"
+        children = d.get("districts") or []
+        if children and not d.get("polyline"):
+            for sub in children:
+                if sub.get("polyline"):
+                    bbox = parse_polyline_bbox(sub["polyline"])
+                    if bbox:
+                        out[str(sub.get("name") or "").strip()] = bbox
+            continue
+        if d.get("polyline"):
+            bbox = parse_polyline_bbox(d["polyline"])
+            if bbox:
+                out[str(d.get("name") or "").strip()] = bbox
+    return out
+
+
+async def collect_city_quadtree(
+    city: str,
+    districts: Sequence[str],
+    keywords: Sequence[str],
+    amap_key: str,
+    progress_cb: ProgressCB | None = None,
+    http_client: httpx.AsyncClient | None = None,
+    *,
+    district_bboxes: dict[str, BBox] | None = None,
+    max_depth: int = MAX_QUADTREE_DEPTH,
+    max_per_keyword: int = MAX_PER_KEYWORD,
+) -> list[dict]:
+    """真四叉树采集：区县级 text 搜索，截断时按区县 bbox 四分递归多边形搜索。
+
+    单元总数 = 关键词 × 区县；截断的单元在深度上限内递归细分，
+    保证宽词在大城市不因单关键词 200 条上限漏数据。poi_id 全局去重。
+    """
+    rotator = KeyRotator(amap_key)
+    kw_list = _normalize_keywords(keywords)
+    dist_list = [d.strip() for d in districts if d and d.strip()]
+    units = [(kw, dist) for kw in kw_list for dist in dist_list]
+    total = len(units)
+
+    async def _run(client: httpx.AsyncClient) -> list[dict]:
+        out: list[dict] = []
+        seen: set[str] = set()
+        bboxes = district_bboxes if district_bboxes is not None else await fetch_district_bboxes(client, rotator, city)
+
+        async def _quad(kw: str, dist: str, bbox: BBox, depth: int) -> int:
+            poly = _bbox_to_polygon_str(bbox)
+            new_pois, trunc = await _collect_keyword(
+                client, rotator, keyword=kw, location=None, default_city=city,
+                seen_ids=seen, max_items=max_per_keyword, polygon=poly,
+            )
+            out.extend(new_pois)
+            if progress_cb:
+                progress_cb(0, 0, f"[{city}·{dist}] 「{kw}」多边形深度{depth} 新增 {len(new_pois)} 条")
+            if trunc and depth < max_depth:
+                sub = 0
+                for qb in _split_bbox(bbox):
+                    sub += await _quad(kw, dist, qb, depth + 1)
+                return sub
+            return 1
+
+        done = 0
+        for i, (kw, dist) in enumerate(units):
+            new_pois, trunc = await _collect_keyword(
+                client, rotator, keyword=kw, location=dist, default_city=city,
+                seen_ids=seen, max_items=max_per_keyword,
+            )
+            out.extend(new_pois)
+            leaf_units = 1
+            if trunc and dist in bboxes:
+                leaf_units = 0
+                for qb in _split_bbox(bboxes[dist]):
+                    leaf_units += await _quad(kw, dist, qb, 1)
+            done += leaf_units
+            if progress_cb:
+                _report(progress_cb, min(i + 1, total), total, kw, new_pois, out, trunc, scope=f"{city}·{dist}")
         return out
 
     return await _run_with_client(http_client, _run)

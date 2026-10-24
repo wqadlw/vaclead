@@ -9,6 +9,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
+from ..api.leads import _claim_guard
 from ..db import get_session
 from ..models import Enterprise, Lead, Signal, User, utcnow
 
@@ -198,6 +199,8 @@ def enterprise_to_lead(
     existing = session.query(Lead).filter(Lead.enterprise_id == eid).first()
     if existing and existing.status != "pool":
         raise HTTPException(422, "撞单：该企业已是别人的线索")
+    # 新领取与公海重领都受公海规则约束
+    _claim_guard(session, user)
     if existing:  # 公海重新领取
         existing.status = "following"
         existing.owner_id = user.id
@@ -247,7 +250,7 @@ def dashboard(
         session.query(Lead, Enterprise)
         .join(Enterprise, Lead.enterprise_id == Enterprise.id)
         .filter(Lead.owner_id == user.id, Lead.status.in_(["following", "intent"]))
-        .order_by(Lead.last_followed_at.desc())
+        .order_by(Lead.next_time.asc().nullslast(), Lead.last_followed_at.desc())
         .limit(50)
         .all()
     )
@@ -255,8 +258,8 @@ def dashboard(
         {
             "lead_id": lead.id,
             "enterprise_name": ent.name,
-            "next_action": None,
-            "next_time": None,
+            "next_action": lead.next_action,
+            "next_time": lead.next_time,
         }
         for lead, ent in pending
     ]

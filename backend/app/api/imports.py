@@ -5,6 +5,7 @@ import csv
 import io
 import math
 import re
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
@@ -135,6 +136,7 @@ async def import_enterprises(
 
     reader = csv.DictReader(io.StringIO(text_content))
     inserted, merged, skipped = 0, 0, 0
+    batch_id = uuid.uuid4().hex[:12]
     for row in reader:
         name = (row.get("name") or "").strip()
         if not name:
@@ -145,6 +147,7 @@ async def import_enterprises(
             inserted += 1
         else:
             merged += 1
+        ent.source_batch_id = batch_id
         ent.province = row.get("province") or ent.province
         ent.city = row.get("city") or ent.city
         ent.district = row.get("district") or ent.district
@@ -165,7 +168,7 @@ async def import_enterprises(
         apply_icp(ent)
         session.flush()
     session.commit()
-    return {"inserted": inserted, "merged": merged, "skipped": skipped}
+    return {"inserted": inserted, "merged": merged, "skipped": skipped, "batch_id": batch_id}
 
 
 @router.post("/import/tenders")

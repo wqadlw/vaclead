@@ -8,9 +8,62 @@ from sqlalchemy.orm import Session
 
 from ..auth import admin_only, create_token, current_user, verify_password
 from ..db import get_session
-from ..models import AgentRun, SettingsKV, User
+from ..models import AgentRun, PoolSetting, SettingsKV, User
 
 router = APIRouter(tags=["misc"])
+
+
+class PoolSettingIn(BaseModel):
+    recycle_days: int | None = None
+    receive_limit: int | None = None
+    remind_days: int | None = None
+
+
+def _get_pool(session: Session) -> PoolSetting:
+    pool = session.query(PoolSetting).filter(PoolSetting.active == 1).first()
+    if pool is None:
+        pool = PoolSetting(name="默认公海")
+        session.add(pool)
+        session.commit()
+        session.refresh(pool)
+    return pool
+
+
+@router.get("/pool-settings")
+def get_pool_settings(
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    pool = _get_pool(session)
+    return {
+        "name": pool.name,
+        "recycle_days": pool.recycle_days,
+        "receive_limit": pool.receive_limit,
+        "remind_days": pool.remind_days,
+    }
+
+
+@router.put("/pool-settings")
+def put_pool_settings(
+    body: PoolSettingIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    pool = _get_pool(session)
+    if body.recycle_days is not None:
+        if not 1 <= body.recycle_days <= 365:
+            raise HTTPException(422, "回收天数需在 1-365 之间")
+        pool.recycle_days = body.recycle_days
+    if body.receive_limit is not None:
+        if body.receive_limit < 0 or body.receive_limit > 999:
+            raise HTTPException(422, "领取上限需在 0-999 之间（0 为不限）")
+        pool.receive_limit = body.receive_limit
+    if body.remind_days is not None:
+        if not 0 <= body.remind_days <= 30:
+            raise HTTPException(422, "提醒天数需在 0-30 之间")
+        pool.remind_days = body.remind_days
+    session.commit()
+    return {"ok": True}
 
 
 class LoginIn(BaseModel):

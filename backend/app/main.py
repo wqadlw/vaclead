@@ -10,37 +10,36 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api import enterprises, imports, leads, misc, tasks
 from .db import SessionLocal, init_db
-from .models import Enterprise, Lead, SettingsKV, utcnow
-from .vertical import recycle_days
+from .models import Enterprise, Lead, utcnow
 
 
 def _recycle_leads() -> None:
-    """公海回收：超期未跟进的线索退回公海（每晚定时）。"""
+    """公海回收：超期未跟进的线索退回公海（每晚定时，规则读 pool_setting）。"""
     from datetime import timedelta
 
-    cutoff = (
-        datetime.now(timezone.utc) - timedelta(days=recycle_days())
-    ).isoformat(timespec="seconds")
+    from .models import PoolSetting
+
     with SessionLocal() as s:
+        pool = s.query(PoolSetting).filter(PoolSetting.active == 1).first()
+        days = pool.recycle_days if pool else 30
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
         stale = (
             s.query(Lead)
             .filter(
                 Lead.status.in_(["following", "intent"]),
                 Lead.last_followed_at.is_not(None),
                 Lead.last_followed_at < cutoff,
-                (utcnow() > cutoff),
             )
             .all()
         )
-        # last_followed_at 早于回收期，或领取后从未跟进且超期
-        claimed_cutoff = cutoff
+        # 领取后从未跟进且超期
         never_followed = (
             s.query(Lead)
             .filter(
                 Lead.status.in_(["following", "intent"]),
                 Lead.last_followed_at.is_(None),
                 Lead.claimed_at.is_not(None),
-                Lead.claimed_at < claimed_cutoff,
+                Lead.claimed_at < cutoff,
             )
             .all()
         )

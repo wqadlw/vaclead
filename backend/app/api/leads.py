@@ -30,6 +30,8 @@ def _lead_dict(lead: Lead, ent: Enterprise | None) -> dict:
         "grade": lead.grade,
         "lost_reason": lead.lost_reason,
         "last_followed_at": lead.last_followed_at,
+        "next_action": lead.next_action,
+        "next_time": lead.next_time,
         "enterprise": (
             {
                 "id": ent.id,
@@ -76,6 +78,26 @@ class LeadPatch(BaseModel):
     lost_reason: str | None = None
 
 
+def _claim_guard(session: Session, user: User) -> None:
+    """领取上限校验：用户持有(following/intent)线索数达到公海规则上限时拒绝领取。"""
+    from ..models import PoolSetting
+
+    pool = session.query(PoolSetting).filter(PoolSetting.active == 1).first()
+    if pool is None or pool.receive_limit <= 0:
+        return
+    held = (
+        session.query(func.count())
+        .select_from(Lead)
+        .where(Lead.owner_id == user.id, Lead.status.in_(["following", "intent"]))
+        .scalar()
+        or 0
+    )
+    if held >= pool.receive_limit:
+        raise HTTPException(
+            422, f"已达持有上限：公海规则限制每人 {pool.receive_limit} 条，当前持有 {held} 条"
+        )
+
+
 @router.patch("/leads/{lead_id}")
 def patch_lead(
     lead_id: int,
@@ -88,6 +110,7 @@ def patch_lead(
         raise HTTPException(404, "线索不存在")
     # 公海可领取；其余仅负责人或管理员可操作
     if lead.status == "pool" and body.status == "following":
+        _claim_guard(session, user)
         lead.owner_id = user.id
         lead.claimed_at = utcnow()
     elif lead.owner_id != user.id and user.role != "admin":
@@ -138,6 +161,9 @@ def create_followup(
     )
     session.add(fu)
     lead.last_followed_at = utcnow()
+    # 冗余到线索行（借鉴 WukongCRM CrmLeads.nextTime），列表/工作台免 join
+    lead.next_action = body.next_action
+    lead.next_time = body.next_time
     lead.updated_at = utcnow()
     if lead.status == "new":
         lead.status = "following"

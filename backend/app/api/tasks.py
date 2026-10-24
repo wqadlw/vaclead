@@ -44,13 +44,14 @@ class PoiTaskIn(BaseModel):
     city: str
     industry_keys: list[str]
     keywords_override: list[str] | None = None
+    districts: list[str] | None = None  # 给定时启用真四叉树（区县 bbox 递归）
 
 
-def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str) -> None:
+def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, districts: list[str] | None = None) -> None:
     """后台线程：采集 → 归一入库 → ICP 打分。进度写 checkpoint。"""
     import asyncio
 
-    from ..collectors.amap_poi import collect_pois
+    from ..collectors.amap_poi import collect_city_quadtree, collect_pois
     from ..normalize import resolve_enterprise
 
     async def _main() -> None:
@@ -58,11 +59,15 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str) -
         logs: list[str] = []
 
         def cb(done: int, total: int, log: str) -> None:
-            pct = int(done / total * 80) if total else 0
-            _checkpoint(task_id, progress=max(pct, 5), state_json=json.dumps({"done": done, "total": total}, ensure_ascii=False))
+            if done and total:
+                pct = int(done / total * 80)
+                _checkpoint(task_id, progress=max(pct, 5), state_json=json.dumps({"done": done, "total": total}, ensure_ascii=False))
             logs.append(log)
 
-        pois = await collect_pois(city, keywords, amap_key, progress_cb=cb)
+        if districts:
+            pois = await collect_city_quadtree(city, districts, keywords, amap_key, progress_cb=cb)
+        else:
+            pois = await collect_pois(city, keywords, amap_key, progress_cb=cb)
         with SessionLocal() as s:
             for i, poi in enumerate(pois):
                 ent, is_new = resolve_enterprise(s, poi["name"], source="poi")
@@ -130,7 +135,9 @@ def start_poi_task(
     session.add(cp)
     session.commit()
     threading.Thread(
-        target=_run_poi_task, args=(task_id, body.city, keywords[:20], amap_key), daemon=True
+        target=_run_poi_task,
+        args=(task_id, body.city, keywords[:20], amap_key, body.districts),
+        daemon=True,
     ).start()
     return {"task_id": task_id}
 

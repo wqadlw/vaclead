@@ -48,6 +48,7 @@ class Enterprise(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     uscc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_batch_id: Mapped[str | None] = mapped_column(Text)  # 导入/采集批次追溯
     region_code: Mapped[str | None] = mapped_column(Text)
     province: Mapped[str | None] = mapped_column(Text)
     city: Mapped[str | None] = mapped_column(Text)
@@ -142,6 +143,9 @@ class Lead(Base):
     lost_reason: Mapped[str | None] = mapped_column(Text)
     claimed_at: Mapped[str | None] = mapped_column(Text)
     last_followed_at: Mapped[str | None] = mapped_column(Text)
+    # 跟进冗余（借鉴 WukongCRM CrmLeads）：列表页直接可读，不必 join followup
+    next_action: Mapped[str | None] = mapped_column(Text)
+    next_time: Mapped[str | None] = mapped_column(Text)
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
@@ -218,3 +222,17 @@ class SettingsKV(Base):
 
     key: Mapped[str] = mapped_column(Text, primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class PoolSetting(Base):
+    """公海规则（借鉴 WukongCRM CrmCustomerPool 的规则对象化）。"""
+
+    __tablename__ = "pool_setting"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False, default="默认公海")
+    recycle_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)  # 超期未跟进回收
+    receive_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 每人持有上限，0=不限
+    remind_days: Mapped[int] = mapped_column(Integer, nullable=False, default=3)  # 回收前提醒天数
+    active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

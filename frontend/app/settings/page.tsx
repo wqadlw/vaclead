@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button, Card, Descriptions, Form, Input, Table, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
+import { Button, Card, Descriptions, Form, Input, InputNumber, Table, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
 import { Bot, KeyRound } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
@@ -12,6 +12,13 @@ interface SettingsData {
   amap_key_masked: string | null;
   zhiliaoke_key_masked: string | null;
   agent_backends: Record<string, string>;
+}
+
+interface PoolSettingsData {
+  name: string;
+  recycle_days: number;
+  receive_limit: number;
+  remind_days: number;
 }
 
 interface AgentRunRow {
@@ -33,14 +40,25 @@ const DEVICE_TERMS_PREVIEW = [
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsData | null>(null);
+  const [pool, setPool] = useState<PoolSettingsData | null>(null);
   const [runs, setRuns] = useState<PageData<AgentRunRow> | null>(null);
   const [runPage, setRunPage] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [savingPool, setSavingPool] = useState(false);
   const [amapKey, setAmapKey] = useState("");
   const [zhilKey, setZhilKey] = useState("");
+  const [recycleDays, setRecycleDays] = useState<number>(30);
+  const [receiveLimit, setReceiveLimit] = useState<number>(0);
+  const [remindDays, setRemindDays] = useState<number>(3);
 
   const loadSettings = useCallback(() => {
     api.get<SettingsData>("/api/settings").then(setSettings).catch(() => undefined);
+    api.get<PoolSettingsData>("/api/pool-settings").then((p) => {
+      setPool(p);
+      setRecycleDays(p.recycle_days);
+      setReceiveLimit(p.receive_limit);
+      setRemindDays(p.remind_days);
+    }).catch(() => undefined);
   }, []);
 
   const loadRuns = useCallback(
@@ -78,6 +96,23 @@ export default function SettingsPage() {
     }
   };
 
+  const savePool = async () => {
+    setSavingPool(true);
+    try {
+      await api.put("/api/pool-settings", {
+        recycle_days: recycleDays,
+        receive_limit: receiveLimit,
+        remind_days: remindDays,
+      });
+      Toast.success("公海规则已保存");
+      loadSettings();
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setSavingPool(false);
+    }
+  };
+
   return (
     <AppShell>
       <div>
@@ -86,11 +121,47 @@ export default function SettingsPage() {
           className="rounded-xl border border-[var(--border)] bg-white !px-2"
           tabList={[
             { tab: "数据源 Key", itemKey: "keys" },
+            { tab: "公海规则", itemKey: "pool" },
             { tab: "词表预览", itemKey: "vocab" },
             { tab: "Agent 日志", itemKey: "agents" },
             { tab: "后端切换", itemKey: "backends" },
           ]}
         >
+          {/* 公海规则 */}
+          <div className="p-6">
+            <div className="max-w-[560px]">
+              <p className="mb-5 text-[13px] leading-6 text-[var(--muted)]">
+                公海规则由每晚 02:00 的回收任务执行：超过 N 天未跟进的线索自动退回公海；领取上限限制每人同时持有的线索数。
+              </p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-white px-4 py-3">
+                  <div>
+                    <div className="text-[13.5px] font-medium text-[var(--ink)]">回收天数</div>
+                    <div className="text-[12px] text-[var(--muted)]">跟进/领取超过该天数未更新的线索退回公海</div>
+                  </div>
+                  <InputNumber style={{ width: 90 }} min={1} max={365} value={recycleDays} onChange={(v) => setRecycleDays(typeof v === "number" ? v : 30)} />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-white px-4 py-3">
+                  <div>
+                    <div className="text-[13.5px] font-medium text-[var(--ink)]">领取上限</div>
+                    <div className="text-[12px] text-[var(--muted)]">每人同时持有的跟进中+意向线索数上限，0 为不限</div>
+                  </div>
+                  <InputNumber style={{ width: 90 }} min={0} max={999} value={receiveLimit} onChange={(v) => setReceiveLimit(typeof v === "number" ? v : 0)} />
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-white px-4 py-3">
+                  <div>
+                    <div className="text-[13.5px] font-medium text-[var(--ink)]">到期提醒</div>
+                    <div className="text-[12px] text-[var(--muted)]">回收前 N 天在工作台提示（预留）</div>
+                  </div>
+                  <InputNumber style={{ width: 90 }} min={0} max={30} value={remindDays} onChange={(v) => setRemindDays(typeof v === "number" ? v : 3)} />
+                </div>
+                <Button theme="solid" loading={savingPool} onClick={savePool}>
+                  保存公海规则
+                </Button>
+              </div>
+            </div>
+          </div>
+
           {/* Keys */}
           <div className="p-6 max-w-[560px]">
             <div className="text-[13px] text-slate-500 mb-5 leading-6">

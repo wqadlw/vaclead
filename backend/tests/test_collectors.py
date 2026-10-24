@@ -397,3 +397,72 @@ def test_amap_empty_keyword_list_returns_empty():
     result = run(main())
     assert result == []
     assert calls == []
+
+
+# ---- 真四叉树（多边形搜索 + 区县 bbox 递归，借鉴 GaoDe-poi-crawler） ----
+
+def test_parse_polyline_bbox():
+    bbox = amap_poi.parse_polyline_bbox("120.5,31.1;120.9,31.1|120.5,31.5;120.9,31.5")
+    assert bbox == (120.5, 31.1, 120.9, 31.5)
+    assert amap_poi.parse_polyline_bbox("") is None
+
+
+def test_split_bbox_corners():
+    quads = amap_poi._split_bbox((120.0, 31.0, 121.0, 32.0))
+    assert len(quads) == 4
+    assert (120.0, 31.5, 120.5, 32.0) in quads  # 西北
+    poly = amap_poi._bbox_to_polygon_str(quads[0])
+    assert poly.count("|") == 3 and "120.0,31.5" in poly
+
+
+def test_quadtree_recurses_on_truncation():
+    """城市 text 截断 → 区县 bbox 四分 → 多边形搜索兜底。"""
+    calls = {"text": 0, "polygon": 0, "district": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "config/district" in url:
+            calls["district"] += 1
+            return httpx.Response(200, json={
+                "status": "1",
+                "districts": [{"name": "苏州市", "districts": [
+                    {"name": "虎丘区", "polyline": "120.4,31.2;120.6,31.2|120.4,31.4;120.6,31.4"},
+                ]}],
+            })
+        if "place/text" in url:
+            calls["text"] += 1
+            page = int(request.url.params.get("page", "1"))
+            pois = [
+                {"id": f"t{page}_{i}", "name": f"苏州企{page}_{i}", "location": "120.5,31.3", "adname": "虎丘区"}
+                for i in range(25)
+            ]
+            return httpx.Response(200, json={"status": "1", "count": "400", "pois": pois})
+        if "place/polygon" in url:
+            calls["polygon"] += 1
+            pois = [
+                {"id": f"p{calls['polygon']}_{i}", "name": f"多边形企{calls['polygon']}_{i}", "location": "120.5,31.3", "adname": "虎丘区"}
+                for i in range(5)
+            ]
+            return httpx.Response(200, json={"status": "1", "count": "5", "pois": pois})
+        return httpx.Response(200, json={"status": "0"})
+
+    transport = httpx.MockTransport(handler)
+
+    async def main():
+        client = httpx.AsyncClient(transport=transport)
+        try:
+            return await amap_poi.collect_city_quadtree(
+                "苏州市", ["虎丘区"], ["真空泵"], "KEY_A",
+                http_client=client,
+                max_per_keyword=25,
+            )
+        finally:
+            await client.aclose()
+
+    out = run(main())
+    assert calls["district"] == 1
+    assert calls["text"] == 1          # 25 条上限：第一页即截断
+    assert calls["polygon"] >= 4       # bbox 至少四分一次
+    names = {p["name"] for p in out}
+    assert any(n.startswith("苏州企") for n in names)
+    assert any(n.startswith("多边形企") for n in names)
