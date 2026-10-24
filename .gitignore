@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+out/
+
+# 数据与密钥
+.env
+*.db
+*.db-wal
+*.db-shm
+backups/
+
+# IDE
+.idea/
+.vscode/

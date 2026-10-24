@@ -1,0 +1,120 @@
+# vaclead 真空设备行业词表与评分配置
+version: 1
+vertical: 真空设备
+
+device_terms:
+  strong:  # 命中即视为设备相关（标题70分/正文50分的词表基础）
+    - 真空泵
+    - 真空机组
+    - 罗茨泵
+    - 分子泵
+    - 旋片泵
+    - 螺杆真空泵
+    - 爪式真空泵
+    - 涡旋真空泵
+    - 扩散泵
+    - 真空镀膜机
+    - 真空镀膜设备
+    - 磁控溅射
+    - 蒸发镀膜
+    - PVD镀膜
+    - PVD设备
+    - CVD设备
+    - 冻干机
+    - 真空冷冻干燥机
+    - 冷冻干燥设备
+    - 真空干燥箱
+    - 真空烧结炉
+    - 真空热处理炉
+    - 真空腔体
+    - 真空检漏
+    - 真空包装机
+    - 真空获得设备
+    - 真空阀门
+  weak:  # 弱词：仅标题命中时给一半分，正文命中不计
+    - 真空
+    - 镀膜
+    - 冻干
+    - 烧结
+
+downstream_industries:
+  - key: semiconductor
+    name: 半导体/集成电路
+    tier: 1
+    industry_codes: ["C39"]
+    keywords: [半导体, 集成电路, 晶圆, 封测, 芯片制造, 半导体器件, 微电子]
+  - key: coating
+    name: 真空镀膜加工
+    tier: 1
+    industry_codes: ["C34"]
+    keywords: [镀膜加工, 表面处理, 涂层加工, PVD加工, 光学镀膜, 真空镀膜厂, 电镀]
+  - key: photovoltaic
+    name: 光伏
+    tier: 2
+    industry_codes: ["C3825"]
+    keywords: [光伏, 太阳能电池, 电池片, 光伏组件, 钙钛矿, 太阳能]
+  - key: lithium
+    name: 锂电池
+    tier: 2
+    industry_codes: ["C3841"]
+    keywords: [锂电池, 锂电, 电芯, 电解液, 固态电池, 储能电池, 动力电池]
+  - key: freeze_dried
+    name: 冻干食品/医药
+    tier: 2
+    industry_codes: ["C14", "C27"]
+    keywords: [冻干, 冷冻干燥, 食品加工, 制药, 生物医药, 药业, 保健品]
+  - key: heat_treatment
+    name: 金属热处理
+    tier: 3
+    industry_codes: ["C31"]
+    keywords: [热处理, 退火, 淬火, 金属表面处理, 冶金]
+
+# 竞对（同行）判定：企业名称命中任一 device_terms.strong 词
+# 且经营范围含 manufacture_or_sale 中任一词 → is_competitor=1（打标保留、默认从推荐列表排除）
+manufacture_or_sale: [制造, 生产, 厂家, 销售, 产销]
+
+manufacturing_terms: [生产, 制造, 加工]
+qualification_terms: [专精特新, 高新技术企业, 高新技术]
+
+icp_weights:
+  industry_tier1: 40      # 名称/经营范围/行业代码命中一线行业
+  industry_tier2: 30      # 二线行业
+  industry_generic: 10    # 泛制造（仅命中 manufacturing_terms）
+  device_usage_terms: 20  # 经营范围含设备使用相关词但非竞对
+  capital_gte_1000w: 15
+  capital_100w_1000w: 8
+  manufacturing_terms: 10
+  qualification: 15
+  max_score: 100
+
+signal_weights:
+  tender_title_hit: 70    # 招标标题命中 strong 词
+  tender_body_hit: 50     # 正文命中 strong 词 / 标题命中 weak 词减半
+  weak_discount: 0.5
+  intent_half_life_days: 30  # intent = Σ base_score × 0.5^(距今天数/30)
+
+lead_grading:
+  icp_weight: 0.4
+  intent_weight: 0.6
+  grade_s_min: 80
+  grade_a_min: 60
+  grade_b_min: 40
+
+poi_cities: [苏州, 无锡, 东莞, 佛山, 深圳, 宁波, 常州, 南通, 西安, 合肥]
+
+recycle_days: 30
+
+# 预置客户画像模板（前端筛选页一键套用）
+profile_templates:
+  - name: 半导体扩产客户
+    filters: {industry_key: semiconductor, capital_min: 1000, score_min: 60}
+  - name: 镀膜加工厂
+    filters: {industry_key: coating, score_min: 50}
+  - name: 光伏电池制造商
+    filters: {industry_key: photovoltaic, score_min: 50}
+  - name: 锂电扩产客户
+    filters: {industry_key: lithium, capital_min: 500, score_min: 50}
+  - name: 冻干食品/药企
+    filters: {industry_key: freeze_dried, score_min: 50}
+  - name: 有采购信号的高意向客户
+    filters: {signal_days: 30, score_min: 60}
