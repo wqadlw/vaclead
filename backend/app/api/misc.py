@@ -8,9 +8,56 @@ from sqlalchemy.orm import Session
 
 from ..auth import admin_only, create_token, current_user, verify_password
 from ..db import get_session
-from ..models import AgentRun, PoolSetting, SettingsKV, User
+from ..models import AgentRun, Enterprise, Lead, PoolSetting, SettingsKV, Signal, User
 
 router = APIRouter(tags=["misc"])
+
+
+@router.get("/health")
+def health(
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """平台就绪度聚合（学 OpenOutreach `status --json` 契约）：
+    onboarding 缺什么、各实体计数、被什么阻塞、建议的下一步。"""
+    from ..collectors import amap_poi, tender  # 探测能力位
+
+    amap_key = _get(session, "amap_key")
+    zhil_key = _get(session, "zhiliaoke_key")
+    counts = {
+        "enterprises": session.query(func.count()).select_from(Enterprise).scalar() or 0,
+        "signals": session.query(func.count()).select_from(Signal).scalar() or 0,
+        "leads": session.query(func.count()).select_from(Lead).scalar() or 0,
+    }
+    missing: list[str] = []
+    if not amap_key:
+        missing.append("amap_key")
+    if not zhil_key:
+        missing.append("zhiliaoke_key")
+
+    # next_action 决策树：按"当前最该做的事"排序
+    if counts["enterprises"] == 0:
+        next_action = {"action": "import_enterprises", "hint": "在拓客任务页导入企业 CSV 或启动 POI 采集"}
+    elif counts["signals"] == 0:
+        next_action = {"action": "import_tenders", "hint": "导入招标公告 CSV，命中设备词自动生成意图信号"}
+    elif not amap_key:
+        next_action = {"action": "configure_amap", "hint": "配置高德 Key 解锁地图拓客"}
+    else:
+        next_action = {"action": "filter_enterprises", "hint": "去企业筛选页按信号和评分找客户"}
+
+    return {
+        "version": "0.3",
+        "onboarding_complete": len(missing) == 0,
+        "missing_config": missing,
+        "capabilities": {
+            "poi_quadtree": bool(amap_key),
+            "tender_api": bool(zhil_key),
+            "tender_csv": True,
+            "llm_backends": False,  # P2：配置 GLM Key 后为 True
+        },
+        "counts": counts,
+        "next_action": next_action,
+    }
 
 
 class PoolSettingIn(BaseModel):

@@ -113,6 +113,8 @@ class Signal(Base):
     matched_terms: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON
     hit_part: Mapped[str] = mapped_column(Text, nullable=False, default="body")  # title/body
     raw_excerpt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # 证据位（学 AI_Find_Customer evidence：claim+source_url 配对），P2 联系人模块的展示基础
+    evidence_claim: Mapped[str | None] = mapped_column(Text)  # "该公告要求采购真空镀膜机2套"
     base_score: Mapped[float] = mapped_column(REAL, nullable=False, default=0.0)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
 
@@ -235,4 +237,28 @@ class PoolSetting(Base):
     receive_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 每人持有上限，0=不限
     remind_days: Mapped[int] = mapped_column(Integer, nullable=False, default=3)  # 回收前提醒天数
     active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class LLMCall(Base):
+    """LLM 调用明细（学自 AI_Find_Customer cost_tracker，改为逐条落库可聚合）。
+
+    P2 接入 GLM 后由唯一 LLM client 埋点；聚合靠 SQL GROUP BY（按任务/Agent/天）。
+    """
+
+    __tablename__ = "llm_calls"
+    __table_args__ = (Index("ix_llm_calls_task", "task_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[str | None] = mapped_column(Text)
+    agent_name: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    backend: Mapped[str] = mapped_column(Text, nullable=False, default="llm")
+    model: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_usd: Mapped[float] = mapped_column(REAL, nullable=False, default=0.0)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ok: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

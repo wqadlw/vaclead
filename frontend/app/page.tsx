@@ -30,10 +30,17 @@ interface DashboardData {
   }[];
 }
 
+interface HealthData {
+  onboarding_complete: boolean;
+  missing_config: string[];
+  next_action: { action: string; hint: string };
+}
+
 /* overview 版式：标题行 → KPI 分隔条（无图标）→ 主列（待跟进）+ 384px 边栏（最新信号） */
 export default function DashboardPage() {
   const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
+  const [health, setHealth] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -42,6 +49,7 @@ export default function DashboardPage() {
       .then(setData)
       .catch(() => undefined)
       .finally(() => setLoading(false));
+    api.get<HealthData>("/api/health").then(setHealth).catch(() => undefined);
   }, []);
 
   const myLeads = data?.my_leads_by_status ?? {};
@@ -66,7 +74,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-[22px] font-semibold leading-7 text-[var(--ink)]">工作台</h1>
           <p className="mt-1 text-[13.5px] text-[var(--muted)]">
-            近 7 天新增 {data?.signals_7d ?? 0} 条设备采购信号 —— 优先跟进有新信号的高分客户
+            {health?.next_action?.hint ?? "近 7 天新增采购信号 —— 优先跟进有新信号的高分客户"}
           </p>
         </div>
         <Button theme="solid" onClick={() => router.push("/enterprises")} className="!h-9">
