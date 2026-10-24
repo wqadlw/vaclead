@@ -288,10 +288,10 @@ def start_tender_scan(
                     hit_terms = [t for t in device_strong_terms() if t in title or t in content]
                     if not hit_terms:
                         continue
-                    name = _COMPANY_RE.search(title) or _COMPANY_RE.search(content)
-                    if not name:
-                        continue
-                    ent, _ = resolve_enterprise(s, name.group(1), source="tender")
+                    from .imports import extract_enterprise_name
+
+                    name = extract_enterprise_name(title, content) or f"待归属·{title[:18].strip()}"
+                    ent, _ = resolve_enterprise(s, name, source="tender")
                     exists = (
                         s.query(Signal)
                         .filter(Signal.url == p.get("url", ""), Signal.enterprise_id == ent.id)

@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from ..auth import admin_only
+from ..collectors.tender import _decode_csv_bytes
 from ..db import get_session
 from ..models import Enterprise, Signal, User, utcnow
 from ..normalize import resolve_enterprise
@@ -24,7 +25,52 @@ from ..vertical import (
 router = APIRouter(tags=["imports"])
 
 # 从标题/正文中提取企业名的保守模式（XX公司/厂/集团 专名）
-_COMPANY_RE = re.compile(r"([\u4e00-\u9fa5A-Za-z0-9（）()]{2,28}?(?:有限公司|股份有限公司|有限责任公司|公司|集团|工厂|厂))")
+# 企业名抽取（两级）：
+# 1) _COMPANY_RE 严格模式：以"公司/集团/厂"等后缀结尾的完整企业名（含括号分段）
+# 2) _ORG_RE 宽松模式：采购单位常见形态（XX中心/XX局/XX学院/XX研究所/XX医院/XX学校/XX委员会）
+# 顺序：先标题后正文；严格模式优先于宽松模式。
+_COMPANY_RE = re.compile(
+    r"([\u4e00-\u9fa5A-Za-z0-9（）()]{2,28}?(?:有限公司|股份有限公司|有限责任公司|公司|集团|工厂|厂))"
+)
+_ORG_RE = re.compile(
+    r"([\u4e00-\u9fa5]{2,18}?(?:研究中心|研究所|研究院|检测中心|疾控中心|交易中心|管理中心|服务中心|"
+    r"采购中心|管理局|财政局|发改委|人民政府|委员会|大学|学院|学校|医院))"
+)
+# 宽松模式的黑名单：行政区名/泛称不是采购单位
+_ORG_BLACKLIST_SUFFIX = ("县", "市", "省", "区", "镇", "乡", "园区", "新区")
+
+
+def _org_name_ok(name: str) -> bool:
+    """过滤'某某县/某某市'这类纯行政区名（宽松模式误抓）。"""
+    return not name.endswith(_ORG_BLACKLIST_SUFFIX)
+
+
+def extract_enterprise_name(title: str, content: str) -> str:
+    """从公告标题/正文抽取企业（或采购单位）名：严格企业名 > 宽松机构名，先标题后正文。
+
+    抽不到返回空串——调用方不应把整条公告丢弃（落"待归属"占位，见 imports）。
+    """
+    for text in (title, content):
+        if not text:
+            continue
+        m = _COMPANY_RE.search(text)
+        if m:
+            name = m.group(1).strip("（(〕 ")
+            # 常见误抽：后缀前是"建设/采购/项目/内容"等动词性词组的直接否定
+            if not re.search(r"(建设|采购|项目|内容|施工|监理|咨询|设计|服务|货物)$", name[:4]):
+                return name
+    for text in (title, content):
+        if not text:
+            continue
+        candidates = [
+            m.group(1).strip("（(〕 ")
+            for m in _ORG_RE.finditer(text)
+        ]
+        # 取最长合法匹配（"中国科学院某光学精密机械研究所"优于截断的"中国科学院"）
+        candidates = [c for c in candidates if _org_name_ok(c)]
+        if candidates:
+            return max(candidates, key=len)
+    return ""
 
 
 def _decay(base_score: float, pub_date: str | None) -> float:
@@ -129,10 +175,7 @@ async def import_enterprises(
     user: User = Depends(admin_only),
 ):
     raw = await file.read()
-    try:
-        text_content = raw.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        text_content = raw.decode("gbk", errors="replace")
+    text_content = _decode_csv_bytes(raw)
 
     reader = csv.DictReader(io.StringIO(text_content))
     inserted, merged, skipped = 0, 0, 0
@@ -178,10 +221,7 @@ async def import_tenders(
     user: User = Depends(admin_only),
 ):
     raw = await file.read()
-    try:
-        text_content = raw.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        text_content = raw.decode("gbk", errors="replace")
+    text_content = _decode_csv_bytes(raw)
     reader = csv.DictReader(io.StringIO(text_content))
     strong = None
     from ..vertical import device_strong_terms, device_weak_terms
@@ -220,10 +260,11 @@ async def import_tenders(
             continue
         ent_name = (row.get("enterprise_name") or "").strip()
         if not ent_name:
-            found = _COMPANY_RE.search(title) or _COMPANY_RE.search(content)
-            if not found:
-                continue
-            ent_name = found.group(1)
+            ent_name = extract_enterprise_name(title, content)
+        if not ent_name:
+            # 抽不到归属方：不再整条丢弃，落"待归属"企业占位（信号保留，
+            # 后续可人工归属或凭企业名补录——修复最大数据漏损口）
+            ent_name = f"待归属·{title[:18].strip()}"
         ent, is_new = resolve_enterprise(session, ent_name, source="tender")
         if is_new:
             enterprises_created += 1

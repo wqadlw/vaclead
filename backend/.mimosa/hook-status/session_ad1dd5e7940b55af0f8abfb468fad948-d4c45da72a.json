@@ -1,14 +1,14 @@
 {
   "schemaVersion": "mimosa-hook-status/v1",
-  "recordedAt": "2026-10-24T16:11:33.529Z",
+  "recordedAt": "2026-10-24T16:44:33.143Z",
   "sessionId": "session_ad1dd5e7940b55af0f8abfb468fad948",
   "event": "PostToolUse",
   "toolName": "Edit",
-  "file": "E:\\AAAA\\A-xiaosou\\refs\\STUDY.md",
+  "file": "tests/test_polish.py",
   "outcome": "clear",
   "coverage": "complete",
   "findingCount": 0,
-  "durationMs": 7,
+  "durationMs": 23,
   "hostState": "hook_complete",
   "reportHint": ".mimosa/reports/"
 }

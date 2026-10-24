@@ -164,8 +164,21 @@ async def fetch_zhiliaoke_tenders(
 # ---------------------------------------------------------------------------
 # CSV 导入
 # ---------------------------------------------------------------------------
+def _decode_csv_bytes(data: bytes) -> str:
+    """导入文件解码（按探测优先级）：UTF-8 BOM > UTF-16 BOM（Excel“Unicode 文本”另存）>
+    UTF-8 严格 > GBK 兜底。覆盖国内 Excel 常见导出格式。"""
+    if data.startswith(b"\xef\xbb\xbf"):
+        return data.decode("utf-8-sig")
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16")
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("gbk", errors="replace")
+
+
 def parse_tender_csv(file_bytes: bytes, stats: dict | None = None) -> list[dict]:
-    """解析导入的招标 CSV（UTF-8 兼容 BOM）。
+    """解析导入的招标 CSV（UTF-8 BOM / UTF-16 / GBK 自动探测）。
 
     列：title,content,url,pub_date,enterprise_name(可选)。
     行级容错：缺 title、缺 pub_date 或日期无法归一的行跳过并计数；
@@ -175,10 +188,7 @@ def parse_tender_csv(file_bytes: bytes, stats: dict | None = None) -> list[dict]
     if stats is not None:
         stats.clear()
         stats.update({"total": 0, "parsed": 0, "skipped": 0})
-    try:
-        text = file_bytes.decode("utf-8-sig")  # 兼容 UTF-8 BOM
-    except UnicodeDecodeError:
-        text = file_bytes.decode("gbk", errors="replace")  # Excel 常见 GBK 兜底
+    text = _decode_csv_bytes(file_bytes)
 
     reader = csv.DictReader(io.StringIO(text))
     rows: list[dict] = []
