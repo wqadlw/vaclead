@@ -2,16 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Button, Collapse, Descriptions, SideSheet, Skeleton, Tag, Timeline, Toast } from "@douyinfe/semi-ui";
-import { ExternalLink, Zap } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Enterprise } from "@/lib/api";
 import { gradeOf } from "@/lib/constants";
-
-const GRADE_TAG: Record<string, { color: "red" | "orange" | "blue"; label: string }> = {
-  S: { color: "red", label: "S 级" },
-  A: { color: "orange", label: "A 级" },
-  B: { color: "blue", label: "B 级" },
-};
 
 interface Props {
   open: boolean;
@@ -66,12 +60,12 @@ export default function EnterpriseDrawer({ open, enterpriseId, onClose, onConver
     <SideSheet
       visible={open}
       onCancel={onClose}
-      width={620}
+      width={600}
       title={
         detail ? (
           <span className="flex items-center gap-2">
-            <span className="text-[16px] font-semibold text-slate-800">{detail.name}</span>
-            {detail.is_competitor === 1 && <Tag color="amber">疑似同行</Tag>}
+            <span className="text-[16px] font-semibold text-[var(--ink)]">{detail.name}</span>
+            {detail.is_competitor === 1 && <Tag color="amber" type="light">疑似同行</Tag>}
           </span>
         ) : (
           "企业详情"
@@ -96,59 +90,67 @@ export default function EnterpriseDrawer({ open, enterpriseId, onClose, onConver
         </div>
       ) : (
         <div className="space-y-6">
-          {/* 工商信息 */}
           <section>
-            <h3 className="text-[13px] font-semibold text-slate-400 tracking-wide mb-2.5">工商信息</h3>
+            <h3 className="mb-2.5 text-[12.5px] font-normal text-[var(--muted)]">工商信息</h3>
             <Descriptions
               size="small"
               align="left"
               data={[
-                { key: "统一信用代码", value: detail.uscc || "（暂缺）" },
-                { key: "地区", value: [detail.province, detail.city, detail.district].filter(Boolean).join(" ") || "-" },
+                { key: "统一信用代码", value: detail.uscc || "—" },
+                { key: "地区", value: [detail.province, detail.city, detail.district].filter(Boolean).join(" ") || "—" },
                 { key: "行业", value: detail.industry_name || "未分类" },
-                { key: "注册资本", value: detail.registered_capital_wan == null ? "-" : `${detail.registered_capital_wan.toLocaleString("zh-CN")} 万` },
+                {
+                  key: "注册资本",
+                  value: detail.registered_capital_wan == null ? "—" : `${detail.registered_capital_wan.toLocaleString("zh-CN")} 万`,
+                },
                 { key: "经营状态", value: detail.status === "active" ? "在营" : "已注销" },
-                { key: "来源", value: ({ poi: "高德 POI", tender: "招标公告", csv: "CSV 导入", manual: "手动录入" } as Record<string, string>)[detail.source as string] ?? detail.source },
+                {
+                  key: "来源",
+                  value:
+                    ({ poi: "高德 POI", tender: "招标公告", csv: "CSV 导入", manual: "手动录入" } as Record<string, string>)[
+                      detail.source as string
+                    ] ?? detail.source,
+                },
               ]}
             />
-            {detail.address && <p className="text-[12.5px] text-slate-500 mt-2.5">{detail.address}</p>}
+            {detail.address && <p className="mt-2.5 text-[12.5px] text-[var(--muted)]">{detail.address}</p>}
           </section>
 
-          {/* 评分 */}
-          <section className="rounded-2xl bg-gradient-to-br from-slate-50 to-indigo-50/60 border border-indigo-100/70 p-5">
+          {/* 评分：浅灰槽，青蓝给主数据 */}
+          <section className="rounded-lg bg-[var(--raised)] p-5">
             <div className="flex items-start justify-between">
               <div>
-                <div className="text-[11.5px] text-slate-400">ICP 匹配分</div>
-                <div className="text-[34px] leading-10 font-bold text-indigo-700 tabular-nums">{detail.icp_score}</div>
+                <div className="text-[12.5px] text-[var(--muted)]">ICP 匹配分</div>
+                <div className="mt-0.5 text-[30px] font-normal leading-9 tabular-nums text-[var(--accent)]">
+                  {detail.icp_score}
+                </div>
               </div>
               <div className="text-right">
-                <div className="text-[11.5px] text-slate-400">意图分（时间衰减）</div>
-                <div className={`text-[34px] leading-10 font-bold tabular-nums ${detail.intent_score > 0 ? "text-rose-500" : "text-slate-300"}`}>
+                <div className="text-[12.5px] text-[var(--muted)]">意图分（30 天半衰）</div>
+                <div
+                  className={`mt-0.5 text-[30px] font-normal leading-9 tabular-nums ${
+                    detail.intent_score > 0 ? "text-[var(--negative)]" : "text-[#b6b9bb]"
+                  }`}
+                >
                   {detail.intent_score}
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-[11.5px] text-slate-400">线索等级</div>
-                <div className="mt-1.5">
-                  {GRADE_TAG[grade] ? (
-                    <Tag color={GRADE_TAG[grade].color} type="solid" size="large">
-                      {GRADE_TAG[grade].label}
-                    </Tag>
-                  ) : (
-                    <span className="text-slate-300 text-[15px]">-</span>
-                  )}
-                  <div className="text-[10.5px] text-slate-400 mt-1">综合 {composite.toFixed(1)}（ICP×0.4＋意图×0.6）</div>
+                <div className="text-[12.5px] text-[var(--muted)]">线索等级</div>
+                <div className="mt-1 text-[20px] font-medium leading-7 text-[var(--ink)]">
+                  {grade !== "-" ? grade : "—"}
                 </div>
+                <div className="text-[11px] text-[#8a8d8f]">综合 {composite.toFixed(1)}</div>
               </div>
             </div>
             {detail.icp_reasons.length > 0 && (
-              <Collapse className="!mt-4 !bg-white/70 !rounded-xl" defaultActiveKey={["reasons"]}>
+              <Collapse className="!mt-4 !bg-white" defaultActiveKey={["reasons"]}>
                 <Collapse.Panel header={`评分理由（${detail.icp_reasons.length} 条）`} itemKey="reasons">
                   <div className="space-y-1.5">
                     {detail.icp_reasons.map((r, i) => (
                       <div key={i} className="flex items-center justify-between text-[13px]">
-                        <span className="text-slate-600">{r.rule}</span>
-                        <span className="font-semibold text-indigo-600 tabular-nums">+{r.points}</span>
+                        <span className="text-[var(--muted)]">{r.rule}</span>
+                        <span className="tabular-nums font-medium text-[var(--ink)]">+{r.points}</span>
                       </div>
                     ))}
                   </div>
@@ -157,24 +159,22 @@ export default function EnterpriseDrawer({ open, enterpriseId, onClose, onConver
             )}
           </section>
 
-          {/* 经营范围 */}
           {detail.business_scope && (
             <section>
-              <h3 className="text-[13px] font-semibold text-slate-400 tracking-wide mb-2">经营范围</h3>
-              <p className="text-[13px] text-slate-600 leading-6 whitespace-pre-wrap bg-slate-50 rounded-xl p-3.5">
+              <h3 className="mb-2 text-[12.5px] font-normal text-[var(--muted)]">经营范围</h3>
+              <p className="whitespace-pre-wrap rounded-lg bg-[var(--raised)] p-3.5 text-[13px] leading-6 text-[var(--ink)]">
                 {detail.business_scope}
               </p>
             </section>
           )}
 
-          {/* 信号 */}
           <section>
-            <h3 className="text-[13px] font-semibold text-slate-400 tracking-wide mb-3">
-              意图信号（{detail.signals?.length ?? 0} 条）
+            <h3 className="mb-3 text-[12.5px] font-normal text-[var(--muted)]">
+              意图信号（{detail.signals?.length ?? 0}）
             </h3>
             {(detail.signals?.length ?? 0) === 0 ? (
-              <div className="text-[13px] text-slate-400 bg-slate-50 rounded-xl p-4">
-                暂无信号 —— 该企业尚未命中设备采购相关公告
+              <div className="rounded-lg bg-[var(--raised)] p-4 text-[13px] text-[var(--muted)]">
+                暂无命中 —— 该企业尚未出现在设备采购相关公告中
               </div>
             ) : (
               <Timeline mode="left">
@@ -182,33 +182,28 @@ export default function EnterpriseDrawer({ open, enterpriseId, onClose, onConver
                   <Timeline.Item
                     key={s.id}
                     time={s.pub_date || "日期未知"}
-                    dot={<span className="w-2 h-2 rounded-full bg-rose-500 inline-block shadow-[0_0_0_3px_#fecdd3]" />}
+                    dot={<span className="inline-block h-2 w-2 rounded-full bg-[var(--negative)]" />}
                   >
-                    <div className="text-[13.5px] font-medium text-slate-700 leading-5">
+                    <div className="text-[13.5px] font-medium leading-5 text-[var(--ink)]">
                       {s.url ? (
-                        <a href={s.url} target="_blank" rel="noreferrer" className="hover:text-indigo-600 inline-flex items-center gap-1">
-                          {s.title} <ExternalLink size={12} className="text-slate-300" />
+                        <a href={s.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-[var(--accent)]">
+                          {s.title} <ExternalLink size={12} className="text-[#9ca0a3]" />
                         </a>
                       ) : (
                         s.title
                       )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                      <Tag color="red" type="light" size="small">
-                        <Zap size={10} className="inline mr-0.5 -mt-0.5" />
-                        {s.base_score} 分
-                      </Tag>
+                    <div className="mt-1 flex flex-wrap items-center gap-1">
+                      <Tag color="red" type="light" size="small">{s.base_score} 分</Tag>
                       {s.matched_terms.map((t) => (
-                        <Tag key={t} color="orange" type="light" size="small">
-                          {t}
-                        </Tag>
+                        <Tag key={t} color="orange" type="light" size="small">{t}</Tag>
                       ))}
-                      <Tag color="grey" type="light" size="small">
-                        {s.hit_part === "title" ? "标题命中" : "正文命中"}
-                      </Tag>
+                      <Tag color="grey" type="light" size="small">{s.hit_part === "title" ? "标题命中" : "正文命中"}</Tag>
                     </div>
                     {s.raw_excerpt && (
-                      <p className="text-[12px] text-slate-400 leading-5 mt-1.5 bg-slate-50 rounded-lg px-3 py-2">{s.raw_excerpt}</p>
+                      <p className="mt-1.5 rounded-md bg-[var(--raised)] px-3 py-2 text-[12px] leading-5 text-[var(--muted)]">
+                        {s.raw_excerpt}
+                      </p>
                     )}
                   </Timeline.Item>
                 ))}

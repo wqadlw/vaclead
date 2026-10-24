@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button, Input, InputNumber, Select, Table, Tag, Toast } from "@douyinfe/semi-ui";
-import { motion } from "framer-motion";
-import { RotateCcw, Search } from "lucide-react";
+import { Search, RotateCcw } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import EnterpriseDrawer from "@/components/EnterpriseDrawer";
 import { api } from "@/lib/api";
@@ -20,21 +19,18 @@ const PROVINCE_OPTIONS = [
 ].map((p) => ({ value: p, label: p }));
 
 const INDUSTRY_SELECT = INDUSTRY_OPTIONS.map((i) => ({ value: i.key, label: i.name }));
-
 const SIGNAL_DAY_OPTIONS = [
   { value: 7, label: "近 7 天" },
   { value: 30, label: "近 30 天" },
   { value: 90, label: "近 90 天" },
   { value: 365, label: "近一年" },
 ];
-
 const SCORE_MIN_OPTIONS = [
   { value: 40, label: "≥ 40 分" },
   { value: 60, label: "≥ 60 分" },
   { value: 80, label: "≥ 80 分" },
 ];
-
-/** 后端语义：is_competitor=0 排除同行；1 仅看同行；-1 不筛选（含同行，置灰展示）。 */
+/** 后端语义：0 排除同行；1 仅同行；-1 含同行（置灰展示）。 */
 const COMPETITOR_OPTIONS = [
   { value: -1, label: "含同行" },
   { value: 0, label: "排除同行" },
@@ -124,11 +120,11 @@ export default function EnterprisesPage() {
     {
       title: "企业名称",
       dataIndex: "name",
-      width: 250,
+      width: 260,
       render: (_: unknown, r: Enterprise) => (
         <button
           onClick={() => setDrawerId(r.id)}
-          className="text-indigo-600 hover:text-indigo-500 font-medium cursor-pointer bg-transparent border-0 p-0 text-[13.5px] truncate max-w-[230px] block text-left"
+          className="block max-w-[240px] cursor-pointer truncate border-0 bg-transparent p-0 text-left text-[13.5px] font-medium text-[var(--ink)] hover:text-[var(--accent)]"
           title={r.name}
         >
           {r.name}
@@ -138,7 +134,7 @@ export default function EnterprisesPage() {
     {
       title: "行业",
       dataIndex: "industry_name",
-      width: 140,
+      width: 130,
       render: (_: unknown, r: Enterprise) =>
         r.is_competitor === 1 ? (
           <Tag color="amber" type="light">疑似同行</Tag>
@@ -148,146 +144,132 @@ export default function EnterprisesPage() {
           </Tag>
         ),
     },
-    { title: "地区", width: 150, render: (_: unknown, r: Enterprise) => <span className="text-slate-600">{regionOf(r)}</span> },
+    { title: "地区", width: 140, render: (_: unknown, r: Enterprise) => <span className="text-[var(--muted)]">{regionOf(r)}</span> },
     {
-      title: "注册资本",
+      title: "注册资本（万）",
       dataIndex: "registered_capital_wan",
-      width: 110,
-      render: (v: number | null) => <span className="tabular-nums text-slate-600">{v == null ? "-" : `${v.toLocaleString("zh-CN")} 万`}</span>,
+      width: 130,
+      align: "right" as const,
+      render: (v: number | null) => <span className="tabular-nums text-[var(--muted)]">{v == null ? "—" : v.toLocaleString("zh-CN")}</span>,
     },
     {
-      title: "ICP 分",
+      title: "ICP",
       dataIndex: "icp_score",
-      width: 80,
+      width: 70,
+      align: "right" as const,
       sorter: (a: Enterprise, b: Enterprise) => a.icp_score - b.icp_score,
-      render: (v: number) => <span className="font-semibold text-slate-700 tabular-nums">{v}</span>,
+      render: (v: number) => <span className="tabular-nums text-[var(--ink)]">{v}</span>,
     },
     {
-      title: "意图分",
+      title: "意图",
       dataIndex: "intent_score",
-      width: 80,
+      width: 70,
+      align: "right" as const,
       sorter: (a: Enterprise, b: Enterprise) => a.intent_score - b.intent_score,
       render: (v: number) => (
-        <span className={`tabular-nums font-medium ${v > 0 ? "text-rose-500" : "text-slate-400"}`}>{v}</span>
+        <span className={`tabular-nums ${v > 0 ? "font-medium text-[var(--accent)]" : "text-[#9ca0a3]"}`}>{v}</span>
       ),
     },
-    { title: "信号", dataIndex: "signal_count", width: 60, render: (v: number) => (v > 0 ? <Tag color="red" type="solid">{v}</Tag> : <span className="text-slate-300">0</span>) },
     {
-      title: "操作",
+      title: "信号",
+      dataIndex: "signal_count",
+      width: 64,
+      align: "right" as const,
+      render: (v: number) => (v > 0 ? <span className="font-medium tabular-nums text-[var(--negative)]">{v}</span> : <span className="tabular-nums text-[#9ca0a3]">0</span>),
+    },
+    {
+      title: "",
       width: 90,
       render: (_: unknown, r: Enterprise) =>
         r.is_competitor === 1 ? (
-          <span className="text-slate-300 text-[12.5px]">不可转</span>
+          <span className="text-[12.5px] text-[#9ca0a3]">不可转</span>
         ) : (
-          <Button size="small" theme="outline" loading={convertingId === r.id} onClick={() => convert(r)}>
-            转线索
-          </Button>
+          <button
+            onClick={() => convert(r)}
+            disabled={convertingId === r.id}
+            className="cursor-pointer border-0 bg-transparent p-0 text-[13px] font-medium text-[var(--ink)] hover:text-[var(--accent)] disabled:opacity-50"
+          >
+            {convertingId === r.id ? "转入中…" : "转线索 →"}
+          </button>
         ),
     },
   ];
 
-  const selectStyle = { width: 130 };
+  const ctl = { width: 128 };
 
   return (
     <AppShell>
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-      >
-        {/* 筛选栏 */}
-        <div className="rounded-2xl bg-white border border-slate-100 shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.12)] p-4 flex flex-wrap items-center gap-x-4 gap-y-3">
-          <Select
-            style={selectStyle}
-            optionList={INDUSTRY_SELECT}
-            placeholder="全部行业"
-            filter
-            showClear
-            value={filters.industry_key}
-            onChange={(v) => set({ industry_key: v as string })}
-          />
-          <Select
-            style={selectStyle}
-            optionList={PROVINCE_OPTIONS}
-            placeholder="全部省份"
-            filter
-            showClear
-            value={filters.province}
-            onChange={(v) => set({ province: (v as string) || undefined })}
-          />
-          <Input style={{ width: 110 }} placeholder="城市，如：苏州" value={filters.city} onChange={(v) => set({ city: v })} />
-          <Input style={{ width: 110 }} placeholder="区县，如：昆山市" value={filters.district} onChange={(v) => set({ district: v })} />
-          <div className="flex items-center gap-1.5">
-            <InputNumber style={{ width: 96 }} placeholder="最低" min={0} value={filters.capital_min ?? undefined} onChange={(v) => set({ capital_min: typeof v === "number" ? v : null })} />
-            <span className="text-slate-300">~</span>
-            <InputNumber style={{ width: 96 }} placeholder="最高" min={0} value={filters.capital_max ?? undefined} onChange={(v) => set({ capital_max: typeof v === "number" ? v : null })} />
-            <span className="text-[12px] text-slate-400">万</span>
-          </div>
-          <Select style={selectStyle} optionList={SIGNAL_DAY_OPTIONS} placeholder="信号不限" showClear value={filters.signal_days ?? undefined} onChange={(v) => set({ signal_days: typeof v === "number" ? v : null })} />
-          <Select style={selectStyle} optionList={SCORE_MIN_OPTIONS} placeholder="评分不限" showClear value={filters.score_min ?? undefined} onChange={(v) => set({ score_min: typeof v === "number" ? v : null })} />
-          <Select style={selectStyle} optionList={COMPETITOR_OPTIONS} value={filters.is_competitor} onChange={(v) => set({ is_competitor: (v as number) ?? -1 })} />
-          <Input
-            style={{ width: 230 }}
-            prefix={<Search size={14} className="text-slate-300" />}
-            placeholder="企业名 / 经营范围关键词"
-            value={filters.q}
-            onChange={(v) => set({ q: v })}
-            onKeyDown={(e) => {
-              if (e.keyCode === 13) {
-                setPage(1);
-                setApplied(filters);
-              }
-            }}
-          />
-          <Button
-            theme="solid"
-            icon={<Search size={14} />}
-            onClick={() => {
+      {/* 标题行 */}
+      <div className="flex items-end justify-between">
+        <div>
+          <h1 className="text-[22px] font-semibold leading-7 text-[var(--ink)]">企业筛选</h1>
+          <p className="mt-1 text-[13.5px] text-[var(--muted)]">
+            共 {data?.total ?? 0} 家 · 疑似同行已置灰 · 点击企业名查看评分理由与信号
+          </p>
+        </div>
+      </div>
+
+      {/* 工具行：左侧筛选+搜索，右侧重置 */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Select style={ctl} optionList={INDUSTRY_SELECT} placeholder="全部行业" filter showClear value={filters.industry_key} onChange={(v) => set({ industry_key: (v as string) || undefined })} />
+        <Select style={ctl} optionList={PROVINCE_OPTIONS} placeholder="全部省份" filter showClear value={filters.province} onChange={(v) => set({ province: (v as string) || undefined })} />
+        <Input style={{ width: 104 }} placeholder="城市" value={filters.city} onChange={(v) => set({ city: v })} />
+        <Input style={{ width: 104 }} placeholder="区县" value={filters.district} onChange={(v) => set({ district: v })} />
+        <div className="flex items-center gap-1">
+          <InputNumber style={{ width: 84 }} placeholder="资本≥" min={0} value={filters.capital_min ?? undefined} onChange={(v) => set({ capital_min: typeof v === "number" ? v : null })} />
+          <span className="text-[var(--control)]">—</span>
+          <InputNumber style={{ width: 84 }} placeholder="≤" min={0} value={filters.capital_max ?? undefined} onChange={(v) => set({ capital_max: typeof v === "number" ? v : null })} />
+        </div>
+        <Select style={ctl} optionList={SIGNAL_DAY_OPTIONS} placeholder="信号不限" showClear value={filters.signal_days ?? undefined} onChange={(v) => set({ signal_days: typeof v === "number" ? v : null })} />
+        <Select style={ctl} optionList={SCORE_MIN_OPTIONS} placeholder="评分不限" showClear value={filters.score_min ?? undefined} onChange={(v) => set({ score_min: typeof v === "number" ? v : null })} />
+        <Select style={ctl} optionList={COMPETITOR_OPTIONS} value={filters.is_competitor} onChange={(v) => set({ is_competitor: (v as number) ?? -1 })} />
+        <Input
+          style={{ width: 210 }}
+          prefix={<Search size={13} className="text-[#9ca0a3]" />}
+          placeholder="名称 / 经营范围关键词"
+          value={filters.q}
+          onChange={(v) => set({ q: v })}
+          onKeyDown={(e) => {
+            if (e.keyCode === 13) {
               setPage(1);
               setApplied(filters);
-            }}
-          >
-            查询
-          </Button>
-          <Button
-            theme="borderless"
-            type="tertiary"
-            icon={<RotateCcw size={13} />}
-            onClick={() => {
-              const reset: Filters = { is_competitor: -1 };
-              setFilters(reset);
-              setPage(1);
-              setApplied(reset);
-            }}
-          />
-        </div>
+            }
+          }}
+        />
+        <Button theme="solid" className="!h-8" onClick={() => { setPage(1); setApplied(filters); }}>
+          查询
+        </Button>
+        <Button
+          theme="borderless"
+          type="tertiary"
+          icon={<RotateCcw size={13} />}
+          onClick={() => {
+            const reset: Filters = { is_competitor: -1 };
+            setFilters(reset);
+            setPage(1);
+            setApplied(reset);
+          }}
+        />
+      </div>
 
-        {/* 结果表 */}
-        <div className="mt-4 rounded-2xl bg-white border border-slate-100 shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.12)] p-2">
-          <div className="px-3 py-2.5 flex items-center justify-between">
-            <span className="text-[13px] text-slate-500">
-              共 <b className="text-slate-700">{data?.total ?? 0}</b> 家企业
-              {applied.q ? <>，关键词「{applied.q}」</> : null}
-            </span>
-            <span className="text-[12px] text-slate-400">疑似同行已置灰 · 点击企业名查看详情</span>
-          </div>
-          <Table<Enterprise>
-            rowKey="id"
-            columns={columns as never}
-            dataSource={data?.items ?? []}
-            loading={loading}
-            size="middle"
-            empty="没有匹配的企业 —— 试试放宽筛选条件，或先去「拓客任务」采集数据"
-            onRow={(r) => ({ className: r?.is_competitor === 1 ? "opacity-50 saturate-50" : "" })}
-            pagination={{
-              currentPage: page,
-              pageSize: PAGE_SIZE,
-              total: data?.total ?? 0,
-              onPageChange: (p: number) => setPage(p),
-            }}
-          />
-        </div>
-      </motion.div>
+      {/* 表格直接落在纸上 */}
+      <div className="mt-4">
+        <Table<Enterprise>
+          rowKey="id"
+          columns={columns as never}
+          dataSource={data?.items ?? []}
+          loading={loading}
+          size="middle"
+          empty="没有匹配的企业 —— 放宽筛选条件，或先去「拓客任务」采集数据"
+          onRow={(r) => ({ className: r?.is_competitor === 1 ? "opacity-45 saturate-50" : "" })}
+          pagination={{
+            currentPage: page,
+            pageSize: PAGE_SIZE,
+            total: data?.total ?? 0,
+            onPageChange: (p: number) => setPage(p),
+          }}
+        />
+      </div>
 
       <EnterpriseDrawer
         open={drawerId !== null}

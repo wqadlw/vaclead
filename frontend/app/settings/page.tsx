@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button, Card, Descriptions, Form, Input, Table, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
-import { motion } from "framer-motion";
 import { Bot, KeyRound } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
@@ -79,15 +78,12 @@ export default function SettingsPage() {
     }
   };
 
-  const tabClass =
-    "!rounded-2xl !border-0 !shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.12)]";
-
   return (
     <AppShell>
-      <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}>
+      <div>
         <Tabs
           type="line"
-          className="bg-white !rounded-2xl !border-0 !shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.14)] !px-2"
+          className="rounded-xl border border-[var(--border)] bg-white !px-2"
           tabList={[
             { tab: "数据源 Key", itemKey: "keys" },
             { tab: "词表预览", itemKey: "vocab" },
@@ -98,7 +94,7 @@ export default function SettingsPage() {
           {/* Keys */}
           <div className="p-6 max-w-[560px]">
             <div className="text-[13px] text-slate-500 mb-5 leading-6">
-              高德 Key 用于地图拓客（<a className="text-indigo-600" href="https://lbs.amap.com" target="_blank" rel="noreferrer">lbs.amap.com</a> 申请），
+              高德 Key 用于地图拓客（<a className="text-[var(--accent)]" href="https://lbs.amap.com" target="_blank" rel="noreferrer">lbs.amap.com</a> 申请），
               知了标讯 Key 用于招标自动采集。未配置时对应功能禁用、CSV 导入兜底。
             </div>
             <Descriptions
@@ -191,7 +187,7 @@ export default function SettingsPage() {
           {/* 后端切换 */}
           <div className="p-6">
             <div className="flex items-center gap-2 text-[14px] font-medium text-slate-700 mb-4">
-              <Bot size={16} className="text-indigo-500" /> Agent 后端实现
+              <Bot size={16} className="text-[var(--accent)]" /> Agent 后端实现
             </div>
             <div className="max-w-[520px] space-y-2">
               {Object.entries(settings?.agent_backends ?? {}).map(([name, backend]) => (
@@ -208,7 +204,7 @@ export default function SettingsPage() {
             </p>
           </div>
         </Tabs>
-      </motion.div>
+      </div>
     </AppShell>
   );
 }

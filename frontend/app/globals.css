@@ -2,57 +2,152 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   vaclead · framed-sheet 设计系统
+   依据 taste-skill app-screens 规则（seed 910048657）：
+   浅色 L 框架 + 白纸；扁平无阴影；色彩只给数据与品牌标记。
+   ============================================================ */
 :root {
-  /* Semi Design 主色重铸：靛蓝紫 */
-  --semi-color-primary: #4f46e5;
-  --semi-color-primary-hover: #4338ca;
-  --semi-color-primary-active: #3730a3;
-  --semi-color-focus-border: #6366f1;
-  --semi-color-link: #4f46e5;
-  --semi-color-link-hover: #4338ca;
+  /* framed-sheet tokens */
+  --ground: #f3f6f8; /* 钢青灰框架底（工业设备的世界色） */
+  --surface: #ffffff;
+  --raised: #f4f6f8;
+  --active: #ebedee;
+  --border: #e8eaec;
+  --rule: #f0f1f2;
+  --control: #cdced1;
+  --ink: #131416;
+  --muted: #5d5f60;
+  --accent: #1b6c80;
+  --positive: #1e7b4f;
+  --negative: #c4242a;
+  --warning: #92400e;
+
+  /* Semi Design 变量对齐 */
+  --semi-color-primary: #1b6c80;
+  --semi-color-primary-hover: #155a6b;
+  --semi-color-primary-active: #114f5e;
+  --semi-color-text-0: #131416;
+  --semi-color-text-1: #131416;
+  --semi-color-text-2: #5d5f60;
+  --semi-color-text-3: #5d5f60;
+  --semi-color-border: #e8eaec;
+  --semi-color-fill-0: rgba(19, 20, 22, 0.04);
+  --semi-color-fill-1: rgba(19, 20, 22, 0.07);
+  --semi-color-fill-2: rgba(19, 20, 22, 0.1);
+  --semi-color-bg-0: #ffffff;
+  --semi-color-bg-1: #f4f6f8;
+  --semi-color-link: #1b6c80;
+  --semi-border-radius-small: 4px;
+  --semi-border-radius-medium: 6px;
+  --semi-border-radius-large: 8px;
 }
 
 html,
 body {
-  background: #f3f4f9;
-  font-family:
-    -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
-  color: #1e293b;
-}
-
-/* 细滚动条 */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 8px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", -apple-system, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  font-size: 14px;
 }
 
 ::selection {
-  background: #c7d2fe;
-  color: #1e1b4b;
+  background: #cfe3e9;
+  color: #0f2e38;
 }
 
-/* 登录页入场动画（纯 CSS，无水合依赖） */
+/* ---- Semi 扁平化覆盖 ---- */
+
+/* 主按钮 = 近黑（色彩预算：品牌色只给 logo/下划线/数据） */
+.semi-button-primary {
+  background: #131416 !important;
+  color: #fff !important;
+  border-color: #131416 !important;
+}
+.semi-button-primary:hover {
+  background: #2a2c2e !important;
+}
+.semi-button-primary:active {
+  background: #3a3c3e !important;
+}
+
+/* 卡片：1px 边 + 无阴影 */
+.semi-card {
+  border: 1px solid var(--border) !important;
+  box-shadow: none !important;
+  border-radius: 8px !important;
+}
+
+/* 表格：表头灰字无底无线，行线 3% 深，数字列右对齐由页面控制 */
+.semi-table-thead > tr > th {
+  background: transparent !important;
+  border-bottom: none !important;
+  color: #5d5f60 !important;
+  font-weight: 400 !important;
+  font-size: 12.5px !important;
+}
+.semi-table-tbody > tr > td {
+  border-bottom: 1px solid var(--rule) !important;
+  background: transparent !important;
+  font-size: 13.5px !important;
+}
+.semi-table-row:hover > td,
+.semi-table-row:hover > td.semi-table-cell {
+  background: var(--raised) !important;
+}
+
+/* Tabs：2px 下划线指示器用品牌青蓝 */
+.semi-tabs-bar-line .semi-tabs-tab-active {
+  color: var(--ink) !important;
+  font-weight: 500 !important;
+}
+.semi-tabs-bar .semi-tabs-indicator {
+  background: var(--accent) !important;
+}
+
+/* 输入控件 1px 更深边（筛选/选择层） */
+.semi-input-wrapper,
+.semi-select,
+.semi-input-number {
+  border-radius: 6px;
+}
+
+/* 侧栏激活项：中性灰胶囊 */
+.nav-pill {
+  background: var(--active);
+  color: var(--ink);
+}
+
+/* 动画反馈（app 屏幕规则：动效仅用于反馈，无入场表演） */
+.semi-button,
+.semi-input-wrapper,
+.semi-select,
+.nav-item,
+a {
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+/* 登录页纯 CSS 入场（页面级允许一次入场编排） */
 @keyframes fadein {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 @keyframes riseup {
-  from { opacity: 0; transform: translateY(16px); }
+  from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.animate-fadein {
-  animation: fadein 0.7s ease-out both;
+.animate-fadein { animation: fadein 0.6s ease-out both; }
+.animate-riseup { animation: riseup 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fadein,
+  .animate-riseup {
+    animation: none;
+  }
 }
-.animate-riseup {
-  animation: riseup 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--control); border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }

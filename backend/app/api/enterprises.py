@@ -260,10 +260,30 @@ def dashboard(
         }
         for lead, ent in pending
     ]
+
+    recent_rows = (
+        session.query(Signal, Enterprise)
+        .join(Enterprise, Signal.enterprise_id == Enterprise.id)
+        .order_by(Signal.pub_date.desc(), Signal.id.desc())
+        .limit(5)
+        .all()
+    )
+    recent_signals = [
+        {
+            "signal_id": s.id,
+            "title": s.title,
+            "enterprise_id": e.id,
+            "enterprise_name": e.name,
+            "pub_date": s.pub_date,
+            "base_score": s.base_score,
+        }
+        for s, e in recent_rows
+    ]
     return {
         "total_enterprises": total_enterprises,
         "total_signals": total_signals,
         "signals_7d": signals_7d,
         "my_leads_by_status": my_leads,
         "pending_followups": pending_list,
+        "recent_signals": recent_signals,
     }

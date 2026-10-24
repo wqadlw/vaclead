@@ -2,7 +2,6 @@
 
 import { useRef, useState } from "react";
 import { Button, Card, Progress, Select, Toast } from "@douyinfe/semi-ui";
-import { motion } from "framer-motion";
 import { CloudUpload, FileSpreadsheet, Rocket, ScrollText } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
@@ -104,7 +103,7 @@ export default function TasksPage() {
           e.currentTarget.value = "";
         }}
       />
-      <FileSpreadsheet className="mx-auto text-indigo-400" size={22} />
+      <FileSpreadsheet className="mx-auto text-[var(--accent)]" size={22} />
       <div className="text-[13.5px] font-medium text-slate-700 mt-2">{title}</div>
       <div className="text-[11.5px] text-slate-400 mt-1 leading-5">{hint}</div>
     </label>
@@ -112,21 +111,15 @@ export default function TasksPage() {
 
   return (
     <AppShell>
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-        className="grid grid-cols-1 xl:grid-cols-2 gap-4"
-      >
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {/* 左列 */}
         <div className="space-y-4">
           <Card
             title={
-              <span className="flex items-center gap-2 text-[14.5px] font-semibold text-slate-700">
-                <Rocket size={16} className="text-indigo-500" /> 高德 POI 地图拓客
+              <span className="flex items-center gap-2 text-[14.5px] font-medium text-[var(--ink)]">
+                <Rocket size={16} className="text-[var(--accent)]" /> 高德 POI 地图拓客
               </span>
             }
-            className="!rounded-2xl !border-0 !shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.12)]"
           >
             <div className="flex gap-3 items-center">
               <Select
@@ -154,11 +147,10 @@ export default function TasksPage() {
 
           <Card
             title={
-              <span className="flex items-center gap-2 text-[14.5px] font-semibold text-slate-700">
-                <CloudUpload size={16} className="text-indigo-500" /> CSV 数据导入
+              <span className="flex items-center gap-2 text-[14.5px] font-medium text-[var(--ink)]">
+                <CloudUpload size={16} className="text-[var(--accent)]" /> CSV 数据导入
               </span>
             }
-            className="!rounded-2xl !border-0 !shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.12)]"
           >
             <div className="grid grid-cols-1 gap-3">
               <Dropzone
@@ -179,11 +171,11 @@ export default function TasksPage() {
         <Card
           title={
             <span className="flex items-center gap-2 text-[14.5px] font-semibold text-slate-700">
-              <ScrollText size={16} className="text-indigo-500" /> 实时进度
+              <ScrollText size={16} className="text-[var(--accent)]" /> 实时进度
             </span>
           }
-          className="!rounded-2xl !border-0 !shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.12)] self-start"
-        >
+            className="self-start"
+          >
           {progress === null ? (
             <div className="text-[13px] text-slate-400 py-10 text-center">
               尚无运行中的任务 —— 启动 POI 采集或导入 CSV 后这里会实时滚动日志
@@ -197,7 +189,7 @@ export default function TasksPage() {
             </>
           )}
         </Card>
-      </motion.div>
+      </div>
     </AppShell>
   );
 }

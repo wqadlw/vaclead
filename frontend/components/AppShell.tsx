@@ -3,27 +3,26 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Avatar, Dropdown } from "@douyinfe/semi-ui";
-import { motion } from "framer-motion";
 import {
-  LayoutDashboard,
+  Gauge,
   LogOut,
   Radar,
+  Rocket,
   Search,
   Settings,
   UserRound,
-  Zap,
 } from "lucide-react";
 import { getToken, logout } from "@/lib/api";
 import { BRAND, PAGE_TITLES } from "@/lib/theme";
 
 const NAV = [
-  { href: "/", label: "工作台", icon: LayoutDashboard },
+  { href: "/", label: "工作台", icon: Gauge },
   { href: "/enterprises", label: "企业筛选", icon: Search },
   { href: "/leads", label: "线索看板", icon: Radar },
 ];
 
 const ADMIN_NAV = [
-  { href: "/tasks", label: "拓客任务", icon: Zap },
+  { href: "/tasks", label: "拓客任务", icon: Rocket },
   { href: "/settings", label: "设置", icon: Settings },
 ];
 
@@ -47,12 +46,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f3f4f9]">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-          className="h-9 w-9 rounded-full border-[3px] border-indigo-200 border-t-indigo-600"
-        />
+      <div className="flex min-h-screen items-center justify-center bg-[var(--ground)]">
+        <div className="text-[13px] text-[var(--muted)]">加载中…</div>
       </div>
     );
   }
@@ -60,20 +55,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const navItems = role === "admin" ? [...NAV, ...ADMIN_NAV] : NAV;
 
   return (
-    <div className="min-h-screen">
-      {/* 侧边栏 */}
-      <aside className="fixed inset-y-0 left-0 z-30 w-[212px] flex flex-col bg-[#0e1230]">
-        <div className="flex items-center gap-2.5 px-5 h-[60px] border-b border-white/5">
-          <div className="w-8 h-8 rounded-[10px] bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-950/60">
-            <Radar className="w-[17px] h-[17px] text-white" strokeWidth={2.4} />
+    <div className="min-h-screen bg-[var(--ground)]">
+      {/* 侧栏：浅色框架，与顶栏同底无界线（L 框架） */}
+      <aside className="fixed inset-y-0 left-0 z-30 flex w-[228px] flex-col">
+        <div className="flex items-center gap-2.5 px-5 pt-5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--accent)]">
+            <Radar className="h-[16px] w-[16px] text-white" strokeWidth={2.2} />
           </div>
           <div className="leading-tight">
-            <div className="text-white font-bold tracking-wide text-[15px]">{BRAND.name}</div>
-            <div className="text-[9px] text-indigo-300/50 tracking-[0.13em]">{BRAND.tagline}</div>
+            <div className="text-[15px] font-semibold text-[var(--ink)]">{BRAND.name}</div>
+            <div className="text-[11px] text-[var(--muted)]">{BRAND.subtitle}</div>
           </div>
         </div>
 
-        <nav className="flex-1 px-3 pt-4 space-y-1 overflow-y-auto">
+        <nav className="mt-6 flex-1 space-y-0.5 px-3">
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
@@ -81,34 +76,28 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 key={href}
                 data-nav={href}
                 onClick={() => router.push(href)}
-                className={`relative w-full flex items-center gap-2.5 rounded-[10px] px-3.5 py-[9px] text-[13.5px] cursor-pointer transition-colors ${
-                  active ? "text-white font-medium" : "text-indigo-200/60 hover:text-indigo-100 hover:bg-white/5"
+                className={`nav-item flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-[7px] text-left text-[13.5px] ${
+                  active
+                    ? "nav-pill font-medium"
+                    : "text-[var(--muted)] hover:bg-[rgba(19,20,22,0.04)] hover:text-[var(--ink)]"
                 }`}
               >
-                {active && (
-                  <motion.span
-                    layoutId="nav-pill"
-                    className="absolute inset-0 rounded-[10px] bg-gradient-to-r from-indigo-600/90 to-violet-600/80 shadow-lg shadow-indigo-950/50"
-                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                  />
-                )}
-                <Icon className="relative w-[16px] h-[16px]" strokeWidth={active ? 2.3 : 1.9} />
-                <span className="relative">{label}</span>
+                <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+                {label}
               </button>
             );
           })}
         </nav>
 
-        <div className="px-5 pb-5 text-[10px] text-indigo-300/30">v0.2 · Semi Design</div>
+        <div className="px-5 pb-4 text-[11px] text-[#9ca0a3]">
+          v0.3 · {role === "admin" ? "管理员" : "销售"}登录
+        </div>
       </aside>
 
-      {/* 主区域 */}
-      <div className="ml-[212px] min-h-screen flex flex-col">
-        <header className="sticky top-0 z-20 flex items-center justify-between px-7 h-[60px] bg-white/80 backdrop-blur-md border-b border-slate-200/70">
-          <div className="flex items-baseline gap-3">
-            <span className="text-[16px] font-semibold text-slate-800">{PAGE_TITLES[pathname] ?? ""}</span>
-            <span className="text-[12px] text-slate-400 hidden sm:inline">{BRAND.subtitle}</span>
-          </div>
+      {/* 主列：顶栏 + 白纸 */}
+      <div className="ml-[228px] flex min-h-screen flex-col">
+        <header className="sticky top-0 z-20 flex h-12 items-center justify-between bg-[var(--ground)] px-6">
+          <div className="text-[13px] text-[var(--muted)]">默认工作区 / 全国</div>
           <Dropdown
             trigger="click"
             position="bottomRight"
@@ -124,16 +113,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </Dropdown.Menu>
             }
           >
-            <span className="flex items-center gap-2.5 cursor-pointer select-none rounded-full pl-1 pr-3 py-1 hover:bg-slate-100 transition-colors">
-              <Avatar alt={user} size="extra-small" color="indigo">
-                {role === "admin" ? <UserRound size={13} /> : user.slice(0, 1)}
+            <span className="flex cursor-pointer select-none items-center gap-2 rounded-md py-1 pl-1 pr-2.5 hover:bg-[rgba(19,20,22,0.04)]">
+              <Avatar alt={user} size="extra-small" color="light-blue">
+                {role === "admin" ? <UserRound size={12} /> : user.slice(0, 1)}
               </Avatar>
-              <span className="text-[13px] text-slate-700">{user}</span>
+              <span className="text-[13px] text-[var(--ink)]">{user}</span>
             </span>
           </Dropdown>
         </header>
 
-        <main className="flex-1 p-6 max-w-[1440px] w-full mx-auto">{children}</main>
+        {/* 白纸：距右/下边缘 8px，1px 边，16px 圆角，无阴影 */}
+        <main className="mb-2 flex-1">
+          <div className="min-h-[calc(100vh-48px-8px)] rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-6 py-5">
+            {children}
+          </div>
+        </main>
       </div>
     </div>
   );

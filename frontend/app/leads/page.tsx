@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button, DatePicker, Form, Modal, Select, SideSheet, Table, Tabs, Tag, Timeline, Toast } from "@douyinfe/semi-ui";
-import { motion } from "framer-motion";
 import { PhoneCall } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
@@ -171,38 +170,36 @@ export default function LeadsPage() {
 
   return (
     <AppShell>
-      <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}>
-        <div className="rounded-2xl bg-white border border-slate-100 shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.12)] overflow-hidden">
-          <Tabs
-            type="button"
-            activeKey={tab}
-            onChange={(k) => {
-              setTab(k as string);
-              setPage(1);
-            }}
-            className="!px-4 !pt-3"
-            tabList={MY_TABS.map((s) => ({ tab: LEAD_STATUS[s].label, itemKey: s }))}
-          />
-          <Table<Lead>
-            rowKey="id"
-            columns={columns as never}
-            dataSource={data?.items ?? []}
-            loading={loading}
-            size="middle"
-            empty={
-              tab === "pool"
-                ? "公海暂时没有可领取的线索"
-                : "该状态下暂无线索 —— 去企业筛选页转化高分客户"
-            }
-            pagination={{
-              currentPage: page,
-              pageSize: 20,
-              total: data?.total ?? 0,
-              onPageChange: (p: number) => setPage(p),
-            }}
-          />
-        </div>
-      </motion.div>
+      <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-white">
+        <Tabs
+          type="line"
+          activeKey={tab}
+          onChange={(k) => {
+            setTab(k as string);
+            setPage(1);
+          }}
+          className="!px-4 !pt-1"
+          tabList={MY_TABS.map((s) => ({ tab: LEAD_STATUS[s].label, itemKey: s }))}
+        />
+        <Table<Lead>
+          rowKey="id"
+          columns={columns as never}
+          dataSource={data?.items ?? []}
+          loading={loading}
+          size="middle"
+          empty={
+            tab === "pool"
+              ? "公海暂时没有可领取的线索"
+              : "该状态下暂无线索 —— 去企业筛选页转化高分客户"
+          }
+          pagination={{
+            currentPage: page,
+            pageSize: 20,
+            total: data?.total ?? 0,
+            onPageChange: (p: number) => setPage(p),
+          }}
+        />
+      </div>
 
       {/* 跟进弹窗 */}
       <Modal
