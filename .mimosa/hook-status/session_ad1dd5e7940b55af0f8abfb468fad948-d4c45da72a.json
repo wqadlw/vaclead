@@ -1,14 +1,14 @@
 {
   "schemaVersion": "mimosa-hook-status/v1",
-  "recordedAt": "2026-10-24T12:30:41.271Z",
+  "recordedAt": "2026-10-24T12:31:39.855Z",
   "sessionId": "session_ad1dd5e7940b55af0f8abfb468fad948",
   "event": "PostToolUse",
-  "toolName": "Write",
-  "file": "frontend/lib/api.ts",
+  "toolName": "Edit",
+  "file": ".gitignore",
   "outcome": "clear",
   "coverage": "complete",
   "findingCount": 0,
-  "durationMs": 27,
+  "durationMs": 8,
   "hostState": "hook_complete",
   "reportHint": ".mimosa/reports/"
 }
