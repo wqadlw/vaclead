@@ -200,7 +200,12 @@ export default function EnterpriseDrawer({ open, enterpriseId, onClose, onConver
                       ))}
                       <Tag color="grey" type="light" size="small">{s.hit_part === "title" ? "标题命中" : "正文命中"}</Tag>
                     </div>
-                    {s.raw_excerpt && (
+                    {s.evidence_claim && (
+                      <p className="mt-1.5 border-l-2 border-[var(--accent)] pl-2.5 text-[12.5px] leading-5 text-[var(--ink)]">
+                        {s.evidence_claim}
+                      </p>
+                    )}
+                    {s.raw_excerpt && !s.evidence_claim && (
                       <p className="mt-1.5 rounded-md bg-[var(--raised)] px-3 py-2 text-[12px] leading-5 text-[var(--muted)]">
                         {s.raw_excerpt}
                       </p>

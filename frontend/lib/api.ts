@@ -143,6 +143,7 @@ export interface SignalItem {
   matched_terms: string[];
   hit_part: string;
   raw_excerpt: string;
+  evidence_claim?: string | null;
   base_score: number;
 }
 

@@ -173,6 +173,7 @@ def enterprise_detail(
                 "matched_terms": s.terms_list(),
                 "hit_part": s.hit_part,
                 "raw_excerpt": s.raw_excerpt,
+                "evidence_claim": s.evidence_claim,
                 "base_score": s.base_score,
             }
             for s in signals

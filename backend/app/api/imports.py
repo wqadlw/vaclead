@@ -228,6 +228,8 @@ async def import_tenders(
         if is_new:
             enterprises_created += 1
         excerpt = content[:200] if content else title
+        # 证据句（学 AI_Find_Customer evidence.claim）：标题本身即最可信的"要求买什么"
+        evidence_claim = (content or title).strip()[:80]
         sig = Signal(
             enterprise_id=ent.id,
             type="tender",
@@ -237,6 +239,7 @@ async def import_tenders(
             matched_terms="[]",
             hit_part=m["hit_part"],
             raw_excerpt=excerpt,
+            evidence_claim=evidence_claim,
             base_score=m["score"],
         )
         import json as _json
