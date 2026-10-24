@@ -1,20 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  Badge,
-  Button,
-  Card,
-  Descriptions,
-  Form,
-  Input,
-  message,
-  Table,
-  Tabs,
-  Tag,
-} from "antd";
+import { Button, Card, Descriptions, Form, Input, Table, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
+import { motion } from "framer-motion";
+import { Bot, KeyRound } from "lucide-react";
 import AppShell from "@/components/AppShell";
-import { api, PageData } from "@/lib/api";
+import { api } from "@/lib/api";
+import type { PageData } from "@/lib/api";
 import { INDUSTRY_OPTIONS } from "@/lib/constants";
 
 interface SettingsData {
@@ -45,7 +37,8 @@ export default function SettingsPage() {
   const [runs, setRuns] = useState<PageData<AgentRunRow> | null>(null);
   const [runPage, setRunPage] = useState(1);
   const [saving, setSaving] = useState(false);
-  const [form] = Form.useForm();
+  const [amapKey, setAmapKey] = useState("");
+  const [zhilKey, setZhilKey] = useState("");
 
   const loadSettings = useCallback(() => {
     api.get<SettingsData>("/api/settings").then(setSettings).catch(() => undefined);
@@ -64,147 +57,158 @@ export default function SettingsPage() {
   useEffect(() => loadSettings(), [loadSettings]);
   useEffect(() => loadRuns(runPage), [runPage, loadRuns]);
 
-  const saveKeys = async (values: { amap_key?: string; zhiliaoke_key?: string }) => {
+  const saveKeys = async () => {
+    if (!amapKey && !zhilKey) {
+      Toast.warning("请至少填写一个 Key");
+      return;
+    }
     setSaving(true);
     try {
-      await api.put("/api/settings", values);
-      message.success("已保存");
-      form.resetFields();
+      await api.put("/api/settings", {
+        amap_key: amapKey || undefined,
+        zhiliaoke_key: zhilKey || undefined,
+      });
+      Toast.success("已保存");
+      setAmapKey("");
+      setZhilKey("");
       loadSettings();
     } catch (e) {
-      message.error(e instanceof Error ? e.message : "保存失败");
+      Toast.error(e instanceof Error ? e.message : "保存失败");
     } finally {
       setSaving(false);
     }
   };
 
+  const tabClass =
+    "!rounded-2xl !border-0 !shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.12)]";
+
   return (
     <AppShell>
-      <Tabs
-        items={[
-          {
-            key: "keys",
-            label: "数据源 Key",
-            children: (
-              <Card title="外部服务密钥" style={{ maxWidth: 560 }}>
-                <Descriptions size="small" className="mb-4">
-                  <Descriptions.Item label="高德 Key">
-                    {settings?.amap_key_masked ? (
-                      <Tag color="green">{settings.amap_key_masked}</Tag>
-                    ) : (
-                      <Tag>未配置</Tag>
-                    )}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="知了标讯 Key">
-                    {settings?.zhiliaoke_key_masked ? (
-                      <Tag color="green">{settings.zhiliaoke_key_masked}</Tag>
-                    ) : (
-                      <Tag>未配置</Tag>
-                    )}
-                  </Descriptions.Item>
-                </Descriptions>
-                <Form form={form} layout="vertical" onFinish={saveKeys}>
-                  <Form.Item
-                    name="amap_key"
-                    label="高德 Web 服务 Key（多 Key 用英文逗号分隔）"
-                    extra="申请指引见 docs/SETUP.md"
-                  >
-                    <Input.Password placeholder="留空表示不修改" />
-                  </Form.Item>
-                  <Form.Item name="zhiliaoke_key" label="知了标讯 API Key">
-                    <Input.Password placeholder="留空表示不修改" />
-                  </Form.Item>
-                  <Button type="primary" htmlType="submit" loading={saving}>
-                    保存
-                  </Button>
-                </Form>
-              </Card>
-            ),
-          },
-          {
-            key: "vocab",
-            label: "词表预览",
-            children: (
-              <Card title="真空设备词表（config/vacuum.yaml）">
-                <p className="mb-2 font-medium">设备词（{DEVICE_TERMS_PREVIEW.length}+）</p>
-                <div className="mb-4">
-                  {DEVICE_TERMS_PREVIEW.map((t) => (
-                    <Tag key={t} color="geekblue">{t}</Tag>
-                  ))}
+      <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}>
+        <Tabs
+          type="line"
+          className="bg-white !rounded-2xl !border-0 !shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.14)] !px-2"
+          tabList={[
+            { tab: "数据源 Key", itemKey: "keys" },
+            { tab: "词表预览", itemKey: "vocab" },
+            { tab: "Agent 日志", itemKey: "agents" },
+            { tab: "后端切换", itemKey: "backends" },
+          ]}
+        >
+          {/* Keys */}
+          <div className="p-6 max-w-[560px]">
+            <div className="text-[13px] text-slate-500 mb-5 leading-6">
+              高德 Key 用于地图拓客（<a className="text-indigo-600" href="https://lbs.amap.com" target="_blank" rel="noreferrer">lbs.amap.com</a> 申请），
+              知了标讯 Key 用于招标自动采集。未配置时对应功能禁用、CSV 导入兜底。
+            </div>
+            <Descriptions
+              size="small"
+              className="!mb-5"
+              data={[
+                {
+                  key: "高德 Key",
+                  value: settings?.amap_key_masked ? <Tag color="green" type="light">{settings.amap_key_masked}</Tag> : <Tag color="grey" type="light">未配置</Tag>,
+                },
+                {
+                  key: "知了标讯 Key",
+                  value: settings?.zhiliaoke_key_masked ? <Tag color="green" type="light">{settings.zhiliaoke_key_masked}</Tag> : <Tag color="grey" type="light">未配置</Tag>,
+                },
+              ]}
+            />
+            <div className="space-y-3.5">
+              <div>
+                <div className="flex items-center gap-1.5 text-[13px] font-medium text-slate-600 mb-1.5">
+                  <KeyRound size={13} /> 高德 Web 服务 Key（多 Key 用英文逗号分隔）
                 </div>
-                <p className="mb-2 font-medium">下游行业（按优先级）</p>
-                <Descriptions size="small" bordered column={1}>
-                  {INDUSTRY_OPTIONS.map((i) => (
-                    <Descriptions.Item key={i.key} label={`${i.name}（tier ${i.tier}）`}>
-                      <Tag color={i.tier === 1 ? "geekblue" : i.tier === 2 ? "cyan" : "default"}>
-                        {i.key}
-                      </Tag>
-                    </Descriptions.Item>
-                  ))}
-                </Descriptions>
-              </Card>
-            ),
-          },
-          {
-            key: "agents",
-            label: "Agent 日志",
-            children: (
-              <Card title="Agent 工作日志">
-                <Table<AgentRunRow>
-                  rowKey="id"
-                  size="small"
-                  dataSource={runs?.items ?? []}
-                  pagination={{
-                    current: runPage,
-                    total: runs?.total ?? 0,
-                    pageSize: 15,
-                    onChange: setRunPage,
-                  }}
-                  columns={[
-                    { title: "Agent", dataIndex: "agent_name", width: 140 },
-                    {
-                      title: "后端",
-                      dataIndex: "backend",
-                      width: 80,
-                      render: (v) => (
-                        <Badge status={v === "rule" ? "default" : "processing"} text={v} />
-                      ),
-                    },
-                    { title: "决策摘要", dataIndex: "decision_summary", ellipsis: true },
-                    { title: "耗时", dataIndex: "duration_ms", width: 90, render: (v) => `${v}ms` },
-                    {
-                      title: "时间",
-                      dataIndex: "created_at",
-                      width: 150,
-                      render: (v) => String(v).slice(0, 19).replace("T", " "),
-                    },
-                  ]}
-                />
-              </Card>
-            ),
-          },
-          {
-            key: "backends",
-            label: "后端切换",
-            children: (
-              <Card title="Agent 后端实现（当前全部为规则引擎）">
-                <Descriptions size="small" bordered column={1} style={{ maxWidth: 480 }}>
-                  {Object.entries(settings?.agent_backends ?? { all: "rule" }).map(
-                    ([name, backend]) => (
-                      <Descriptions.Item key={name} label={name}>
-                        <Tag color={backend === "rule" ? "blue" : "purple"}>{backend}</Tag>
-                      </Descriptions.Item>
-                    ),
-                  )}
-                </Descriptions>
-                <p className="text-gray-400 text-xs mt-3">
-                  LLM 后端为 P2 预留位：配置 GLM/DeepSeek 等 OpenAI 兼容 Key 后可切换 signal_parser / icp_judge / query_translator。
-                </p>
-              </Card>
-            ),
-          },
-        ]}
-      />
+                <Input mode="password" placeholder="留空表示不修改" value={amapKey} onChange={setAmapKey} />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5 text-[13px] font-medium text-slate-600 mb-1.5">
+                  <KeyRound size={13} /> 知了标讯 API Key
+                </div>
+                <Input mode="password" placeholder="留空表示不修改" value={zhilKey} onChange={setZhilKey} />
+              </div>
+              <Button theme="solid" loading={saving} onClick={saveKeys}>
+                保存
+              </Button>
+            </div>
+          </div>
+
+          {/* 词表 */}
+          <div className="p-6">
+            <div className="text-[13.5px] font-medium text-slate-700 mb-3">设备词表（{DEVICE_TERMS_PREVIEW.length}+，config/vacuum.yaml）</div>
+            <div className="flex flex-wrap gap-1.5 mb-6">
+              {DEVICE_TERMS_PREVIEW.map((t) => (
+                <Tag key={t} color="indigo" type="light">{t}</Tag>
+              ))}
+            </div>
+            <div className="text-[13.5px] font-medium text-slate-700 mb-3">下游行业（按采购优先级）</div>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 max-w-[760px]">
+              {INDUSTRY_OPTIONS.map((i) => (
+                <div key={i.key} className="rounded-xl border border-slate-100 bg-slate-50/70 px-3.5 py-2.5">
+                  <div className="text-[13px] font-medium text-slate-700">{i.name}</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    {i.key} · tier {i.tier}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Agent 日志 */}
+          <div className="p-4">
+            <Table<AgentRunRow>
+              rowKey="id"
+              size="small"
+              dataSource={runs?.items ?? []}
+              empty="暂无 Agent 运行记录 —— 启动采集任务后可在此查看每个 Agent 的决策日志"
+              pagination={{
+                currentPage: runPage,
+                pageSize: 15,
+                total: runs?.total ?? 0,
+                onPageChange: (p: number) => setRunPage(p),
+              }}
+              columns={[
+                { title: "Agent", dataIndex: "agent_name", width: 150, render: (v) => <span className="font-medium text-slate-700">{v}</span> },
+                {
+                  title: "后端",
+                  dataIndex: "backend",
+                  width: 90,
+                  render: (v) => <Tag color={v === "rule" ? "blue" : "purple"} type="light">{v}</Tag>,
+                },
+                { title: "决策摘要", dataIndex: "decision_summary", ellipsis: true },
+                { title: "耗时", dataIndex: "duration_ms", width: 90, render: (v) => <span className="tabular-nums text-slate-500">{v}ms</span> },
+                {
+                  title: "时间",
+                  dataIndex: "created_at",
+                  width: 160,
+                  render: (v) => <span className="text-slate-400 text-[12px]">{String(v).slice(0, 19).replace("T", " ")}</span>,
+                },
+              ]}
+            />
+          </div>
+
+          {/* 后端切换 */}
+          <div className="p-6">
+            <div className="flex items-center gap-2 text-[14px] font-medium text-slate-700 mb-4">
+              <Bot size={16} className="text-indigo-500" /> Agent 后端实现
+            </div>
+            <div className="max-w-[520px] space-y-2">
+              {Object.entries(settings?.agent_backends ?? {}).map(([name, backend]) => (
+                <div key={name} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-2.5">
+                  <span className="text-[13.5px] text-slate-700 font-mono">{name}</span>
+                  <Tag color={backend === "rule" ? "blue" : "purple"} type="light">
+                    {backend === "rule" ? "规则引擎" : "LLM"}
+                  </Tag>
+                </div>
+              ))}
+            </div>
+            <p className="text-slate-400 text-[12px] leading-5 mt-4 max-w-[520px]">
+              LLM 后端为 P2 预留位：配置 GLM/DeepSeek 等 OpenAI 兼容 Key 后，可将 signal_parser / icp_judge / query_translator 切换为 LLM 实现，编排图零改动。
+            </p>
+          </div>
+        </Tabs>
+      </motion.div>
     </AppShell>
   );
 }

@@ -2,21 +2,22 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Form, Input, message } from "antd";
-import { AimOutlined, SafetyOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { Button, Form, Input, Toast } from "@douyinfe/semi-ui";
+import { Radar, Target, ShieldCheck, Zap } from "lucide-react";
 import { setAuth, api } from "@/lib/api";
+import { BRAND } from "@/lib/theme";
 
 const FEATURES = [
-  { icon: <ThunderboltOutlined />, title: "招投标意图信号", desc: "设备词表实时匹配，谁在买设备先知道" },
-  { icon: <AimOutlined />, title: "ICP 智能评分", desc: "半导体/光伏/锂电等六类下游客户自动分级" },
-  { icon: <SafetyOutlined />, title: "撞单与公海机制", desc: "线索不撞单，30 天未跟进自动回收" },
+  { icon: Zap, title: "招投标意图信号", desc: "设备词表实时匹配，谁在买设备先知道" },
+  { icon: Target, title: "ICP 智能评分", desc: "半导体/光伏/锂电等六类下游客户自动分级" },
+  { icon: ShieldCheck, title: "撞单与公海机制", desc: "线索不撞单，30 天未跟进自动回收" },
 ];
 
 export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
-  const onFinish = async (values: { username: string; password: string }) => {
+  const handleSubmit = async (values: { username: string; password: string }) => {
     setLoading(true);
     try {
       const res = await api.post<{ token: string; role: string; display_name: string }>(
@@ -26,7 +27,7 @@ export default function LoginPage() {
       setAuth(res.token, res.role, res.display_name);
       router.push("/");
     } catch (e) {
-      message.error(`登录失败：${e instanceof Error ? e.message : "未知错误"}`);
+      Toast.error(`登录失败：${e instanceof Error ? e.message : "未知错误"}`);
     } finally {
       setLoading(false);
     }
@@ -34,78 +35,99 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex bg-white">
-      {/* 左侧品牌区 */}
-      <div className="hidden lg:flex w-[52%] flex-col justify-between p-12 relative overflow-hidden text-white bg-gradient-to-br from-[#1e1b4b] via-[#312e81] to-[#6d28d9]">
+      {/* 左侧品牌区（纯 CSS 动画，无水合依赖） */}
+      <div
+        className="hidden lg:flex w-[52%] flex-col justify-between p-12 relative overflow-hidden text-white animate-fadein"
+        style={{ background: "linear-gradient(135deg,#1e1b4b 0%,#312e81 45%,#6d28d9 100%)" }}
+      >
         <div
-          className="absolute -top-32 -right-32 w-96 h-96 rounded-full opacity-20"
+          className="absolute -top-32 -right-32 w-96 h-96 rounded-full opacity-25 pointer-events-none"
           style={{ background: "radial-gradient(circle,#a78bfa,transparent 70%)" }}
         />
         <div
-          className="absolute bottom-0 left-0 w-[420px] h-[420px] rounded-full opacity-10 -translate-x-1/3 translate-y-1/3"
+          className="absolute bottom-10 left-0 w-[420px] h-[420px] rounded-full opacity-10 pointer-events-none"
           style={{ background: "radial-gradient(circle,#818cf8,transparent 70%)" }}
         />
 
         <div className="relative flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-xl font-black tracking-tight backdrop-blur">
-            V
+          <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur">
+            <Radar className="w-5 h-5" strokeWidth={2.2} />
           </div>
           <div>
-            <div className="text-lg font-bold tracking-wide">vaclead</div>
-            <div className="text-[11px] text-indigo-200/80 -mt-0.5">VACUUM SALES INTELLIGENCE</div>
+            <div className="text-lg font-bold tracking-wide">{BRAND.name}</div>
+            <div className="text-[10px] text-indigo-200/70 tracking-[0.15em]">{BRAND.tagline}</div>
           </div>
         </div>
 
-        <div className="relative max-w-[460px]">
-          <h1 className="text-[34px] leading-[1.3] font-bold">
+        <div className="relative max-w-[470px]">
+          <h1 className="text-[34px] leading-[1.32] font-bold animate-riseup">
             让真空设备销售
             <br />
             不再靠展会和名片
           </h1>
-          <p className="mt-4 text-indigo-200/90 text-[15px] leading-7">
-            招投标公告、环评公示、工商变更 ——
-            采购意图藏在公开数据里。vaclead 帮你把它们变成一条条带着理由的客户线索。
+          <p className="mt-4 text-indigo-200/85 text-[14.5px] leading-7 animate-riseup" style={{ animationDelay: "0.15s" }}>
+            招投标公告、环评公示、工商变更 —— 采购意图藏在公开数据里。
+            {BRAND.name} 帮你把它们变成一条条带着理由的客户线索。
           </p>
           <div className="mt-9 space-y-5">
-            {FEATURES.map((f) => (
-              <div key={f.title} className="flex items-start gap-3.5">
-                <div className="w-9 h-9 rounded-lg bg-white/10 border border-white/15 flex items-center justify-center text-[15px] shrink-0 backdrop-blur">
-                  {f.icon}
+            {FEATURES.map((f, i) => (
+              <div
+                key={f.title}
+                className="flex items-start gap-3.5 animate-riseup"
+                style={{ animationDelay: `${0.3 + i * 0.13}s` }}
+              >
+                <div className="w-9 h-9 rounded-[10px] bg-white/10 border border-white/15 flex items-center justify-center shrink-0 backdrop-blur">
+                  <f.icon className="w-4 h-4" strokeWidth={2} />
                 </div>
                 <div>
                   <div className="text-[14px] font-semibold">{f.title}</div>
-                  <div className="text-[12.5px] text-indigo-200/75 mt-0.5">{f.desc}</div>
+                  <div className="text-[12.5px] text-indigo-200/70 mt-0.5">{f.desc}</div>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="relative text-[12px] text-indigo-200/60">
-          © 2026 vaclead · 自建垂直拓客平台 · 数据来自公开公示渠道
+        <div className="relative text-[11.5px] text-indigo-200/50">
+          © 2026 {BRAND.name} · 自建垂直拓客平台 · 数据来自公开公示渠道
         </div>
       </div>
 
       {/* 右侧登录区 */}
       <div className="flex-1 flex items-center justify-center px-6">
-        <div className="w-full max-w-[368px]">
+        <div className="w-full max-w-[368px] animate-riseup">
           <div className="lg:hidden flex items-center gap-2.5 mb-8">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 text-white flex items-center justify-center font-black">
-              V
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 text-white flex items-center justify-center">
+              <Radar className="text-white" size={17} />
             </div>
-            <span className="text-lg font-bold text-slate-800">vaclead</span>
+            <span className="text-lg font-bold text-slate-800">{BRAND.name}</span>
           </div>
 
           <h2 className="text-[22px] font-bold text-slate-900">欢迎回来</h2>
           <p className="text-slate-400 text-[13px] mt-1.5 mb-8">登录后开始今天的拓客</p>
 
-          <Form layout="vertical" onFinish={onFinish} initialValues={{ username: "admin" }} size="large" requiredMark={false}>
-            <Form.Item name="username" label={<span className="text-slate-600">用户名</span>} rules={[{ required: true, message: "请输入用户名" }]}>
-              <Input placeholder="admin / sales" autoComplete="username" />
-            </Form.Item>
-            <Form.Item name="password" label={<span className="text-slate-600">密码</span>} rules={[{ required: true, message: "请输入密码" }]}>
-              <Input.Password placeholder="••••••••" autoComplete="current-password" />
-            </Form.Item>
-            <Button type="primary" htmlType="submit" block loading={loading} className="!h-11 !mt-2">
+          <Form onSubmit={handleSubmit} labelPosition="top">
+            <Form.Input
+              field="username"
+              label="用户名"
+              initValue="admin"
+              rules={[{ required: true, message: "请输入用户名" }]}
+              placeholder="admin / sales"
+            />
+            <Form.Input
+              field="password"
+              mode="password"
+              label="密码"
+              rules={[{ required: true, message: "请输入密码" }]}
+              placeholder="请输入密码"
+            />
+            <Button
+              htmlType="submit"
+              theme="solid"
+              block
+              loading={loading}
+              className="!mt-2 !h-11 !bg-gradient-to-r !from-indigo-600 !to-violet-600 hover:!from-indigo-500 hover:!to-violet-500 !rounded-[10px] !font-medium"
+            >
               登 录
             </Button>
           </Form>

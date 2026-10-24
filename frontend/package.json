@@ -1,6 +1,6 @@
 {
   "name": "vaclead-frontend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
@@ -9,10 +9,10 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@ant-design/icons": "^5.4.0",
-    "@ant-design/nextjs-registry": "^1.0.2",
-    "antd": "^5.20.0",
+    "@douyinfe/semi-ui": "^2.62.0",
     "dayjs": "^1.11.12",
+    "framer-motion": "^11.5.0",
+    "lucide-react": "^0.441.0",
     "next": "14.2.13",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

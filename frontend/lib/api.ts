@@ -115,6 +115,9 @@ export interface PageData<T> {
 export interface Enterprise {
   id: number;
   name: string;
+  uscc?: string | null;
+  status?: string;
+  source?: string;
   province: string | null;
   city: string | null;
   district: string | null;

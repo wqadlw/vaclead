@@ -1,22 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import {
-  Button,
-  Card,
-  Col,
-  Progress,
-  Row,
-  Select,
-  Upload,
-  message,
-} from "antd";
-import { InboxOutlined, RocketOutlined } from "@ant-design/icons";
+import { Button, Card, Progress, Select, Toast } from "@douyinfe/semi-ui";
+import { motion } from "framer-motion";
+import { CloudUpload, FileSpreadsheet, Rocket, ScrollText } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
 import { INDUSTRY_OPTIONS, POI_CITIES } from "@/lib/constants";
-
-const { Dragger } = Upload;
 
 export default function TasksPage() {
   const [city, setCity] = useState<string>("苏州");
@@ -28,7 +18,7 @@ export default function TasksPage() {
 
   const subscribeTask = (taskId: string) => {
     esRef.current?.close();
-    const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+    const base = "http://127.0.0.1:8000";
     const es = new EventSource(`${base}/api/tasks/${taskId}/events`);
     esRef.current = es;
     es.onmessage = (ev) => {
@@ -48,7 +38,7 @@ export default function TasksPage() {
           setStarting(false);
         }
       } catch {
-        /* 忽略非 JSON 帧 */
+        /* 非 JSON 帧忽略 */
       }
     };
     es.onerror = () => {
@@ -59,21 +49,18 @@ export default function TasksPage() {
 
   const startPoi = async () => {
     if (industries.length === 0) {
-      message.warning("请至少选择一个下游行业");
+      Toast.warning("请至少选择一个下游行业");
       return;
     }
     setStarting(true);
     setProgress(0);
     setLogs(["任务提交中…"]);
     try {
-      const res = await api.post<{ task_id: string }>("/api/tasks/poi", {
-        city,
-        industry_keys: industries,
-      });
-      message.success("任务已启动");
+      const res = await api.post<{ task_id: string }>("/api/tasks/poi", { city, industry_keys: industries });
+      Toast.success("任务已启动");
       subscribeTask(res.task_id);
     } catch (e) {
-      message.error(e instanceof Error ? e.message : "启动失败");
+      Toast.error(e instanceof Error ? e.message : "启动失败");
       setStarting(false);
     }
   };
@@ -82,89 +69,135 @@ export default function TasksPage() {
     const fd = new FormData();
     fd.append("file", file);
     try {
-      const res = await api.post<{ inserted?: number; signals_created?: number; merged?: number }>(
+      const res = await api.post<{ inserted?: number; merged?: number; signals_created?: number }>(
         `/api/import/${kind}`,
         fd,
       );
-      message.success(
+      Toast.success(
         kind === "enterprises"
           ? `导入完成：新增 ${res.inserted ?? 0} 家，合并 ${res.merged ?? 0} 家`
           : `解析完成：生成信号 ${res.signals_created ?? 0} 条`,
       );
       setLogs((prev) => [...prev, `📄 ${file.name} 导入成功`]);
     } catch (e) {
-      message.error(e instanceof Error ? e.message : "导入失败");
+      Toast.error(e instanceof Error ? e.message : "导入失败");
     }
-    return false;
   };
+
+  const Dropzone = ({ kind, title, hint }: { kind: "enterprises" | "tenders"; title: string; hint: string }) => (
+    <label
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        const f = e.dataTransfer.files?.[0];
+        if (f) void uploadCsv(f, kind);
+      }}
+      className="block border-[1.5px] border-dashed border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 rounded-xl px-4 py-5 text-center cursor-pointer transition-colors"
+    >
+      <input
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void uploadCsv(f, kind);
+          e.currentTarget.value = "";
+        }}
+      />
+      <FileSpreadsheet className="mx-auto text-indigo-400" size={22} />
+      <div className="text-[13.5px] font-medium text-slate-700 mt-2">{title}</div>
+      <div className="text-[11.5px] text-slate-400 mt-1 leading-5">{hint}</div>
+    </label>
+  );
 
   return (
     <AppShell>
-      <Row gutter={16}>
-        <Col span={12}>
-          <Card title="🛰 高德 POI 地图拓客" extra={<RocketOutlined />}>
-            <div className="flex gap-3 mb-4">
+      <motion.div
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+        className="grid grid-cols-1 xl:grid-cols-2 gap-4"
+      >
+        {/* 左列 */}
+        <div className="space-y-4">
+          <Card
+            title={
+              <span className="flex items-center gap-2 text-[14.5px] font-semibold text-slate-700">
+                <Rocket size={16} className="text-indigo-500" /> 高德 POI 地图拓客
+              </span>
+            }
+            className="!rounded-2xl !border-0 !shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.12)]"
+          >
+            <div className="flex gap-3 items-center">
               <Select
                 style={{ width: 140 }}
+                optionList={POI_CITIES.map((c) => ({ value: c, label: c }))}
                 value={city}
-                onChange={setCity}
-                options={POI_CITIES.map((c) => ({ value: c, label: c }))}
+                onChange={(v) => setCity(v as string)}
               />
               <Select
-                mode="multiple"
                 style={{ flex: 1 }}
                 placeholder="选择下游行业"
+                multiple
+                optionList={INDUSTRY_OPTIONS.map((i) => ({ value: i.key, label: i.name }))}
                 value={industries}
-                onChange={setIndustries}
-                options={INDUSTRY_OPTIONS.map((i) => ({ value: i.key, label: i.name }))}
+                onChange={(v) => setIndustries(v as string[])}
               />
-              <Button type="primary" loading={starting} onClick={startPoi}>
+              <Button theme="solid" loading={starting} onClick={startPoi}>
                 开始采集
               </Button>
             </div>
-            <p className="text-gray-400 text-xs">
+            <p className="text-slate-400 text-[12px] leading-5 mt-3.5">
               按行业关键词扫描所选城市的工厂 POI，自动入库、归一去重、ICP 打分。需在「设置」配置高德 Key。
             </p>
           </Card>
 
-          <Card title="📥 CSV 数据导入" className="mt-4">
-            <Dragger
-              accept=".csv"
-              showUploadList={false}
-              beforeUpload={(f) => uploadCsv(f, "enterprises")}
-            >
-              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p className="ant-upload-text">点击或拖入【企业名单 CSV】</p>
-              <p className="ant-upload-hint">列：name,province,city,district,address,business_scope,registered_capital_wan,industry_key</p>
-            </Dragger>
-            <Dragger
-              accept=".csv"
-              showUploadList={false}
-              className="mt-3"
-              beforeUpload={(f) => uploadCsv(f, "tenders")}
-            >
-              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p className="ant-upload-text">点击或拖入【招标公告 CSV】</p>
-              <p className="ant-upload-hint">列：title,content,url,pub_date,enterprise_name — 命中设备词自动生成意图信号</p>
-            </Dragger>
+          <Card
+            title={
+              <span className="flex items-center gap-2 text-[14.5px] font-semibold text-slate-700">
+                <CloudUpload size={16} className="text-indigo-500" /> CSV 数据导入
+              </span>
+            }
+            className="!rounded-2xl !border-0 !shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.12)]"
+          >
+            <div className="grid grid-cols-1 gap-3">
+              <Dropzone
+                kind="enterprises"
+                title="导入企业名单 CSV"
+                hint="列：name, province, city, district, address, business_scope, registered_capital_wan, industry_key"
+              />
+              <Dropzone
+                kind="tenders"
+                title="导入招标公告 CSV"
+                hint="列：title, content, url, pub_date, enterprise_name —— 命中设备词自动生成意图信号"
+              />
+            </div>
           </Card>
-        </Col>
+        </div>
 
-        <Col span={12}>
-          <Card title="实时进度">
-            {progress === null ? (
-              <p className="text-gray-400">尚无运行中的任务</p>
-            ) : (
-              <>
-                <Progress percent={progress} status={progress === 100 ? "success" : "active"} />
-                <pre className="bg-black text-green-400 text-xs p-3 rounded mt-3 max-h-96 overflow-auto whitespace-pre-wrap">
-                  {logs.join("\n") || "等待日志…"}
-                </pre>
-              </>
-            )}
-          </Card>
-        </Col>
-      </Row>
+        {/* 右列：进度 */}
+        <Card
+          title={
+            <span className="flex items-center gap-2 text-[14.5px] font-semibold text-slate-700">
+              <ScrollText size={16} className="text-indigo-500" /> 实时进度
+            </span>
+          }
+          className="!rounded-2xl !border-0 !shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.12)] self-start"
+        >
+          {progress === null ? (
+            <div className="text-[13px] text-slate-400 py-10 text-center">
+              尚无运行中的任务 —— 启动 POI 采集或导入 CSV 后这里会实时滚动日志
+            </div>
+          ) : (
+            <>
+              <Progress percent={progress} showInput aria-label="任务进度" stroke="#4f46e5" />
+              <pre className="bg-[#0e1230] text-emerald-300 text-[11.5px] leading-5 p-3.5 rounded-xl mt-3.5 max-h-[420px] overflow-auto whitespace-pre-wrap font-mono">
+                {logs.join("\n") || "等待日志…"}
+              </pre>
+            </>
+          )}
+        </Card>
+      </motion.div>
     </AppShell>
   );
 }

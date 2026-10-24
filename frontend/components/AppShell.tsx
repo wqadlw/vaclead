@@ -2,21 +2,30 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Avatar, Dropdown, Layout, Menu, Spin } from "antd";
+import { Avatar, Dropdown } from "@douyinfe/semi-ui";
+import { motion } from "framer-motion";
 import {
-  DashboardOutlined,
-  LogoutOutlined,
-  SearchOutlined,
-  SolutionOutlined,
-  RocketOutlined,
-  SettingOutlined,
-  UserOutlined,
-  CrownFilled,
-} from "@ant-design/icons";
+  LayoutDashboard,
+  LogOut,
+  Radar,
+  Search,
+  Settings,
+  UserRound,
+  Zap,
+} from "lucide-react";
 import { getToken, logout } from "@/lib/api";
-import { PAGE_TITLES } from "@/lib/theme";
+import { BRAND, PAGE_TITLES } from "@/lib/theme";
 
-const { Sider, Header, Content } = Layout;
+const NAV = [
+  { href: "/", label: "工作台", icon: LayoutDashboard },
+  { href: "/enterprises", label: "企业筛选", icon: Search },
+  { href: "/leads", label: "线索看板", icon: Radar },
+];
+
+const ADMIN_NAV = [
+  { href: "/tasks", label: "拓客任务", icon: Zap },
+  { href: "/settings", label: "设置", icon: Settings },
+];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -38,84 +47,94 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f4f5fa]">
-        <Spin size="large" />
+      <div className="flex min-h-screen items-center justify-center bg-[#f3f4f9]">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+          className="h-9 w-9 rounded-full border-[3px] border-indigo-200 border-t-indigo-600"
+        />
       </div>
     );
   }
 
-  const items = [
-    { key: "/", icon: <DashboardOutlined />, label: "工作台" },
-    { key: "/enterprises", icon: <SearchOutlined />, label: "企业筛选" },
-    { key: "/leads", icon: <SolutionOutlined />, label: "线索看板" },
-    ...(role === "admin"
-      ? [
-          { type: "group" as const, label: "数据运营", children: [
-            { key: "/tasks", icon: <RocketOutlined />, label: "拓客任务" },
-            { key: "/settings", icon: <SettingOutlined />, label: "设置" },
-          ] },
-        ]
-      : []),
-  ];
+  const navItems = role === "admin" ? [...NAV, ...ADMIN_NAV] : NAV;
 
   return (
-    <Layout className="min-h-screen">
-      <Sider width={208} className="!fixed !h-full z-10" style={{ background: "#111633" }}>
-        <div className="flex items-center gap-2.5 px-5 h-16 border-b border-white/5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-black text-[15px] shadow-lg shadow-indigo-900/50">
-            V
+    <div className="min-h-screen">
+      {/* 侧边栏 */}
+      <aside className="fixed inset-y-0 left-0 z-30 w-[212px] flex flex-col bg-[#0e1230]">
+        <div className="flex items-center gap-2.5 px-5 h-[60px] border-b border-white/5">
+          <div className="w-8 h-8 rounded-[10px] bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-950/60">
+            <Radar className="w-[17px] h-[17px] text-white" strokeWidth={2.4} />
           </div>
           <div className="leading-tight">
-            <div className="text-white font-bold tracking-wide text-[15px]">vaclead</div>
-            <div className="text-[9.5px] text-indigo-300/60 tracking-[0.14em]">VACUUM INTELLIGENCE</div>
+            <div className="text-white font-bold tracking-wide text-[15px]">{BRAND.name}</div>
+            <div className="text-[9px] text-indigo-300/50 tracking-[0.13em]">{BRAND.tagline}</div>
           </div>
         </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          className="!border-r-0 !bg-transparent !pt-3 [&_.ant-menu-item]:!mx-3 [&_.ant-menu-item]:!rounded-lg [&_.ant-menu-item-group-title]:!px-5 !text-[13.5px]"
-          style={{ background: "transparent" }}
-          selectedKeys={[pathname]}
-          items={items}
-          onClick={({ key }) => router.push(key)}
-        />
-        <div className="absolute bottom-5 left-0 right-0 px-5 text-[10.5px] text-indigo-300/40">
-          v0.1 · 内部版
-        </div>
-      </Sider>
 
-      <Layout style={{ marginLeft: 208, background: "#f4f5fa" }}>
-        <Header
-          className="sticky top-0 z-20 flex items-center justify-between px-6"
-          style={{ background: "rgba(255,255,255,.85)", backdropFilter: "blur(8px)", borderBottom: "1px solid #eceef3", height: 60 }}
-        >
+        <nav className="flex-1 px-3 pt-4 space-y-1 overflow-y-auto">
+          {navItems.map(({ href, label, icon: Icon }) => {
+            const active = pathname === href;
+            return (
+              <button
+                key={href}
+                data-nav={href}
+                onClick={() => router.push(href)}
+                className={`relative w-full flex items-center gap-2.5 rounded-[10px] px-3.5 py-[9px] text-[13.5px] cursor-pointer transition-colors ${
+                  active ? "text-white font-medium" : "text-indigo-200/60 hover:text-indigo-100 hover:bg-white/5"
+                }`}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="nav-pill"
+                    className="absolute inset-0 rounded-[10px] bg-gradient-to-r from-indigo-600/90 to-violet-600/80 shadow-lg shadow-indigo-950/50"
+                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                  />
+                )}
+                <Icon className="relative w-[16px] h-[16px]" strokeWidth={active ? 2.3 : 1.9} />
+                <span className="relative">{label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="px-5 pb-5 text-[10px] text-indigo-300/30">v0.2 · Semi Design</div>
+      </aside>
+
+      {/* 主区域 */}
+      <div className="ml-[212px] min-h-screen flex flex-col">
+        <header className="sticky top-0 z-20 flex items-center justify-between px-7 h-[60px] bg-white/80 backdrop-blur-md border-b border-slate-200/70">
           <div className="flex items-baseline gap-3">
-            <span className="text-[16px] font-semibold text-slate-800">
-              {PAGE_TITLES[pathname] ?? ""}
-            </span>
-            <span className="text-[12px] text-slate-400 hidden sm:inline">真空设备智能拓客平台</span>
+            <span className="text-[16px] font-semibold text-slate-800">{PAGE_TITLES[pathname] ?? ""}</span>
+            <span className="text-[12px] text-slate-400 hidden sm:inline">{BRAND.subtitle}</span>
           </div>
           <Dropdown
-            menu={{
-              items: [
-                { key: "role", label: `${role === "admin" ? "管理员" : "销售"}账号`, disabled: true },
-                { type: "divider" },
-                { key: "logout", icon: <LogoutOutlined />, label: "退出登录", onClick: logout },
-              ],
-            }}
+            trigger="click"
+            position="bottomRight"
+            render={
+              <Dropdown.Menu>
+                <Dropdown.Item disabled>
+                  {role === "admin" ? "管理员账号" : "销售账号"}
+                </Dropdown.Item>
+                <Dropdown.Divider />
+                <Dropdown.Item icon={<LogOut size={14} />} onClick={logout}>
+                  退出登录
+                </Dropdown.Item>
+              </Dropdown.Menu>
+            }
           >
-            <span className="cursor-pointer flex items-center gap-2.5 pl-1 rounded-full hover:bg-slate-50 pr-3 py-1 transition-colors">
-              <Avatar
-                size={30}
-                className="!bg-gradient-to-br !from-indigo-500 !to-violet-600"
-                icon={role === "admin" ? <CrownFilled className="text-[13px]" /> : <UserOutlined />}
-              />
-              <span className="text-[13.5px] text-slate-700">{user}</span>
+            <span className="flex items-center gap-2.5 cursor-pointer select-none rounded-full pl-1 pr-3 py-1 hover:bg-slate-100 transition-colors">
+              <Avatar alt={user} size="extra-small" color="indigo">
+                {role === "admin" ? <UserRound size={13} /> : user.slice(0, 1)}
+              </Avatar>
+              <span className="text-[13px] text-slate-700">{user}</span>
             </span>
           </Dropdown>
-        </Header>
-        <Content className="p-6 max-w-[1440px]">{children}</Content>
-      </Layout>
-    </Layout>
+        </header>
+
+        <main className="flex-1 p-6 max-w-[1440px] w-full mx-auto">{children}</main>
+      </div>
+    </div>
   );
 }

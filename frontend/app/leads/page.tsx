@@ -1,26 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  Button,
-  DatePicker,
-  Descriptions,
-  Form,
-  Input,
-  message,
-  Modal,
-  Select,
-  Space,
-  Tabs,
-  Table,
-  Tag,
-} from "antd";
+import { Button, DatePicker, Form, Modal, Select, SideSheet, Table, Tabs, Tag, Timeline, Toast } from "@douyinfe/semi-ui";
+import { motion } from "framer-motion";
+import { PhoneCall } from "lucide-react";
 import AppShell from "@/components/AppShell";
-import { api, PageData, Lead, FollowupItem } from "@/lib/api";
+import { api } from "@/lib/api";
+import type { FollowupItem, Lead, PageData } from "@/lib/api";
 import { GRADE_COLOR, LEAD_STATUS, LOST_REASONS } from "@/lib/constants";
-import dayjs from "dayjs";
 
-const MY_TABS = ["new", "following", "intent", "won", "lost", "pool"] as const;
+const MY_TABS = ["following", "new", "intent", "won", "lost", "pool"] as const;
+
+const GRADE_TAG: Record<string, "red" | "orange" | "blue"> = { S: "red", A: "orange", B: "blue" };
 
 export default function LeadsPage() {
   const [tab, setTab] = useState<string>("following");
@@ -28,27 +19,13 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
 
-  // 跟进弹窗状态
   const [followOpen, setFollowOpen] = useState(false);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
+  const [current, setCurrent] = useState<Lead | null>(null);
   const [lostLead, setLostLead] = useState<Lead | null>(null);
   const [lostReason, setLostReason] = useState<string>("no_need");
-  const [current, setCurrent] = useState<Lead | null>(null);
   const [followups, setFollowups] = useState<FollowupItem[]>([]);
-  const [form] = Form.useForm();
-
-  const confirmLost = async () => {
-    if (!lostLead) return;
-    await patchStatus(lostLead, "lost", lostReason);
-    setLostOpen(false);
-  };
-
-  const openLost = (lead: Lead) => {
-    setLostLead(lead);
-    setLostReason("no_need");
-    setLostOpen(true);
-  };
 
   const load = useCallback(
     (t: string, p: number) => {
@@ -56,7 +33,7 @@ export default function LeadsPage() {
       api
         .get<PageData<Lead>>(`/api/leads?status=${t}&page=${p}&page_size=20`)
         .then(setData)
-        .catch((e) => message.error(e.message))
+        .catch((e) => Toast.error(e.message))
         .finally(() => setLoading(false));
     },
     [],
@@ -67,175 +44,238 @@ export default function LeadsPage() {
   const patchStatus = async (lead: Lead, status: string, lost_reason?: string) => {
     try {
       await api.patch(`/api/leads/${lead.id}`, { status, lost_reason });
-      message.success(`已${status === "pool" ? "退回公海" : "流转到"}${LEAD_STATUS[status]?.label ?? status}`);
+      Toast.success(status === "pool" ? "已退回公海" : `已流转到「${LEAD_STATUS[status]?.label ?? status}」`);
       load(tab, page);
     } catch (e) {
-      message.error(e instanceof Error ? e.message : "操作失败");
+      Toast.error(e instanceof Error ? e.message : "操作失败");
     }
   };
 
-  const openFollow = (lead: Lead) => {
-    setCurrent(lead);
-    form.resetFields();
-    setFollowOpen(true);
-  };
-
-  const submitFollow = async () => {
-    const values = await form.validateFields();
+  const submitFollow = async (values: { content: string; next_action?: string; next_time?: string }) => {
+    if (!current) return;
     try {
-      await api.post(`/api/leads/${current!.id}/followups`, {
+      await api.post(`/api/leads/${current.id}/followups`, {
         content: values.content,
         next_action: values.next_action || undefined,
-        next_time: values.next_time ? values.next_time.format("YYYY-MM-DD HH:mm") : undefined,
+        next_time: values.next_time || undefined,
       });
-      message.success("跟进已记录");
+      Toast.success("跟进已记录");
       setFollowOpen(false);
       load(tab, page);
     } catch (e) {
-      message.error(e instanceof Error ? e.message : "保存失败");
+      Toast.error(e instanceof Error ? e.message : "保存失败");
     }
   };
 
-  const openDetail = async (lead: Lead) => {
+  const openHistory = async (lead: Lead) => {
     setCurrent(lead);
-    setDetailOpen(true);
+    setHistoryOpen(true);
     try {
-      const list = await api.get<FollowupItem[]>(`/api/leads/${lead.id}/followups`);
-      setFollowups(list);
+      setFollowups(await api.get<FollowupItem[]>(`/api/leads/${lead.id}/followups`));
     } catch {
       setFollowups([]);
     }
   };
 
-  const transitionButtons = (lead: Lead) => {
+  const actions = (lead: Lead) => {
     const btns: React.ReactNode[] = [];
     if (lead.status === "new" || lead.status === "pool") {
       btns.push(
-        <Button key="claim" size="small" type="primary" onClick={() => patchStatus(lead, "following")}>
+        <Button key="claim" size="small" theme="solid" onClick={() => patchStatus(lead, "following")}>
           {lead.status === "pool" ? "领取" : "开始跟进"}
         </Button>,
       );
     }
     if (lead.status === "following") {
       btns.push(
-        <Button key="intent" size="small" onClick={() => patchStatus(lead, "intent")}>标记意向</Button>,
-        <Button key="lost" size="small" danger onClick={() => openLost(lead)}>放弃</Button>,
+        <Button key="intent" size="small" onClick={() => patchStatus(lead, "intent")}>
+          标记意向
+        </Button>,
+        <Button
+          key="lost"
+          size="small"
+          type="danger"
+          theme="borderless"
+          onClick={() => {
+            setLostLead(lead);
+            setLostReason("no_need");
+            setLostOpen(true);
+          }}
+        >
+          放弃
+        </Button>,
       );
     }
     if (lead.status === "intent") {
       btns.push(
-        <Button key="won" size="small" type="primary" onClick={() => patchStatus(lead, "won")}>成交</Button>,
-        <Button key="lost2" size="small" danger onClick={() => openLost(lead)}>放弃</Button>,
+        <Button key="won" size="small" theme="solid" onClick={() => patchStatus(lead, "won")}>
+          成交
+        </Button>,
+        <Button
+          key="lost2"
+          size="small"
+          type="danger"
+          theme="borderless"
+          onClick={() => {
+            setLostLead(lead);
+            setLostReason("no_need");
+            setLostOpen(true);
+          }}
+        >
+          放弃
+        </Button>,
       );
     }
     btns.push(
-      <Button key="follow" size="small" onClick={() => openFollow(lead)}>跟进</Button>,
-      <Button key="detail" size="small" type="link" onClick={() => openDetail(lead)}>记录</Button>,
+      <Button key="follow" size="small" theme="light" icon={<PhoneCall size={13} />} onClick={() => { setCurrent(lead); setFollowOpen(true); }}>
+        跟进
+      </Button>,
+      <Button key="detail" size="small" theme="borderless" type="tertiary" onClick={() => openHistory(lead)}>
+        记录
+      </Button>,
     );
-    return <Space size={4} wrap>{btns}</Space>;
+    return <div className="flex items-center gap-1.5 flex-wrap">{btns}</div>;
   };
+
+  const columns = [
+    {
+      title: "企业",
+      dataIndex: ["enterprise", "name"],
+      render: (v: string) => <span className="font-medium text-slate-700">{v}</span>,
+    },
+    { title: "行业", dataIndex: ["enterprise", "industry_name"], width: 130, render: (v: string) => v || "-" },
+    {
+      title: "等级",
+      dataIndex: "grade",
+      width: 70,
+      render: (v: string) => (v ? <Tag color={GRADE_TAG[v]} type="solid">{v}</Tag> : <span className="text-slate-300">-</span>),
+    },
+    {
+      title: "ICP / 意图",
+      width: 110,
+      render: (_: unknown, r: Lead) => (
+        <span className="tabular-nums text-slate-600">
+          {r.enterprise?.icp_score ?? 0} <span className="text-slate-300">/</span>{" "}
+          <span className={r.enterprise?.intent_score ? "text-rose-500" : ""}>{r.enterprise?.intent_score ?? 0}</span>
+        </span>
+      ),
+    },
+    {
+      title: "最近跟进",
+      dataIndex: "last_followed_at",
+      width: 130,
+      render: (v: string) => (v ? <span className="text-slate-500 text-[12.5px]">{String(v).slice(0, 16).replace("T", " ")}</span> : <span className="text-slate-300">未跟进</span>),
+    },
+    { title: "操作", width: 300, render: (_: unknown, r: Lead) => actions(r) },
+  ];
 
   return (
     <AppShell>
-      <Tabs
-        activeKey={tab}
-        onChange={(k) => { setTab(k); setPage(1); }}
-        items={MY_TABS.map((s) => ({
-          key: s,
-          label: `${LEAD_STATUS[s].label}${data && tab === s ? ` (${data.total})` : ""}`,
-        }))}
-      />
-      <Table<Lead>
-        rowKey="id"
-        loading={loading}
-        dataSource={data?.items ?? []}
-        pagination={{ current: page, total: data?.total ?? 0, pageSize: 20, onChange: setPage }}
-        columns={[
-          {
-            title: "企业",
-            dataIndex: ["enterprise", "name"],
-            render: (v) => <b>{v}</b>,
-          },
-          {
-            title: "行业",
-            dataIndex: ["enterprise", "industry_name"],
-            render: (v) => v || "-",
-          },
-          {
-            title: "等级",
-            dataIndex: "grade",
-            render: (v) => (v ? <Tag color={GRADE_COLOR[v]}>{v}</Tag> : "-"),
-          },
-          {
-            title: "ICP/意图",
-            render: (_, r) =>
-              `${r.enterprise?.icp_score ?? 0} / ${r.enterprise?.intent_score ?? 0}`,
-          },
-          {
-            title: "最近跟进",
-            dataIndex: "last_followed_at",
-            render: (v) => (v ? String(v).slice(0, 16) : "未跟进"),
-          },
-          { title: "操作", render: (_, r) => transitionButtons(r), width: 320 },
-        ]}
-      />
+      <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}>
+        <div className="rounded-2xl bg-white border border-slate-100 shadow-[0_1px_2px_rgba(15,23,42,.03),0_8px_24px_-16px_rgba(15,23,42,.12)] overflow-hidden">
+          <Tabs
+            type="button"
+            activeKey={tab}
+            onChange={(k) => {
+              setTab(k as string);
+              setPage(1);
+            }}
+            className="!px-4 !pt-3"
+            tabList={MY_TABS.map((s) => ({ tab: LEAD_STATUS[s].label, itemKey: s }))}
+          />
+          <Table<Lead>
+            rowKey="id"
+            columns={columns as never}
+            dataSource={data?.items ?? []}
+            loading={loading}
+            size="middle"
+            empty={
+              tab === "pool"
+                ? "公海暂时没有可领取的线索"
+                : "该状态下暂无线索 —— 去企业筛选页转化高分客户"
+            }
+            pagination={{
+              currentPage: page,
+              pageSize: 20,
+              total: data?.total ?? 0,
+              onPageChange: (p: number) => setPage(p),
+            }}
+          />
+        </div>
+      </motion.div>
 
+      {/* 跟进弹窗 */}
       <Modal
-        title={`跟进记录 — ${current?.enterprise?.name ?? ""}`}
-        open={followOpen}
-        onOk={submitFollow}
+        title={`跟进 — ${current?.enterprise?.name ?? ""}`}
+        visible={followOpen}
         onCancel={() => setFollowOpen(false)}
-        okText="保存"
+        footer={null}
+        width={480}
       >
-        <Form form={form} layout="vertical">
-          <Form.Item
-            name="content"
+        <Form onSubmit={submitFollow} labelPosition="top">
+          <Form.TextArea
+            field="content"
             label="跟进内容"
+            rows={4}
             rules={[{ required: true, message: "请填写跟进内容" }]}
-          >
-            <Input.TextArea rows={4} placeholder="沟通了什么？客户态度如何？" />
-          </Form.Item>
-          <Form.Item name="next_action" label="下一步动作">
-            <Input placeholder="如：发送设备参数表 / 约参观工厂" />
-          </Form.Item>
-          <Form.Item name="next_time" label="下次跟进时间">
-            <DatePicker showTime style={{ width: "100%" }} />
-          </Form.Item>
+            placeholder="沟通了什么？客户态度如何？"
+          />
+          <Form.Input field="next_action" label="下一步动作" placeholder="如：发送设备参数表 / 约参观工厂" />
+          <Form.DatePicker
+            field="next_time"
+            label="下次跟进时间"
+            type="dateTime"
+            style={{ width: "100%" }}
+          />
+          <Button htmlType="submit" theme="solid" block className="!mt-2">
+            保存跟进
+          </Button>
         </Form>
       </Modal>
 
-      <Modal
+      {/* 跟进历史 */}
+      <SideSheet
         title={`跟进历史 — ${current?.enterprise?.name ?? ""}`}
-        open={detailOpen}
-        footer={null}
-        onCancel={() => setDetailOpen(false)}
-        width={640}
+        visible={historyOpen}
+        onCancel={() => setHistoryOpen(false)}
+        width={480}
       >
-        {followups.length === 0 && "暂无记录"}
-        {followups.map((f) => (
-          <Descriptions key={f.id} size="small" column={1} className="mb-3" bordered>
-            <Descriptions.Item label="时间">{String(f.created_at).slice(0, 16)}</Descriptions.Item>
-            <Descriptions.Item label="内容">{f.content}</Descriptions.Item>
-            <Descriptions.Item label="下一步">
-              {f.next_action || "-"} {f.next_time ? `（${f.next_time}）` : ""}
-            </Descriptions.Item>
-          </Descriptions>
-        ))}
-      </Modal>
+        {followups.length === 0 ? (
+          <div className="text-[13px] text-slate-400">暂无记录</div>
+        ) : (
+          <Timeline mode="left" className="mt-2">
+            {followups.map((f) => (
+              <Timeline.Item key={f.id} time={String(f.created_at).slice(0, 16).replace("T", " ")}>
+                <div className="text-[13.5px] text-slate-700 leading-6">{f.content}</div>
+                {(f.next_action || f.next_time) && (
+                  <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                    {f.next_action && <Tag color="blue" type="light">{f.next_action}</Tag>}
+                    {f.next_time && <Tag color="orange" type="light">{String(f.next_time).slice(0, 16)}</Tag>}
+                  </div>
+                )}
+              </Timeline.Item>
+            ))}
+          </Timeline>
+        )}
+      </SideSheet>
 
+      {/* 放弃原因 */}
       <Modal
         title={`放弃线索 — ${lostLead?.enterprise?.name ?? ""}`}
-        open={lostOpen}
-        onOk={confirmLost}
+        visible={lostOpen}
+        onOk={() => {
+          if (lostLead) void patchStatus(lostLead, "lost", lostReason);
+          setLostOpen(false);
+        }}
         onCancel={() => setLostOpen(false)}
         okText="确认放弃"
-        okButtonProps={{ danger: true }}
+        okButtonProps={{ type: "danger", theme: "solid" }}
       >
         <Select
-          value={lostReason}
-          onChange={setLostReason}
           style={{ width: "100%" }}
-          options={Object.entries(LOST_REASONS).map(([value, label]) => ({ value, label }))}
+          optionList={Object.entries(LOST_REASONS).map(([value, label]) => ({ value, label }))}
+          value={lostReason}
+          onChange={(v) => setLostReason(v as string)}
         />
       </Modal>
     </AppShell>

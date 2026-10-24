@@ -2,6 +2,57 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Semi Design 主色重铸：靛蓝紫 */
+  --semi-color-primary: #4f46e5;
+  --semi-color-primary-hover: #4338ca;
+  --semi-color-primary-active: #3730a3;
+  --semi-color-focus-border: #6366f1;
+  --semi-color-link: #4f46e5;
+  --semi-color-link-hover: #4338ca;
+}
+
+html,
 body {
-  background: #f5f6fa;
+  background: #f3f4f9;
+  font-family:
+    -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+  color: #1e293b;
+}
+
+/* 细滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::selection {
+  background: #c7d2fe;
+  color: #1e1b4b;
+}
+
+/* 登录页入场动画（纯 CSS，无水合依赖） */
+@keyframes fadein {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes riseup {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fadein {
+  animation: fadein 0.7s ease-out both;
+}
+.animate-riseup {
+  animation: riseup 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
 }

@@ -1,300 +1,222 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Alert,
-  Button,
-  Collapse,
-  Descriptions,
-  Drawer,
-  Empty,
-  message,
-  Space,
-  Spin,
-  Tag,
-  Timeline,
-  Typography,
-} from "antd";
-import { api, ApiError } from "@/lib/api";
-import type { Enterprise, SignalItem } from "@/lib/api";
-import { GRADE_COLOR, gradeOf } from "@/lib/constants";
+import { Button, Collapse, Descriptions, SideSheet, Skeleton, Tag, Timeline, Toast } from "@douyinfe/semi-ui";
+import { ExternalLink, Zap } from "lucide-react";
+import { api } from "@/lib/api";
+import type { Enterprise } from "@/lib/api";
+import { gradeOf } from "@/lib/constants";
 
-/** GET /api/enterprises/{id} 返回企业全字段 + signals[]；比列表接口多 uscc/status/source 等字段。 */
-interface EnterpriseDetail extends Enterprise {
-  uscc?: string | null;
-  status?: string | null;
-  source?: string | null;
-}
+const GRADE_TAG: Record<string, { color: "red" | "orange" | "blue"; label: string }> = {
+  S: { color: "red", label: "S 级" },
+  A: { color: "orange", label: "A 级" },
+  B: { color: "blue", label: "B 级" },
+};
 
-interface EnterpriseDrawerProps {
+interface Props {
   open: boolean;
   enterpriseId: number | null;
   onClose: () => void;
-  /** 转线索成功后回调（父级用于刷新列表）。 */
-  onConverted: () => void;
+  onConverted?: () => void;
 }
 
-const SOURCE_LABELS: Record<string, string> = {
-  poi: "高德 POI",
-  tender: "招标公告",
-  csv: "CSV 导入",
-  manual: "手工录入",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  active: "在营",
-  closed: "已注销",
-};
-
-const SIGNAL_TYPE_LABELS: Record<string, string> = {
-  tender: "招标公告",
-  eia: "环评公示",
-  registry_change: "工商变更",
-};
-
-function fmtScore(v: number): string {
-  return String(Math.round(v));
-}
-
-function regionOf(e: EnterpriseDetail): string {
-  return [e.province, e.city, e.district]
-    .map((x) => (x ?? "").trim())
-    .filter((x) => x.length > 0)
-    .join(" ");
-}
-
-function capitalOf(v: number | null): string {
-  return v == null ? "-" : `${v.toLocaleString("zh-CN")} 万`;
-}
-
-function SignalBlock({ s }: { s: SignalItem }) {
-  return (
-    <div className="flex flex-col gap-1 pb-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-gray-500">{s.pub_date ?? "未知日期"}</span>
-        <Tag color="geekblue" className="!m-0">
-          {SIGNAL_TYPE_LABELS[s.type] ?? s.type}
-        </Tag>
-      </div>
-      {s.url ? (
-        <a href={s.url} target="_blank" rel="noreferrer" className="text-sm font-medium break-all">
-          {s.title}
-        </a>
-      ) : (
-        <span className="text-sm font-medium">{s.title}</span>
-      )}
-      {(s.matched_terms ?? []).length > 0 ? (
-        <Space size={4} wrap>
-          {(s.matched_terms ?? []).map((t, i) => (
-            <Tag key={`${i}-${t}`} color="orange" className="!m-0">
-              {t}
-            </Tag>
-          ))}
-        </Space>
-      ) : null}
-      {s.raw_excerpt ? (
-        <div className="rounded border border-gray-100 bg-gray-50 p-2 text-xs leading-5 text-gray-600">
-          {s.raw_excerpt}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function DetailBody({ detail }: { detail: EnterpriseDetail }) {
-  const signals: SignalItem[] = detail.signals ?? [];
-  const reasons = detail.icp_reasons ?? [];
-  // lead_qualify Agent 契约：综合分 = ICP*0.4 + intent*0.6，S≥80 / A≥60 / B≥40
-  const composite = detail.icp_score * 0.4 + detail.intent_score * 0.6;
-  const grade = gradeOf(composite);
-
-  return (
-    <div className="flex flex-col gap-6">
-      <Descriptions title="工商信息" bordered size="small" column={2} labelStyle={{ width: 110 }}>
-        <Descriptions.Item label="名称" span={2}>
-          <span className="font-medium">{detail.name}</span>
-        </Descriptions.Item>
-        <Descriptions.Item label="统一信用代码">{detail.uscc?.trim() || "（暂缺）"}</Descriptions.Item>
-        <Descriptions.Item label="地区">{regionOf(detail) || "-"}</Descriptions.Item>
-        <Descriptions.Item label="行业">{detail.industry_name || "-"}</Descriptions.Item>
-        <Descriptions.Item label="注册资本">{capitalOf(detail.registered_capital_wan)}</Descriptions.Item>
-        <Descriptions.Item label="经营状态">
-          {detail.status ? STATUS_LABELS[detail.status] ?? detail.status : "-"}
-        </Descriptions.Item>
-        <Descriptions.Item label="来源">
-          {detail.source ? SOURCE_LABELS[detail.source] ?? detail.source : "-"}
-        </Descriptions.Item>
-      </Descriptions>
-
-      <div className="rounded border border-gray-200 p-4">
-        <div className="mb-3 text-sm font-medium text-gray-700">评分</div>
-        <div className="flex flex-wrap items-start gap-8">
-          <div>
-            <div className="text-xs text-gray-500">ICP 匹配分</div>
-            <div className="text-4xl font-bold leading-tight text-gray-800">
-              {fmtScore(detail.icp_score)}
-            </div>
-          </div>
-          <div className="min-w-[240px] flex-1">
-            <Collapse
-              size="small"
-              items={[
-                {
-                  key: "icp_reasons",
-                  label: `评分理由（${reasons.length} 条）`,
-                  children:
-                    reasons.length > 0 ? (
-                      <ul className="m-0 flex list-none flex-col gap-1 p-0">
-                        {reasons.map((r, i) => (
-                          <li key={i} className="flex items-center justify-between gap-2 text-sm">
-                            <span>{r.rule}</span>
-                            <Tag color={r.points >= 0 ? "green" : "red"} className="!m-0">
-                              {r.points >= 0 ? `+${r.points}` : r.points}
-                            </Tag>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <span className="text-sm text-gray-400">暂无评分理由</span>
-                    ),
-                },
-              ]}
-            />
-          </div>
-          <div>
-            <div className="text-xs text-gray-500">意图分（时间衰减）</div>
-            <div className="flex items-baseline gap-2">
-              <div className="text-4xl font-bold leading-tight text-gray-800">
-                {fmtScore(detail.intent_score)}
-              </div>
-              <Tag color={GRADE_COLOR[grade] ?? "default"} className="!m-0">
-                {grade} 级
-              </Tag>
-            </div>
-            <div className="mt-1 text-xs text-gray-400">
-              综合分 {fmtScore(composite)}（ICP×0.4 + 意图×0.6）
-            </div>
-          </div>
-        </div>
-        {detail.is_competitor === 1 ? (
-          <div className="mt-3">
-            <Tag color="warning">疑似同行</Tag>
-            <span className="text-xs text-gray-400">名称命中设备词且经营范围含制造/销售，谨慎跟进</span>
-          </div>
-        ) : null}
-      </div>
-
-      <div>
-        <div className="mb-2 text-sm font-medium text-gray-700">经营范围</div>
-        <Typography.Paragraph type="secondary" className="!mb-0 whitespace-pre-wrap">
-          {detail.business_scope?.trim() || "（暂缺）"}
-        </Typography.Paragraph>
-      </div>
-
-      <div>
-        <div className="mb-3 text-sm font-medium text-gray-700">意图信号（{signals.length} 条）</div>
-        {signals.length > 0 ? (
-          <Timeline
-            items={signals.map((s) => ({
-              color: "blue",
-              children: <SignalBlock s={s} />,
-            }))}
-          />
-        ) : (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无信号" />
-        )}
-      </div>
-    </div>
-  );
-}
-
-export default function EnterpriseDrawer({
-  open,
-  enterpriseId,
-  onClose,
-  onConverted,
-}: EnterpriseDrawerProps) {
-  const [detail, setDetail] = useState<EnterpriseDetail | null>(null);
+export default function EnterpriseDrawer({ open, enterpriseId, onClose, onConverted }: Props) {
+  const [detail, setDetail] = useState<Enterprise | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [converting, setConverting] = useState(false);
 
   useEffect(() => {
-    if (!open || enterpriseId == null) return;
+    if (enterpriseId === null) return;
     let cancelled = false;
     setLoading(true);
-    setError(null);
     setDetail(null);
     api
-      .get<EnterpriseDetail>(`/api/enterprises/${enterpriseId}`)
-      .then((res) => {
-        if (!cancelled) setDetail(res);
+      .get<Enterprise>(`/api/enterprises/${enterpriseId}`)
+      .then((d) => {
+        if (!cancelled) setDetail(d);
       })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "未知错误");
-      })
+      .catch((e) => Toast.error(e instanceof Error ? e.message : "加载失败"))
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [open, enterpriseId]);
+  }, [enterpriseId]);
 
-  const convertToLead = async () => {
-    if (enterpriseId == null || detail == null) return;
+  const convert = async () => {
+    if (detail === null) return;
     setConverting(true);
     try {
-      await api.post(`/api/enterprises/${enterpriseId}/lead`, {});
-      message.success(`已转为线索：${detail.name}`);
-      onConverted();
+      await api.post(`/api/enterprises/${detail.id}/lead`);
+      Toast.success("已转为线索，去线索看板跟进吧");
+      onConverted?.();
       onClose();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 422) {
-        message.error(`转线索失败（撞单）：${e.message}`);
-      } else {
-        message.error(`转线索失败：${e instanceof Error ? e.message : "未知错误"}`);
-      }
+      Toast.error(e instanceof Error ? e.message : "操作失败");
     } finally {
       setConverting(false);
     }
   };
 
+  const composite = detail ? detail.icp_score * 0.4 + detail.intent_score * 0.6 : 0;
+  const grade = gradeOf(composite);
+
   return (
-    <Drawer
-      open={open}
-      width={640}
-      onClose={onClose}
+    <SideSheet
+      visible={open}
+      onCancel={onClose}
+      width={620}
       title={
         detail ? (
-          <Space>
-            <span>{detail.name}</span>
-            {detail.is_competitor === 1 ? <Tag color="warning">疑似同行</Tag> : null}
-          </Space>
+          <span className="flex items-center gap-2">
+            <span className="text-[16px] font-semibold text-slate-800">{detail.name}</span>
+            {detail.is_competitor === 1 && <Tag color="amber">疑似同行</Tag>}
+          </span>
         ) : (
           "企业详情"
         )
       }
       footer={
-        detail ? (
-          <Space className="flex w-full justify-end">
+        detail && detail.is_competitor !== 1 ? (
+          <div className="flex justify-end gap-2">
             <Button onClick={onClose}>关闭</Button>
-            <Button type="primary" loading={converting} onClick={() => void convertToLead()}>
-              转线索
+            <Button theme="solid" loading={converting} onClick={convert}>
+              转为线索
             </Button>
-          </Space>
+          </div>
         ) : null
       }
+      bodyStyle={{ padding: "20px 24px" }}
     >
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Spin />
+      {loading || detail === null ? (
+        <div className="space-y-4 pt-2">
+          <Skeleton placeholder={<Skeleton.Paragraph rows={5} />} loading active />
+          <Skeleton placeholder={<Skeleton.Paragraph rows={3} />} loading active />
         </div>
-      ) : error ? (
-        <Alert type="error" showIcon message="企业详情加载失败" description={error} />
-      ) : detail ? (
-        <DetailBody detail={detail} />
-      ) : null}
-    </Drawer>
+      ) : (
+        <div className="space-y-6">
+          {/* 工商信息 */}
+          <section>
+            <h3 className="text-[13px] font-semibold text-slate-400 tracking-wide mb-2.5">工商信息</h3>
+            <Descriptions
+              size="small"
+              align="left"
+              data={[
+                { key: "统一信用代码", value: detail.uscc || "（暂缺）" },
+                { key: "地区", value: [detail.province, detail.city, detail.district].filter(Boolean).join(" ") || "-" },
+                { key: "行业", value: detail.industry_name || "未分类" },
+                { key: "注册资本", value: detail.registered_capital_wan == null ? "-" : `${detail.registered_capital_wan.toLocaleString("zh-CN")} 万` },
+                { key: "经营状态", value: detail.status === "active" ? "在营" : "已注销" },
+                { key: "来源", value: ({ poi: "高德 POI", tender: "招标公告", csv: "CSV 导入", manual: "手动录入" } as Record<string, string>)[detail.source as string] ?? detail.source },
+              ]}
+            />
+            {detail.address && <p className="text-[12.5px] text-slate-500 mt-2.5">{detail.address}</p>}
+          </section>
+
+          {/* 评分 */}
+          <section className="rounded-2xl bg-gradient-to-br from-slate-50 to-indigo-50/60 border border-indigo-100/70 p-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-[11.5px] text-slate-400">ICP 匹配分</div>
+                <div className="text-[34px] leading-10 font-bold text-indigo-700 tabular-nums">{detail.icp_score}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-[11.5px] text-slate-400">意图分（时间衰减）</div>
+                <div className={`text-[34px] leading-10 font-bold tabular-nums ${detail.intent_score > 0 ? "text-rose-500" : "text-slate-300"}`}>
+                  {detail.intent_score}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[11.5px] text-slate-400">线索等级</div>
+                <div className="mt-1.5">
+                  {GRADE_TAG[grade] ? (
+                    <Tag color={GRADE_TAG[grade].color} type="solid" size="large">
+                      {GRADE_TAG[grade].label}
+                    </Tag>
+                  ) : (
+                    <span className="text-slate-300 text-[15px]">-</span>
+                  )}
+                  <div className="text-[10.5px] text-slate-400 mt-1">综合 {composite.toFixed(1)}（ICP×0.4＋意图×0.6）</div>
+                </div>
+              </div>
+            </div>
+            {detail.icp_reasons.length > 0 && (
+              <Collapse className="!mt-4 !bg-white/70 !rounded-xl" defaultActiveKey={["reasons"]}>
+                <Collapse.Panel header={`评分理由（${detail.icp_reasons.length} 条）`} itemKey="reasons">
+                  <div className="space-y-1.5">
+                    {detail.icp_reasons.map((r, i) => (
+                      <div key={i} className="flex items-center justify-between text-[13px]">
+                        <span className="text-slate-600">{r.rule}</span>
+                        <span className="font-semibold text-indigo-600 tabular-nums">+{r.points}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Collapse.Panel>
+              </Collapse>
+            )}
+          </section>
+
+          {/* 经营范围 */}
+          {detail.business_scope && (
+            <section>
+              <h3 className="text-[13px] font-semibold text-slate-400 tracking-wide mb-2">经营范围</h3>
+              <p className="text-[13px] text-slate-600 leading-6 whitespace-pre-wrap bg-slate-50 rounded-xl p-3.5">
+                {detail.business_scope}
+              </p>
+            </section>
+          )}
+
+          {/* 信号 */}
+          <section>
+            <h3 className="text-[13px] font-semibold text-slate-400 tracking-wide mb-3">
+              意图信号（{detail.signals?.length ?? 0} 条）
+            </h3>
+            {(detail.signals?.length ?? 0) === 0 ? (
+              <div className="text-[13px] text-slate-400 bg-slate-50 rounded-xl p-4">
+                暂无信号 —— 该企业尚未命中设备采购相关公告
+              </div>
+            ) : (
+              <Timeline mode="left">
+                {detail.signals!.map((s) => (
+                  <Timeline.Item
+                    key={s.id}
+                    time={s.pub_date || "日期未知"}
+                    dot={<span className="w-2 h-2 rounded-full bg-rose-500 inline-block shadow-[0_0_0_3px_#fecdd3]" />}
+                  >
+                    <div className="text-[13.5px] font-medium text-slate-700 leading-5">
+                      {s.url ? (
+                        <a href={s.url} target="_blank" rel="noreferrer" className="hover:text-indigo-600 inline-flex items-center gap-1">
+                          {s.title} <ExternalLink size={12} className="text-slate-300" />
+                        </a>
+                      ) : (
+                        s.title
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                      <Tag color="red" type="light" size="small">
+                        <Zap size={10} className="inline mr-0.5 -mt-0.5" />
+                        {s.base_score} 分
+                      </Tag>
+                      {s.matched_terms.map((t) => (
+                        <Tag key={t} color="orange" type="light" size="small">
+                          {t}
+                        </Tag>
+                      ))}
+                      <Tag color="grey" type="light" size="small">
+                        {s.hit_part === "title" ? "标题命中" : "正文命中"}
+                      </Tag>
+                    </div>
+                    {s.raw_excerpt && (
+                      <p className="text-[12px] text-slate-400 leading-5 mt-1.5 bg-slate-50 rounded-lg px-3 py-2">{s.raw_excerpt}</p>
+                    )}
+                  </Timeline.Item>
+                ))}
+              </Timeline>
+            )}
+          </section>
+        </div>
+      )}
+    </SideSheet>
   );
 }

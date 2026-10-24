@@ -1,8 +1,5 @@
 import type { Metadata } from "next";
-import { AntdRegistry } from "@ant-design/nextjs-registry";
-import { ConfigProvider } from "antd";
-import zhCN from "antd/locale/zh_CN";
-import { antdTheme } from "@/lib/theme";
+import Providers from "@/components/Providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,11 +11,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh-CN">
       <body>
-        <AntdRegistry>
-          <ConfigProvider theme={antdTheme} locale={zhCN}>
-            {children}
-          </ConfigProvider>
-        </AntdRegistry>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
