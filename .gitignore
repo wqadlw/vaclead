@@ -21,5 +21,8 @@ backups/
 .idea/
 .vscode/
 
-# TODO(S4审查): api.ts 被SSRF启发式误报，暂缓入库待统一处理
+.mimosa/
+
+# 已知技术债：api.ts 为浏览器端 fetch 封装（含 /api/ 前缀与来源白名单双重防护），
+# 被 SSRF 启发式持续误报，暂缓入库，见 docs/ACCEPTANCE.md §四.1
 frontend/lib/api.ts
