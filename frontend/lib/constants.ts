@@ -1,4 +1,5 @@
 export const INDUSTRY_OPTIONS = [
+  { key: "research_edu", name: "科研院所/高校医疗", tier: 1 },
   { key: "semiconductor", name: "半导体/集成电路", tier: 1 },
   { key: "coating", name: "真空镀膜加工", tier: 1 },
   { key: "photovoltaic", name: "光伏", tier: 2 },

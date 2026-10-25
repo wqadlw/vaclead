@@ -41,6 +41,55 @@
   --semi-border-radius-small: 4px;
   --semi-border-radius-medium: 6px;
   --semi-border-radius-large: 8px;
+
+  /* ---- 手感令牌（吸收 twenty-ui design-tokens）----
+     动效三档：instant 0.075s（按压）/ fast 0.15s（hover 反馈）/ normal 0.3s（弹层）
+     阴影极轻双层（仅浮层用；framed-sheet 主面仍无阴影）
+     圆角三档：sm 4 / md 6 / pill 999 */
+  --motion-instant: 0.075s cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-fast: 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-normal: 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  --shadow-overlay: 0px 2px 4px 0px rgba(19, 20, 22, 0.04),
+    0px 0px 4px 0px rgba(19, 20, 22, 0.08);
+  --shadow-strong: 2px 4px 16px 0px rgba(19, 20, 22, 0.16),
+    0px 2px 4px 0px rgba(19, 20, 22, 0.08);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-pill: 999px;
+}
+
+/* ---- 暗色主题（吸收 twenty ColorScheme: Dark|Light|System + token 双值模式）----
+   灰阶取自 twenty gray dark 值（gray1=0.09 基底 / gray8=0.4 控件），
+   品牌青蓝在暗底提亮保证对比度；framed-sheet 结构不变。 */
+[data-theme="dark"] {
+  --ground: #131416;
+  --surface: #1b1c1e;
+  --raised: #1f2124;
+  --active: #26282b;
+  --border: #2b2d30;
+  --rule: #242628;
+  --control: #4a4d50;
+  --ink: #e3e5e7;
+  --muted: #9a9d9f;
+  --accent: #56a8c0;
+  --positive: #52b483;
+  --negative: #e07a80;
+  --warning: #d6a156;
+
+  --semi-color-primary: #56a8c0;
+  --semi-color-primary-hover: #6cb8cd;
+  --semi-color-primary-active: #7fc6d8;
+  --semi-color-text-0: #e3e5e7;
+  --semi-color-text-1: #e3e5e7;
+  --semi-color-text-2: #9a9d9f;
+  --semi-color-text-3: #9a9d9f;
+  --semi-color-border: #2b2d30;
+  --semi-color-fill-0: rgba(227, 229, 231, 0.05);
+  --semi-color-fill-1: rgba(227, 229, 231, 0.09);
+  --semi-color-fill-2: rgba(227, 229, 231, 0.13);
+  --semi-color-bg-0: #1b1c1e;
+  --semi-color-bg-1: #1f2124;
+  --semi-color-link: #56a8c0;
 }
 
 html,
@@ -119,14 +168,58 @@ body {
   color: var(--ink);
 }
 
-/* 动画反馈（app 屏幕规则：动效仅用于反馈，无入场表演） */
+/* 动画反馈（app 屏幕规则：动效仅用于反馈，无入场表演）——统一二十手感三档 */
 .semi-button,
 .semi-input-wrapper,
 .semi-select,
 .nav-item,
 a {
-  transition: background-color 0.15s ease, border-color 0.15s ease,
-    color 0.15s ease;
+  transition: background-color var(--motion-fast), border-color var(--motion-fast),
+    color var(--motion-fast);
+}
+
+/* ---- 行内编辑（InlineCell 双态，吸收 twenty record-inline-cell）----
+   默认展示态：可编辑单元格 hover 时底色微亮 + 右缘淡入铅笔提示；
+   点击进入编辑态（输入框替换文本），Esc/失焦回展示态。 */
+.inline-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: text;
+  transition: background-color var(--motion-instant), border-color var(--motion-instant);
+}
+.inline-cell:hover {
+  background: var(--raised);
+  border-color: var(--border);
+}
+.inline-cell:hover .inline-cell-hint {
+  opacity: 1;
+}
+.inline-cell-hint {
+  opacity: 0;
+  transition: opacity var(--motion-instant);
+  color: var(--control);
+}
+.inline-cell input,
+.inline-cell .semi-input-wrapper {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  width: 100%;
+  outline: none;
+}
+
+/* 弹层（下拉/弹窗）用极轻阴影替代重阴影 */
+.semi-popover,
+.semi-modal .semi-modal-content,
+.semi-sidesheet .semi-sidesheet-inner {
+  box-shadow: var(--shadow-strong) !important;
 }
 
 /* 登录页纯 CSS 入场（页面级允许一次入场编排） */
@@ -151,3 +244,86 @@ a {
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--control); border-radius: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+
+/* ---- 暗色主题补充覆盖（Semi 组件 + 白底卡片对齐暗面）---- */
+[data-theme="dark"] body {
+  background: var(--ground);
+  color: var(--ink);
+}
+[data-theme="dark"] .semi-card,
+[data-theme="dark"] .semi-table-tbody > tr > td,
+[data-theme="dark"] .semi-table-thead > tr > th {
+  background: transparent !important;
+}
+[data-theme="dark"] .semi-table-row:hover > td,
+[data-theme="dark"] .semi-table-row:hover > td.semi-table-cell {
+  background: var(--raised) !important;
+}
+/* 主按钮暗色下：反白逻辑反转（浅色底配深字） */
+[data-theme="dark"] .semi-button-primary {
+  background: #e3e5e7 !important;
+  color: #131416 !important;
+  border-color: #e3e5e7 !important;
+}
+[data-theme="dark"] .semi-button-primary:hover {
+  background: #f2f3f4 !important;
+}
+[data-theme="dark"] .semi-button-primary:active {
+  background: #cfd1d3 !important;
+}
+[data-theme="dark"] ::selection {
+  background: #1d4a58;
+  color: #d9eef4;
+}
+[data-theme="dark"] .nav-pill {
+  background: var(--active);
+  color: var(--ink);
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: var(--control);
+}
+
+/* ---- 暗色全局兜底：Semi 变量挂 body + Tailwind 尾类映射 ----
+   twenty 模式：token 双值切换；此处等价实现——bg-white/text-slate-* 在暗面
+   全局映射到暗令牌，页面代码无需逐处改类名。 */
+body[theme-mode="dark"],
+html[theme-mode="dark"] {
+  --semi-color-primary: #56a8c0;
+  --semi-color-text-0: #e3e5e7;
+  --semi-color-text-1: #e3e5e7;
+  --semi-color-text-2: #9a9d9f;
+  --semi-color-text-3: #9a9d9f;
+  --semi-color-bg-0: #1b1c1e;
+  --semi-color-bg-1: #1f2124;
+  --semi-color-border: #2b2d30;
+  --semi-color-fill-0: rgba(227, 229, 231, 0.05);
+  --semi-color-fill-1: rgba(227, 229, 231, 0.09);
+  --semi-color-fill-2: rgba(227, 229, 231, 0.13);
+  --semi-color-link: #56a8c0;
+}
+[data-theme="dark"] .bg-white {
+  background: var(--surface) !important;
+}
+[data-theme="dark"] .bg-slate-50\/70,
+[data-theme="dark"] .bg-slate-50 {
+  background: var(--raised) !important;
+}
+[data-theme="dark"] .text-slate-700,
+[data-theme="dark"] .text-slate-600,
+[data-theme="dark"] .text-slate-500 {
+  color: var(--ink) !important;
+}
+[data-theme="dark"] .text-slate-400,
+[data-theme="dark"] .text-slate-300,
+[data-theme="dark"] .text-slate-200 {
+  color: var(--muted) !important;
+}
+[data-theme="dark"] .border-slate-200,
+[data-theme="dark"] .border-slate-100 {
+  border-color: var(--border) !important;
+}
+[data-theme="dark"] .bg-\[\#0e1230\],
+[data-theme="dark"] .bg-\[\#10202a\] {
+  background: #0d1117 !important;
+}

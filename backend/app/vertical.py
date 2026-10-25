@@ -26,6 +26,18 @@ def device_strong_terms() -> list[str]:
     return list(load()["device_terms"]["strong"])
 
 
+# ggzy 名称检索专用宽词（该接口按企业名匹配，细分词如"罗茨泵"召回≈0；
+# 品类宽词覆盖名称含"真空"的主体，细粒度意图交给 ccgp 全文检索）
+GGZY_NAME_TERMS = [
+    "真空", "真空设备", "真空泵", "真空技术", "真空科技", "真空工程",
+    "镀膜设备", "镀膜机", "热处理设备", "冻干设备", "真空仪器", "真空装置",
+]
+
+
+def ggzy_name_terms() -> list[str]:
+    return list(GGZY_NAME_TERMS)
+
+
 def device_weak_terms() -> list[str]:
     return list(load()["device_terms"]["weak"])
 

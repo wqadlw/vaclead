@@ -151,3 +151,116 @@ def test_poi_task_requires_key(client, admin_headers):
 def test_tender_scan_requires_key(client, admin_headers):
     r = client.post("/api/tasks/tender-scan", json={"days": 7}, headers=admin_headers)
     assert r.status_code in (200, 400)
+
+
+# ---- 官方中标数据采集（ggzy-harvest，docs/DATA_ACQUISITION.md 契约）----
+def test_ggzy_harvest_end_to_end(client, admin_headers, monkeypatch):
+    """Mock 官方接口 → 启动任务 → 轮询完成 → 校验双向入库与去重。
+
+    断言面：
+    1. 中标方建档（uscc/来源/同行打标）
+    2. tender_win 信号（evidence_claim 带 采购人+成交价）
+    3. 采购人独立建档 + tender_buy 信号（真买家侧）
+    4. 设备词不命中的中标记录不落信号（与招标导入同语义）
+    5. 重跑去重：信号数不增
+    """
+    import time as _time
+
+    from app.collectors import ggzy as ggzy_mod
+    from app.db import SessionLocal
+    from app.models import Enterprise, Signal, TaskCheckpoint
+
+    monkeypatch.setattr(ggzy_mod, "REQUEST_INTERVAL_S", 0.0)
+
+    def fake_search_all_entities(keyword, max_pages=20, size=200, client=None):
+        # 关键词决定返回主体；两家：一家设备商（同行），一家无设备词的工程公司
+        if keyword == "真空镀膜机":
+            return [
+                {"uniscid": "USCC0001", "entname": "苏州X真空镀膜机有限公司",
+                 "name": "张三", "bidCount": 1, "estdate": 1509292800000},
+                {"uniscid": "USCC0002", "entname": "上海Y机电安装工程有限公司",
+                 "name": "李四", "bidCount": 1},
+            ]
+        return []
+
+    def fake_list_bids(uniscid, page=1, size=50, client=None):
+        if uniscid == "USCC0001":
+            return {"records": [{
+                "id": "DEAL1", "projectName": "某研究院真空镀膜机采购项目成交公告",
+                "bidPrice": "320.5", "areaCode": "苏州", "tos": "政府采购",
+                "tenderOrgName": "某材料研究院", "createTime": "2026-10-01 09:00:00",
+            }], "total": 1, "pages": 1}
+        if uniscid == "USCC0002":
+            # 无设备词项目 → 不应落信号
+            return {"records": [{
+                "id": "DEAL2", "projectName": "厂区绿化养护服务成交公告",
+                "bidPrice": "12", "areaCode": "上海", "tos": "政府采购",
+                "tenderOrgName": "某园区管委会", "createTime": "2026-10-02",
+            }], "total": 1, "pages": 1}
+        return {"records": [], "total": 0, "pages": 0}
+
+    monkeypatch.setattr(ggzy_mod, "search_all_entities", fake_search_all_entities)
+    monkeypatch.setattr(ggzy_mod, "list_bids", fake_list_bids)
+
+    r = client.post("/api/tasks/ggzy-harvest",
+                    json={"keywords": ["真空镀膜机"], "max_pages": 1},
+                    headers=admin_headers)
+    assert r.status_code == 200, r.text
+    task_id = r.json()["task_id"]
+
+    deadline = _time.time() + 15
+    status = "running"
+    while _time.time() < deadline:
+        with SessionLocal() as s:
+            cp = s.get(TaskCheckpoint, task_id)
+            status = cp.status
+        if status != "running":
+            break
+        _time.sleep(0.2)
+    assert status == "done", f"任务未完成: {status}"
+
+    with SessionLocal() as s:
+        bidder = s.query(Enterprise).filter(Enterprise.uscc == "USCC0001").first()
+        assert bidder is not None and bidder.is_competitor == 1  # 设备商 → 同行打标
+        assert bidder.source == "ggzy"
+
+        win = s.query(Signal).filter(
+            Signal.enterprise_id == bidder.id, Signal.type == "tender_win"
+        ).all()
+        assert len(win) == 1
+        assert "真空镀膜机" in win[0].title
+        assert "某材料研究院" in (win[0].evidence_claim or "")
+        assert "320.5" in (win[0].evidence_claim or "")
+
+        buyer = s.query(Enterprise).filter(Enterprise.name == "某材料研究院").first()
+        assert buyer is not None
+        assert buyer.source == "ggzy_buyer"
+        buys = s.query(Signal).filter(
+            Signal.enterprise_id == buyer.id, Signal.type == "tender_buy"
+        ).all()
+        assert len(buys) == 1
+
+        # 绿化项目：中标方 USCC0002 建档但无信号
+        other = s.query(Enterprise).filter(Enterprise.uscc == "USCC0002").first()
+        assert other is not None
+        assert s.query(Signal).filter(Signal.enterprise_id == other.id).count() == 0
+
+        total_signals_before = s.query(Signal).count()
+
+    # 重跑同关键词 → 全部去重，信号不增
+    r2 = client.post("/api/tasks/ggzy-harvest",
+                     json={"keywords": ["真空镀膜机"], "max_pages": 1},
+                     headers=admin_headers)
+    assert r2.status_code == 200
+    task_id2 = r2.json()["task_id"]
+    deadline = _time.time() + 15
+    while _time.time() < deadline:
+        with SessionLocal() as s:
+            cp = s.get(TaskCheckpoint, task_id2)
+            status = cp.status
+        if status != "running":
+            break
+        _time.sleep(0.2)
+    assert status == "done"
+    with SessionLocal() as s:
+        assert s.query(Signal).count() == total_signals_before  # 去重生效

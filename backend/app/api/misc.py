@@ -1,7 +1,8 @@
 """杂项路由：登录 / 设置 / Agent 日志。"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import json
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,6 +12,24 @@ from ..db import get_session
 from ..models import AgentRun, Enterprise, Lead, PoolSetting, SettingsKV, Signal, User
 
 router = APIRouter(tags=["misc"])
+
+
+@router.get("/meta/vertical")
+def vertical_meta(user: User = Depends(current_user)):
+    """垂直词表元数据（采集中心下拉的唯一数据源，避免前端硬编码副本漂移）。"""
+    from ..vertical import (
+        device_strong_terms,
+        device_weak_terms,
+        downstream_industries,
+        ggzy_name_terms,
+    )
+
+    return {
+        "strong_terms": device_strong_terms(),
+        "weak_terms": device_weak_terms(),
+        "ggzy_terms": ggzy_name_terms(),
+        "industries": downstream_industries(),
+    }
 
 
 @router.get("/health")
@@ -119,10 +138,22 @@ class LoginIn(BaseModel):
 
 
 @router.post("/auth/login")
-def login(body: LoginIn, session: Session = Depends(get_session)):
+def login(
+    body: LoginIn,
+    request: Request = None,  # type: ignore[assignment]
+    session: Session = Depends(get_session),
+):
+    from ..auth import clear_login_failures, login_rate_limited, record_login_failure
+
+    if request is not None:
+        login_rate_limited(request)
     user = session.query(User).filter(User.username == body.username).first()
     if user is None or not verify_password(body.password, user.password_hash):
+        if request is not None:
+            record_login_failure(request)
         raise HTTPException(401, "用户名或密码错误")
+    if request is not None:
+        clear_login_failures(request)
     return {
         "token": create_token(user),
         "role": user.role,
@@ -181,6 +212,46 @@ def put_settings(
     return {"ok": True}
 
 
+class NotifyPrefsIn(BaseModel):
+    channels: list[str]  # ["in_app"] / ["in_app","email"] / 含 wechat
+
+
+@router.get("/notify-preferences")
+def get_notify_prefs(
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """渠道偏好（吸收 Novu subscriber preferences）+ 渠道注册表。"""
+    from ..notify.channels import CHANNELS, user_channels
+
+    return {
+        "channels": [
+            {"key": k, "label": v["label"], "available": v["enabled"]} for k, v in CHANNELS.items()
+        ],
+        "preferences": user_channels(session, user.id),
+    }
+
+
+@router.put("/notify-preferences")
+def put_notify_prefs(
+    body: NotifyPrefsIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    from ..notify.channels import CHANNELS
+
+    valid = [c for c in body.channels if c in CHANNELS]
+    if not valid:
+        raise HTTPException(422, "至少选择一个合法渠道")
+    row = session.get(SettingsKV, "notify_channels")
+    if row is None:
+        session.add(SettingsKV(key="notify_channels", value=json.dumps(valid)))
+    else:
+        row.value = json.dumps(valid)
+    session.commit()
+    return {"ok": True, "preferences": valid}
+
+
 @router.get("/agent-runs")
 def list_agent_runs(
     agent_name: str | None = None,
@@ -218,3 +289,68 @@ def list_agent_runs(
         "page": page,
         "page_size": page_size,
     }
+
+
+@router.get("/notifications")
+def list_notifications(
+    unread: int = 0,
+    page: int = 1,
+    page_size: int = 20,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """站内通知列表 + 未读数（SPEC-C F1）。"""
+    from ..models import Notification
+
+    base = session.query(Notification).filter(Notification.user_id == user.id)
+    unread_count = base.filter(Notification.read == 0).count()
+    stmt = base
+    if unread:
+        stmt = stmt.filter(Notification.read == 0)
+    rows = (
+        stmt.order_by(Notification.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {
+        "unread_count": unread_count,
+        "items": [
+            {
+                "id": n.id, "kind": n.kind, "title": n.title, "body": n.body,
+                "ref_type": n.ref_type, "ref_id": n.ref_id, "read": n.read,
+                "created_at": n.created_at,
+            }
+            for n in rows
+        ],
+    }
+
+
+@router.post("/notifications/{nid}/read")
+def read_notification(
+    nid: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    from ..models import Notification
+
+    n = session.get(Notification, nid)
+    if n is None or n.user_id != user.id:
+        raise HTTPException(404, "通知不存在")
+    n.read = 1
+    session.commit()
+    return {"ok": True}
+
+
+@router.post("/notifications/read-all")
+def read_all_notifications(
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    from ..models import Notification
+
+    session.query(Notification).filter(
+        Notification.user_id == user.id, Notification.read == 0
+    ).update({"read": 1}, synchronize_session=False)
+    session.commit()
+    return {"ok": True}

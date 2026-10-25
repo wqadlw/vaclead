@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Button, Input, InputNumber, Select, Table, Tag, Toast } from "@douyinfe/semi-ui";
-import { Search, RotateCcw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Button, Checkbox, Dropdown, Input, InputNumber, Modal, Popover, Select, Table, Tag, Tabs, Toast } from "@douyinfe/semi-ui";
+import { Pencil, Save, Search, Settings2, RotateCcw, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
-import EnterpriseDrawer from "@/components/EnterpriseDrawer";
+import EnterprisePeek from "@/components/EnterprisePeek";
 import { api } from "@/lib/api";
 import type { Enterprise, PageData } from "@/lib/api";
 import { INDUSTRY_OPTIONS } from "@/lib/constants";
@@ -36,6 +37,25 @@ const COMPETITOR_OPTIONS = [
   { value: 0, label: "排除同行" },
   { value: 1, label: "仅同行" },
 ];
+/** 采集来源（通道级筛选：后端把 ggzy/ggzy_buyer 归并为一个通道）。 */
+const SOURCE_OPTIONS = [
+  { value: "ggzy", label: "官方中标数据" },
+  { value: "ccgp", label: "政采网公告" },
+  { value: "csv", label: "CSV 导入" },
+  { value: "poi", label: "POI 采集" },
+  { value: "tender", label: "招标导入" },
+  { value: "manual", label: "手工" },
+];
+const SOURCE_TAG: Record<string, { label: string; color: "cyan" | "green" | "blue" | "grey" | "white" }> = {
+  ggzy: { label: "官方中标", color: "cyan" },
+  ggzy_buyer: { label: "官方买家", color: "green" },
+  ccgp: { label: "政采供应商", color: "blue" },
+  ccgp_buyer: { label: "政采买家", color: "green" },
+  csv: { label: "CSV", color: "grey" },
+  tender: { label: "招标", color: "grey" },
+  poi: { label: "POI", color: "grey" },
+  manual: { label: "手工", color: "white" },
+};
 
 interface Filters {
   q?: string;
@@ -48,6 +68,8 @@ interface Filters {
   signal_days?: number | null;
   score_min?: number | null;
   is_competitor: number;
+  source?: string;
+  has_contact?: number;
 }
 
 const TIER_TAG: Record<number, "indigo" | "cyan" | "grey"> = { 1: "indigo", 2: "cyan", 3: "grey" };
@@ -60,13 +82,234 @@ function regionOf(e: Enterprise): string {
 }
 
 export default function EnterprisesPage() {
-  const [filters, setFilters] = useState<Filters>({ is_competitor: -1 });
-  const [applied, setApplied] = useState<Filters>({ is_competitor: -1 });
+  const router = useRouter();
+  // 初始筛选从 URL 恢复（吸收 twenty useSetViewInUrl：视图状态可分享/可刷新）
+  const initFromUrl = (): Filters => {
+    if (typeof window === "undefined") return { is_competitor: -1 };
+    const sp = new URLSearchParams(window.location.search);
+    const f: Filters = { is_competitor: Number(sp.get("is_competitor") ?? -1) };
+    const q = sp.get("q");
+    if (q) f.q = q;
+    const ik = sp.get("industry_key");
+    if (ik) f.industry_key = ik;
+    const pv = sp.get("province");
+    if (pv) f.province = pv;
+    const ct = sp.get("city");
+    if (ct) f.city = ct;
+    const src2 = sp.get("source");
+    if (src2) f.source = src2;
+    const hc = sp.get("has_contact");
+    if (hc) f.has_contact = Number(hc);
+    const sm = sp.get("score_min");
+    if (sm) f.score_min = Number(sm);
+    return f;
+  };
+  const [filters, setFilters] = useState<Filters>(initFromUrl);
+  const [applied, setApplied] = useState<Filters>(initFromUrl);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<PageData<Enterprise> | null>(null);
   const [loading, setLoading] = useState(false);
-  const [drawerId, setDrawerId] = useState<number | null>(null);
   const [convertingId, setConvertingId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [peekId, setPeekId] = useState<number | null>(null);
+  // 行内编辑（twenty InlineCell 双态）：editingKey="col:entId"，draft 可取消
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string>("");
+  const [batching, setBatching] = useState(false);
+  // Pro 表格（ant-design-pro 模式）：列显隐 / 密度 / 保存视图
+  const [hiddenCols, setHiddenCols] = useState<string[]>([]);
+  const [dense, setDense] = useState(false);
+  // 视图 = 完整工作区快照（吸收 twenty View：筛选+列配置+密度+聚合全打包）
+  const [views, setViews] = useState<
+    { name: string; filters: Filters; hiddenCols: string[]; dense: boolean; colAggs: Record<string, string> }[]
+  >(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const legacy = JSON.parse(localStorage.getItem("vaclead_views") || "[]") as {
+        name: string;
+        filters: Filters;
+      }[];
+      const v2 = localStorage.getItem("vaclead_views_v2");
+      if (v2) return JSON.parse(v2);
+      return legacy.map((v) => ({ ...v, hiddenCols: [], dense: false, colAggs: {} }));
+    } catch {
+      return [];
+    }
+  });
+  const [viewName, setViewName] = useState("");
+  // 高级筛选（twenty advanced-filter 模式：AND/OR 逻辑组 + 条件三元组行）
+  const [afOpen, setAfOpen] = useState(false);
+  const [afLogic, setAfLogic] = useState<"and" | "or">("and");
+  const [afRows, setAfRows] = useState<{ field: string; op: string; value: string }[]>([
+    { field: "icp_score", op: "gte", value: "40" },
+  ]);
+  const [afResults, setAfResults] = useState<{
+    total: number;
+    items: { id: number; name: string; icp_score: number }[];
+  } | null>(null);
+  const [afLoading, setAfLoading] = useState(false);
+  // 列聚合（twenty record-table-footer：点表头选聚合操作，汇总条实时计算）
+  const [colAggs, setColAggs] = useState<Record<string, string>>({});
+
+  const AGG_OPS = [
+    { value: "COUNT", label: "计数" },
+    { value: "SUM", label: "求和" },
+    { value: "AVG", label: "平均" },
+    { value: "MIN", label: "最小" },
+    { value: "MAX", label: "最大" },
+    { value: "NONE", label: "无" },
+  ];
+  const aggValue = (col: string, op: string, items: Enterprise[]): string => {
+    const vals = items
+      .map((it) => {
+        if (col === "signal_count") return it.signal_count ?? 0;
+        if (col === "intent_score") return it.intent_score ?? 0;
+        return it.registered_capital_wan ?? 0;
+      })
+      .filter((v) => v > 0);
+    if (op === "COUNT") return String(items.length);
+    if (vals.length === 0) return "—";
+    switch (op) {
+      case "SUM":
+        return Math.round(vals.reduce((a, b) => a + b, 0)).toLocaleString("zh-CN");
+      case "AVG":
+        return String(Math.round(vals.reduce((a, b) => a + b, 0) / vals.length));
+      case "MIN":
+        return String(Math.round(Math.min(...vals)));
+      case "MAX":
+        return String(Math.round(Math.max(...vals)));
+      default:
+        return "—";
+    }
+  };
+
+  const saveView = () => {
+    const name = viewName.trim();
+    if (!name) return;
+    const next = [
+      ...views.filter((v) => v.name !== name),
+      { name, filters: applied, hiddenCols, dense, colAggs },
+    ];
+    setViews(next);
+    localStorage.setItem("vaclead_views_v2", JSON.stringify(next));
+    setViewName("");
+    Toast.success(`视图「${name}」已保存（含列配置/密度/聚合）`);
+  };
+  const applyView = (v: {
+    name: string;
+    filters: Filters;
+    hiddenCols: string[];
+    dense: boolean;
+    colAggs: Record<string, string>;
+  }) => {
+    setFilters(v.filters);
+    setHiddenCols(v.hiddenCols ?? []);
+    setDense(v.dense ?? false);
+    setColAggs(v.colAggs ?? {});
+    setPage(1);
+    setApplied(v.filters);
+  };
+  const removeView = (name: string) => {
+    const next = views.filter((v) => v.name !== name);
+    setViews(next);
+    localStorage.setItem("vaclead_views_v2", JSON.stringify(next));
+  };
+
+  const saveInline = async (
+    entId: number,
+    col: "registered_capital_wan" | "industry_key" | "address",
+  ) => {
+    const key = `${col}:${entId}`;
+    setEditingKey(null);
+    let value: number | string | null = draft.trim();
+    if (col === "registered_capital_wan") {
+      value = draft.trim() === "" ? null : Number(draft.trim());
+      if (value !== null && (Number.isNaN(value) || (value as number) < 0 || (value as number) > 10_000_000)) {
+        Toast.error("注册资本需在 0-1000 亿元");
+        return;
+      }
+    }
+    try {
+      await api.patch(`/api/enterprises/${entId}/quick-update`, { field: col, value });
+      Toast.success("已更新");
+      void fetchData(applied, page);
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "更新失败");
+    }
+  };
+
+  const runAdvanced = async () => {
+    setAfLoading(true);
+    try {
+      const res = await api.post<{
+        total: number;
+        items: { id: number; name: string; icp_score: number }[];
+      }>("/api/enterprises/advanced-filter", {
+        logic: afLogic,
+        conditions: afRows
+          .filter((r) => r.field)
+          .map((r) => ({
+            field: r.field,
+            operator: r.op,
+            value: r.value === "" ? null : r.value,
+          })),
+      });
+      setAfResults(res);
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "筛选失败");
+    } finally {
+      setAfLoading(false);
+    }
+  };
+
+  /** 列头聚合菜单（twenty record-table-footer：表头下拉选聚合操作） */
+  const aggHeader = (col: string, label: string) => {
+    const op = colAggs[col];
+    return (
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <Dropdown
+          trigger="click"
+          position="bottomRight"
+          render={
+            <Dropdown.Menu>
+              {AGG_OPS.map((o) => (
+                <Dropdown.Item
+                  key={o.value}
+                  active={op === o.value}
+                  onClick={() => {
+                    setColAggs((prev) => {
+                      const next = { ...prev };
+                      if (o.value === "NONE" || prev[col] === o.value) delete next[col];
+                      else next[col] = o.value;
+                      return next;
+                    });
+                  }}
+                >
+                  {o.label}
+                </Dropdown.Item>
+              ))}
+            </Dropdown.Menu>
+          }
+        >
+          <span
+            className={`ml-0.5 inline-flex h-4 w-4 cursor-pointer items-center justify-center rounded text-[10px] leading-none ${
+              op ? "bg-[var(--accent)] text-white" : "text-[var(--control)] hover:bg-[var(--raised)]"
+            }`}
+            title="选择聚合操作"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {op ? AGG_OPS.find((o) => o.value === op)?.label.slice(0, 1) : "Σ"}
+          </span>
+        </Dropdown>
+      </span>
+    );
+  };
+
+  const COLUMN_LABELS: Record<string, string> = {
+    industry_name: "行业", region: "地区", registered_capital_wan: "注册资本",
+    icp_score: "ICP", intent_score: "意图", signal_count: "信号", source: "来源", address: "地址",
+  };
 
   const fetchData = useCallback(async (f: Filters, p: number) => {
     setLoading(true);
@@ -86,6 +329,8 @@ export default function EnterprisesPage() {
       if (typeof f.signal_days === "number") params.set("signal_days", String(f.signal_days));
       if (typeof f.score_min === "number") params.set("score_min", String(f.score_min));
       params.set("is_competitor", String(f.is_competitor));
+      if (f.source) params.set("source", f.source);
+      if (f.has_contact) params.set("has_contact", "1");
       params.set("page", String(p));
       params.set("page_size", String(PAGE_SIZE));
       setData(await api.get<PageData<Enterprise>>(`/api/enterprises?${params.toString()}`));
@@ -100,6 +345,21 @@ export default function EnterprisesPage() {
     void fetchData(applied, page);
   }, [fetchData, applied, page]);
 
+  // URL 状态同步（吸收 twenty useSetViewInUrl）：筛选变化写入 query，可分享/刷新恢复
+  useEffect(() => {
+    const sp = new URLSearchParams();
+    if (applied.q?.trim()) sp.set("q", applied.q.trim());
+    if (applied.industry_key) sp.set("industry_key", applied.industry_key);
+    if (applied.province?.trim()) sp.set("province", applied.province.trim());
+    if (applied.city?.trim()) sp.set("city", applied.city.trim());
+    if (applied.source) sp.set("source", applied.source);
+    if (applied.has_contact) sp.set("has_contact", String(applied.has_contact));
+    if (typeof applied.score_min === "number") sp.set("score_min", String(applied.score_min));
+    if (applied.is_competitor !== -1) sp.set("is_competitor", String(applied.is_competitor));
+    const qs = sp.toString();
+    window.history.replaceState(null, "", qs ? `/enterprises?${qs}` : "/enterprises");
+  }, [applied]);
+
   const set = (patch: Partial<Filters>) => setFilters((prev) => ({ ...prev, ...patch }));
 
   const convert = async (e: Enterprise) => {
@@ -107,13 +367,44 @@ export default function EnterprisesPage() {
     try {
       await api.post(`/api/enterprises/${e.id}/lead`);
       Toast.success(`已转为线索：${e.name}`);
-      setDrawerId(null);
       void fetchData(applied, page);
     } catch (err) {
       Toast.error(err instanceof Error ? err.message : "操作失败");
     } finally {
       setConvertingId(null);
     }
+  };
+
+  const batchConvert = async () => {
+    if (selectedIds.length === 0) return;
+    setBatching(true);
+    try {
+      const r = await api.post<{ converted: number; existed: number; skipped_competitor: number }>(
+        "/api/enterprises/batch-lead",
+        { ids: selectedIds },
+      );
+      Toast.success(
+        `批量完成：转入 ${r.converted}，已有 ${r.existed}，同行跳过 ${r.skipped_competitor}`,
+      );
+      setSelectedIds([]);
+      void fetchData(applied, page);
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "批量失败");
+    } finally {
+      setBatching(false);
+    }
+  };
+
+  const exportUrl = () => {
+    const params = new URLSearchParams();
+    const q = applied.q?.trim();
+    if (q) params.set("q", q);
+    if (applied.industry_key) params.set("industry_key", applied.industry_key);
+    const province = applied.province?.trim();
+    if (province) params.set("province", province);
+    if (applied.source) params.set("source", applied.source);
+    params.set("is_competitor", String(applied.is_competitor));
+    return `http://127.0.0.1:8000/api/enterprises/export?${params.toString()}`;
   };
 
   const columns = [
@@ -123,9 +414,9 @@ export default function EnterprisesPage() {
       width: 260,
       render: (_: unknown, r: Enterprise) => (
         <button
-          onClick={() => setDrawerId(r.id)}
+          onClick={() => setPeekId(r.id)}
           className="block max-w-[240px] cursor-pointer truncate border-0 bg-transparent p-0 text-left text-[13.5px] font-medium text-[var(--ink)] hover:text-[var(--accent)]"
-          title={r.name}
+          title={`${r.name} · 打开情报页`}
         >
           {r.name}
         </button>
@@ -134,23 +425,136 @@ export default function EnterprisesPage() {
     {
       title: "行业",
       dataIndex: "industry_name",
-      width: 130,
-      render: (_: unknown, r: Enterprise) =>
-        r.is_competitor === 1 ? (
-          <Tag color="amber" type="light">疑似同行</Tag>
-        ) : (
-          <Tag color={TIER_TAG[TIER_BY_KEY[r.industry_key ?? ""] ?? 3]} type="light">
-            {r.industry_name || "未分类"}
-          </Tag>
-        ),
+      width: 150,
+      render: (_: unknown, r: Enterprise) => {
+        if (r.is_competitor === 1) {
+          return <Tag color="amber" type="light">疑似同行</Tag>;
+        }
+        const key = `industry_key:${r.id}`;
+        if (editingKey === key) {
+          return (
+            <span className="inline-cell" onClick={(e) => e.stopPropagation()}>
+              <select
+                autoFocus
+                value={draft}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  setTimeout(() => void saveInline(r.id, "industry_key"), 50);
+                }}
+                onBlur={() => setEditingKey(null)}
+                className="w-full bg-transparent text-[12.5px] text-[var(--ink)] outline-none"
+              >
+                <option value="">未分类</option>
+                {INDUSTRY_OPTIONS.map((i) => (
+                  <option key={i.key} value={i.key}>{i.name}</option>
+                ))}
+              </select>
+            </span>
+          );
+        }
+        return (
+          <span
+            className="inline-cell"
+            title="点击编辑行业"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDraft(r.industry_key ?? "");
+              setEditingKey(key);
+            }}
+          >
+            <Tag color={TIER_TAG[TIER_BY_KEY[r.industry_key ?? ""] ?? 3]} type="light">
+              {r.industry_name || "未分类"}
+            </Tag>
+            <Pencil size={11} className="inline-cell-hint" />
+          </span>
+        );
+      },
     },
-    { title: "地区", width: 140, render: (_: unknown, r: Enterprise) => <span className="text-[var(--muted)]">{regionOf(r)}</span> },
     {
-      title: "注册资本（万）",
+      title: "地区",
+      width: 120,
+      render: (_: unknown, r: Enterprise) => <span className="text-[var(--muted)]">{regionOf(r)}</span>,
+    },
+    {
+      title: "地址",
+      dataIndex: "address",
+      width: 170,
+      render: (v: string | null, r: Enterprise) => {
+        const key = `address:${r.id}`;
+        if (editingKey === key) {
+          return (
+            <span className="inline-cell" onClick={(e) => e.stopPropagation()}>
+              <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void saveInline(r.id, "address");
+                  if (e.key === "Escape") setEditingKey(null);
+                }}
+                onBlur={() => void saveInline(r.id, "address")}
+                className="w-full bg-transparent text-[13px] text-[var(--ink)] outline-none"
+              />
+            </span>
+          );
+        }
+        return (
+          <span
+            className="inline-cell"
+            title="点击编辑地址"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDraft(v ?? "");
+              setEditingKey(key);
+            }}
+          >
+            <span className="max-w-[140px] truncate text-[var(--muted)]">{v || "—"}</span>
+            <Pencil size={11} className="inline-cell-hint" />
+          </span>
+        );
+      },
+    },
+    {
+      title: aggHeader("registered_capital_wan", "注册资本（万）"),
       dataIndex: "registered_capital_wan",
-      width: 130,
+      width: 150,
       align: "right" as const,
-      render: (v: number | null) => <span className="tabular-nums text-[var(--muted)]">{v == null ? "—" : v.toLocaleString("zh-CN")}</span>,
+      render: (v: number | null, r: Enterprise) => {
+        const key = `registered_capital_wan:${r.id}`;
+        if (editingKey === key) {
+          return (
+            <span className="inline-cell" onClick={(e) => e.stopPropagation()}>
+              <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void saveInline(r.id, "registered_capital_wan");
+                  if (e.key === "Escape") setEditingKey(null);
+                }}
+                onBlur={() => void saveInline(r.id, "registered_capital_wan")}
+                className="w-full bg-transparent text-right text-[13px] tabular-nums text-[var(--ink)] outline-none"
+              />
+            </span>
+          );
+        }
+        return (
+          <span
+            className="inline-cell justify-end"
+            title="点击编辑"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDraft(v == null ? "" : String(v));
+              setEditingKey(key);
+            }}
+          >
+            <span className="tabular-nums text-[var(--muted)]">
+              {v == null ? "—" : v.toLocaleString("zh-CN")}
+            </span>
+            <Pencil size={11} className="inline-cell-hint" />
+          </span>
+        );
+      },
     },
     {
       title: "ICP",
@@ -161,7 +565,7 @@ export default function EnterprisesPage() {
       render: (v: number) => <span className="tabular-nums text-[var(--ink)]">{v}</span>,
     },
     {
-      title: "意图",
+      title: aggHeader("intent_score", "意图"),
       dataIndex: "intent_score",
       width: 70,
       align: "right" as const,
@@ -171,11 +575,20 @@ export default function EnterprisesPage() {
       ),
     },
     {
-      title: "信号",
+      title: aggHeader("signal_count", "信号"),
       dataIndex: "signal_count",
       width: 64,
       align: "right" as const,
       render: (v: number) => (v > 0 ? <span className="font-medium tabular-nums text-[var(--negative)]">{v}</span> : <span className="tabular-nums text-[#9ca0a3]">0</span>),
+    },
+    {
+      title: "来源",
+      dataIndex: "source",
+      width: 96,
+      render: (_: unknown, r: Enterprise) => {
+        const meta = SOURCE_TAG[r.source ?? ""] ?? { label: r.source || "—", color: "grey" as const };
+        return <Tag color={meta.color} type="light" size="small">{meta.label}</Tag>;
+      },
     },
     {
       title: "",
@@ -209,6 +622,137 @@ export default function EnterprisesPage() {
         </div>
       </div>
 
+      {/* 汇总条（twenty record-aggregate 模式）：点表头选聚合操作，此处实时计算 */}
+      {(data?.items?.length ?? 0) > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-[var(--border)] bg-white px-4 py-2">
+          <span className="text-[12.5px] text-[var(--muted)]">
+            本页 {data!.items.length} 家 · 筛选共 {data?.total ?? 0} 家
+          </span>
+          <span className="text-[12.5px] tabular-nums text-[var(--ink)]">
+            注册资本合计{" "}
+            {Math.round(
+              data!.items.reduce((a, b) => a + (b.registered_capital_wan ?? 0), 0),
+            ).toLocaleString("zh-CN")}
+            {" "}万
+          </span>
+          {Object.entries(colAggs)
+            .filter(([, op]) => op !== "NONE")
+            .map(([col, op]) => {
+              const label =
+                col === "registered_capital_wan" ? "注册资本" :
+                col === "intent_score" ? "意图分" :
+                col === "signal_count" ? "信号" : col;
+              return (
+                <span key={col} className="text-[12.5px] tabular-nums text-[var(--accent)]">
+                  {label}·{AGG_OPS.find((o) => o.value === op)?.label ?? op}{" "}
+                  {aggValue(col, op, data!.items)}
+                </span>
+              );
+            })}
+          <span className="text-[12.5px] text-[var(--muted)]">
+            （点击数值列表头可切换聚合）
+          </span>
+        </div>
+      )}
+
+      {/* Quick picks（gmaps-scraper 模式）：一键组合筛选 */}
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <span className="text-[12px] text-[var(--muted)]">快捷筛选</span>
+        {(
+          [
+            { label: "有联系电话", patch: { has_contact: 1 } },
+            { label: "近期有采购", patch: { signal_days: 90 } },
+            { label: "高意图", patch: { score_min: 40, signal_days: 180 } },
+            { label: "官方中标数据", patch: { source: "ggzy" } },
+            { label: "政采买家", patch: { source: "ccgp" } },
+          ] as { label: string; patch: Partial<Filters> }[]
+        ).map((pick) => {
+          const active = Object.entries(pick.patch).every(
+            ([k, v]) => applied[k as keyof Filters] === v,
+          );
+          return (
+            <button
+              key={pick.label}
+              onClick={() => {
+                const next = { ...filters, ...pick.patch };
+                if (active) {
+                  // 再点一次取消该预设的维度
+                  for (const k of Object.keys(pick.patch)) {
+                    delete (next as Record<string, unknown>)[k];
+                  }
+                }
+                setFilters(next);
+                setPage(1);
+                setApplied(next);
+              }}
+              className={`h-7 cursor-pointer rounded-full border px-3 text-[12px] transition-colors ${
+                active
+                  ? "border-[var(--accent)] bg-[color:var(--accent)]/5 text-[var(--accent)]"
+                  : "border-[var(--border)] bg-white text-[var(--ink)] hover:border-[var(--accent)]"
+              }`}
+            >
+              {pick.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 保存视图 chips（ant-design-pro 查询方案模式） */}
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <div className="flex items-center gap-1.5">
+          <input
+            value={viewName}
+            onChange={(e) => setViewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.keyCode === 13) saveView();
+            }}
+            placeholder="当前筛选存为视图…"
+            className="h-7 w-40 rounded border border-[var(--border)] bg-white px-2 text-[12px] outline-none focus:border-[var(--accent)]"
+          />
+          <button
+            onClick={saveView}
+            className="flex h-7 cursor-pointer items-center gap-1 rounded border-0 bg-transparent px-1.5 text-[12px] text-[var(--muted)] hover:text-[var(--accent)]"
+          >
+            <Save size={12} /> 保存
+          </button>
+        </div>
+        {views.map((v) => (
+          <span
+            key={v.name}
+            className={`inline-flex h-7 cursor-pointer items-center gap-1 rounded-full border px-2.5 text-[12px] ${
+              JSON.stringify(v.filters) === JSON.stringify(applied) &&
+                JSON.stringify(v.hiddenCols ?? []) === JSON.stringify(hiddenCols) &&
+                v.dense === dense
+                ? "border-[var(--accent)] bg-[color:var(--accent)]/5 text-[var(--accent)]"
+                : "border-[var(--border)] bg-white text-[var(--ink)] hover:border-[var(--accent)]"
+            }`}
+            onClick={() => applyView(v)}
+          >
+            {v.name}
+            <X
+              size={11}
+              className="text-[var(--muted)] hover:text-[var(--negative)]"
+              onClick={(e) => {
+                e.stopPropagation();
+                removeView(v.name);
+              }}
+            />
+          </span>
+        ))}
+      </div>
+
+      {selectedIds.length > 0 && (
+        <div className="mt-3 flex items-center gap-3 rounded-lg border border-[var(--border)] bg-white px-4 py-2.5">
+          <span className="text-[13px] text-[var(--ink)]">已选 {selectedIds.length} 家</span>
+          <Button theme="solid" size="small" loading={batching} onClick={batchConvert}>
+            批量转线索
+          </Button>
+          <Button size="small" theme="borderless" type="tertiary" onClick={() => setSelectedIds([])}>
+            清除选择
+          </Button>
+        </div>
+      )}
+
       {/* 工具行：左侧筛选+搜索，右侧重置 */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Select style={ctl} optionList={INDUSTRY_SELECT} placeholder="全部行业" filter showClear value={filters.industry_key} onChange={(v) => set({ industry_key: (v as string) || undefined })} />
@@ -223,6 +767,7 @@ export default function EnterprisesPage() {
         <Select style={ctl} optionList={SIGNAL_DAY_OPTIONS} placeholder="信号不限" showClear value={filters.signal_days ?? undefined} onChange={(v) => set({ signal_days: typeof v === "number" ? v : null })} />
         <Select style={ctl} optionList={SCORE_MIN_OPTIONS} placeholder="评分不限" showClear value={filters.score_min ?? undefined} onChange={(v) => set({ score_min: typeof v === "number" ? v : null })} />
         <Select style={ctl} optionList={COMPETITOR_OPTIONS} value={filters.is_competitor} onChange={(v) => set({ is_competitor: (v as number) ?? -1 })} />
+        <Select style={ctl} optionList={SOURCE_OPTIONS} placeholder="全部来源" showClear value={filters.source ?? undefined} onChange={(v) => set({ source: (v as string) || undefined })} />
         <Input
           style={{ width: 210 }}
           prefix={<Search size={13} className="text-[#9ca0a3]" />}
@@ -238,6 +783,44 @@ export default function EnterprisesPage() {
         />
         <Button theme="solid" className="!h-8" onClick={() => { setPage(1); setApplied(filters); }}>
           查询
+        </Button>
+        <a href={exportUrl()} target="_blank" rel="noreferrer" className="no-underline">
+          <Button theme="outline" className="!h-8">导出 CSV</Button>
+        </a>
+        <Button theme="borderless" type="tertiary" className="!h-8 !px-2 text-[12px]" onClick={() => setAfOpen(true)}>
+          高级筛选
+        </Button>
+        <Popover
+          trigger="click"
+          position="bottomRight"
+          content={
+            <div className="w-44 space-y-1 p-2">
+              <div className="px-2 pb-1 text-[11.5px] text-[var(--muted)]">列显示</div>
+              {Object.entries(COLUMN_LABELS).map(([key, label]) => (
+                <Checkbox
+                  key={key}
+                  checked={!hiddenCols.includes(key)}
+                  onChange={(e) =>
+                    setHiddenCols((prev) =>
+                      e.target.checked ? prev.filter((k) => k !== key) : [...prev, key],
+                    )
+                  }
+                >
+                  <span className="text-[13px]">{label}</span>
+                </Checkbox>
+              ))}
+            </div>
+          }
+        >
+          <Button theme="borderless" type="tertiary" icon={<Settings2 size={14} />} className="!h-8" />
+        </Popover>
+        <Button
+          theme="borderless"
+          type="tertiary"
+          className="!h-8 !px-2 text-[12px]"
+          onClick={() => setDense((d) => !d)}
+        >
+          {dense ? "宽松" : "紧凑"}
         </Button>
         <Button
           theme="borderless"
@@ -256,10 +839,16 @@ export default function EnterprisesPage() {
       <div className="mt-4">
         <Table<Enterprise>
           rowKey="id"
-          columns={columns as never}
+              rowSelection={{
+                selectedRowKeys: selectedIds,
+                onChange: (keys) => setSelectedIds((keys ?? []).map(Number)),
+              }}
+          columns={(columns as unknown as Record<string, unknown>[]).filter(
+            (c) => !hiddenCols.includes(String((c as { dataIndex?: string }).dataIndex)),
+          ) as never}
           dataSource={data?.items ?? []}
           loading={loading}
-          size="middle"
+          size={dense ? "small" : "middle"}
           empty="没有匹配的企业 —— 放宽筛选条件，或先去「拓客任务」采集数据"
           onRow={(r) => ({ className: r?.is_competitor === 1 ? "opacity-45 saturate-50" : "" })}
           pagination={{
@@ -270,12 +859,146 @@ export default function EnterprisesPage() {
           }}
         />
       </div>
+      {/* 高级筛选构建器（twenty advanced-filter 模式） */}
+      <Modal
+        title="高级筛选"
+        visible={afOpen}
+        onCancel={() => setAfOpen(false)}
+        footer={null}
+        width={560}
+      >
+        <div className="space-y-2.5 pt-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[12.5px] text-[var(--muted)]">条件组合</span>
+            <Tabs
+              type="button"
+              size="small"
+              activeKey={afLogic}
+              onChange={(k) => setAfLogic(k as "and" | "or")}
+              tabList={[{ tab: "全部满足 AND", itemKey: "and" }, { tab: "任一满足 OR", itemKey: "or" }]}
+            />
+          </div>
+          {afRows.map((row, idx) => {
+            const isNum = ["icp_score", "intent_score", "registered_capital_wan"].includes(row.field);
+            const ops = isNum
+              ? [
+                  { value: "gte", label: "≥" },
+                  { value: "lte", label: "≤" },
+                  { value: "gt", label: ">" },
+                  { value: "lt", label: "<" },
+                  { value: "eq", label: "=" },
+                  { value: "is_not_empty", label: "有值" },
+                ]
+              : [
+                  { value: "contains", label: "包含" },
+                  { value: "eq", label: "等于" },
+                  { value: "is_not_empty", label: "有值" },
+                  { value: "is_empty", label: "为空" },
+                ];
+            return (
+              <div key={idx} className="flex items-center gap-1.5">
+                <Select
+                  style={{ width: 140 }}
+                  size="small"
+                  value={row.field}
+                  optionList={[
+                    { value: "icp_score", label: "ICP 分" },
+                    { value: "intent_score", label: "意图分" },
+                    { value: "registered_capital_wan", label: "注册资本" },
+                    { value: "name", label: "企业名" },
+                    { value: "province", label: "省份" },
+                    { value: "city", label: "城市" },
+                    { value: "industry_key", label: "行业键" },
+                    { value: "source", label: "来源" },
+                  ]}
+                  onChange={(v) => {
+                    const next = [...afRows];
+                    const num = ["icp_score", "intent_score", "registered_capital_wan"].includes(v as string);
+                    next[idx] = { field: v as string, op: num ? "gte" : "contains", value: "" };
+                    setAfRows(next);
+                  }}
+                />
+                <Select
+                  style={{ width: 88 }}
+                  size="small"
+                  value={row.op}
+                  optionList={ops.map((o) => ({ value: o.value, label: o.label }))}
+                  onChange={(v) => {
+                    const next = [...afRows];
+                    next[idx] = { ...row, op: v as string };
+                    setAfRows(next);
+                  }}
+                />
+                {row.op !== "is_empty" && row.op !== "is_not_empty" && (
+                  <Input
+                    size="small"
+                    style={{ flex: 1 }}
+                    value={row.value}
+                    onChange={(v) => {
+                      const next = [...afRows];
+                      next[idx] = { ...row, value: v };
+                      setAfRows(next);
+                    }}
+                    placeholder={isNum ? "数值" : "关键词"}
+                  />
+                )}
+                {afRows.length > 1 && (
+                  <Button
+                    size="small"
+                    theme="borderless"
+                    type="danger"
+                    onClick={() => setAfRows(afRows.filter((_, i) => i !== idx))}
+                  >
+                    删
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+          <div className="flex items-center justify-between">
+            <Button
+              size="small"
+              theme="borderless"
+              disabled={afRows.length >= 8}
+              onClick={() => setAfRows([...afRows, { field: "icp_score", op: "gte", value: "" }])}
+            >
+              + 加条件（最多 8 行）
+            </Button>
+            <Button theme="solid" size="small" loading={afLoading} onClick={() => void runAdvanced()}>
+              执行筛选
+            </Button>
+          </div>
+          {afResults && (
+            <div className="max-h-[260px] overflow-auto rounded-lg border border-[var(--border)]">
+              <div className="border-b border-[var(--rule)] px-3 py-1.5 text-[12px] text-[var(--muted)]">
+                命中 {afResults.total} 家 —— 点击企业名送入主表格
+              </div>
+              {afResults.items.map((it) => (
+                <div
+                  key={it.id}
+                  onClick={() => {
+                    setAfOpen(false);
+                    const next = { ...filters, q: it.name };
+                    setFilters(next);
+                    setPage(1);
+                    setApplied(next);
+                  }}
+                  className="flex cursor-pointer items-center justify-between px-3 py-1.5 text-[13px] text-[var(--ink)] hover:bg-[var(--raised)]"
+                >
+                  <span className="max-w-[300px] truncate">{it.name}</span>
+                  <span className="tabular-nums text-[12px] text-[var(--muted)]">ICP {it.icp_score}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Modal>
 
-      <EnterpriseDrawer
-        open={drawerId !== null}
-        enterpriseId={drawerId}
-        onClose={() => setDrawerId(null)}
-        onConverted={() => void fetchData(applied, page)}
+      <EnterprisePeek
+        open={peekId !== null}
+        enterpriseId={peekId}
+        onClose={() => setPeekId(null)}
+        onOpenFull={(id) => router.push(`/enterprises/view?id=${id}`)}
       />
     </AppShell>
   );

@@ -165,6 +165,7 @@ def search(
     score_min: float | None = None,
     signal_days: int | None = None,
     is_competitor: int = -1,
+    source: str | None = None,
     page: int = 1,
     page_size: int = 20,
     facets: bool = False,
@@ -177,6 +178,15 @@ def search(
         filters.append(f'province = "{province}"')
     if city:
         filters.append(f'city = "{city}"')
+    if source:
+        # 采集通道含多个来源值（ggzy/ggzy_buyer…）用 OR 归为一个通道
+        channel = {"ggzy": ("ggzy", "ggzy_buyer"), "ccgp": ("ccgp", "ccgp_buyer")}.get(
+            source, (source,)
+        )
+        if len(channel) == 1:
+            filters.append(f'source = "{channel[0]}"')
+        else:
+            filters.append("(" + " OR ".join(f'source = "{v}"' for v in channel) + ")")
     if capital_min is not None:
         filters.append(f"registered_capital_wan >= {capital_min}")
     if capital_max is not None:

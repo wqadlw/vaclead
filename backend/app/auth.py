@@ -1,25 +1,66 @@
-"""JWT 认证 — 登录签发、依赖注入当前用户与管理员校验。"""
+"""JWT 认证 — 登录签发、依赖注入当前用户与管理员校验（企业级加固）。
+
+- 密钥强制环境注入：VACLEAD_JWT_SECRET 未设置时用机器随机密钥（进程级），
+  并在日志中告警——多进程/重启会话失效风险显式化，禁止硬编码弱默认。
+- 登录限流：同 IP 5 次失败后冷却 15 分钟（内存实现，单进程部署语义）。
+"""
 from __future__ import annotations
 
+import logging
 import os
+import secrets
+import time
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from .db import get_session
 from .models import User
 
-SECRET = os.environ.get(
-    "VACLEAD_JWT_SECRET", "vaclead-dev-secret-please-change-me-in-production-32b"
-)
+logger = logging.getLogger("vaclead.auth")
+
+_ENV_SECRET = os.environ.get("VACLEAD_JWT_SECRET", "").strip()
+if not _ENV_SECRET:
+    _ENV_SECRET = secrets.token_hex(32)  # 进程级随机，重启失效（安全优于可用）
+    logger.warning(
+        "VACLEAD_JWT_SECRET 未设置：使用进程级随机密钥，重启后所有会话失效。"
+        "生产部署必须显式设置该环境变量。"
+    )
+SECRET = _ENV_SECRET
 ALGORITHM = "HS256"
 TOKEN_HOURS = 72
 
 bearer = HTTPBearer(auto_error=False)
+
+# ---- 登录限流（内存；单进程部署足够，多进程时换 Redis）----
+_LOGIN_FAILS: dict[str, list[float]] = defaultdict(list)
+_LOGIN_WINDOW_S = 900.0  # 15 分钟冷却窗口
+_LOGIN_MAX_FAILS = 5
+
+
+def login_rate_limited(request: Request) -> None:
+    """同 IP 登录失败超限则 429；成功登录由 login 端点清除计数。"""
+    ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    fails = [t for t in _LOGIN_FAILS.get(ip, []) if now - t < _LOGIN_WINDOW_S]
+    _LOGIN_FAILS[ip] = fails
+    if len(fails) >= _LOGIN_MAX_FAILS:
+        raise HTTPException(429, "登录失败次数过多，请 15 分钟后重试")
+
+
+def record_login_failure(request: Request) -> None:
+    ip = request.client.host if request.client else "unknown"
+    _LOGIN_FAILS[ip].append(time.monotonic())
+
+
+def clear_login_failures(request: Request) -> None:
+    ip = request.client.host if request.client else "unknown"
+    _LOGIN_FAILS.pop(ip, None)
 
 
 def verify_password(plain: str, hashed: str) -> bool:

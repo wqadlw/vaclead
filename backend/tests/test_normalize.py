@@ -33,12 +33,12 @@ def session():
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        # 半角括号后缀：取括号前主体
-        ("沃尔真空科技(苏州)有限公司", "沃尔真空科技"),
-        # 全角括号后缀
-        ("沃尔真空科技（苏州）有限公司", "沃尔真空科技"),
-        # 括号在前：括号内地区同样被剔除
-        ("（苏州）芯达电子科技有限公司", "芯达电子科技"),
+        # 半角括号：剥外壳保留括号内地区（跨城市同名防误并，SPEC-B §4）
+        ("沃尔真空科技(苏州)有限公司", "沃尔真空科技苏州"),
+        # 全角括号
+        ("沃尔真空科技（苏州）有限公司", "沃尔真空科技苏州"),
+        # 括号在前：括号内地区同样保留
+        ("（苏州）芯达电子科技有限公司", "苏州芯达电子科技"),
         # 股份有限公司后缀
         ("华芯半导体股份有限公司", "华芯半导体"),
         # 后缀叠加剥离：集团 + 有限责任公司
@@ -135,10 +135,18 @@ def test_resolve_fuzzy_threshold_not_crossed_by_different_name(session):
 
 def test_resolve_bracket_variant_merges(session):
     ent1, _ = resolve_enterprise(session, "南通光启真空(南通)有限公司")
-    # 括号地区后缀变体 → 主体名一致 → 合并
-    ent2, is_new = resolve_enterprise(session, "南通光启真空有限公司")
+    # 同括号地区变体 → 主体名一致 → 合并（新契约：括号内容参与比对）
+    ent2, is_new = resolve_enterprise(session, "南通光启真空(南通)股份有限公司")
     assert is_new is False
     assert ent2.id == ent1.id
+
+
+def test_resolve_different_city_bracket_variants_not_merged(session):
+    """审计修复回归：跨城市同名主体不可误并（SPEC-B §4）。"""
+    a, new_a = resolve_enterprise(session, "沃尔真空(苏州)有限公司")
+    b, new_b = resolve_enterprise(session, "沃尔真空(无锡)有限公司")
+    assert new_a is True and new_b is True
+    assert a.id != b.id
 
 
 def test_resolve_empty_name_raises(session):

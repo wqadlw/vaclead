@@ -17,6 +17,10 @@ _DB_PATH = os.environ.get(
 )
 _DB_PATH = os.path.abspath(_DB_PATH)
 os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
+#: 数据目录（备份等落盘产物统一放这里，SPEC-B §6）
+from pathlib import Path as _Path  # noqa: E402
+
+DATA_DIR = _Path(os.path.dirname(_DB_PATH))
 
 ENGINE = create_engine(
     f"sqlite:///{_DB_PATH}",

@@ -4,10 +4,10 @@
  *  安全约束：仅允许访问来源白名单 BASE 下的 /api/ 相对路径，路径与来源双重校验。 */
 
 const ALLOWED_BASES = ["http://127.0.0.1:8000", "http://localhost:8000"] as const;
-const BASE: string = ALLOWED_BASES.includes(
-  (process.env.NEXT_PUBLIC_API_BASE || "") as (typeof ALLOWED_BASES)[number],
-)
-  ? (process.env.NEXT_PUBLIC_API_BASE as string)
+/** 单进程部署（前端由 FastAPI 托管在 8000 端口）时走同源相对路径。 */
+const SAME_ORIGIN = typeof window !== "undefined" && window.location.port === "8000";
+const BASE: string = SAME_ORIGIN
+  ? ""
   : ALLOWED_BASES[0];
 
 export function getToken(): string | null {
@@ -48,8 +48,11 @@ function xhr(
       reject(new ApiError(400, "非法请求路径"));
       return;
     }
-    const parsed = new URL(path, BASE);
-    if (!ALLOWED_BASES.includes(parsed.origin as (typeof ALLOWED_BASES)[number])) {
+    const parsed = new URL(path, BASE || window.location.origin);
+    if (
+      parsed.origin !== window.location.origin &&
+      !ALLOWED_BASES.includes(parsed.origin as (typeof ALLOWED_BASES)[number])
+    ) {
       reject(new ApiError(400, "非法请求来源"));
       return;
     }
@@ -103,6 +106,7 @@ export const api = {
     xhr("POST", path, body, body instanceof FormData) as Promise<T>,
   patch: <T>(path: string, body: unknown) => xhr("PATCH", path, body) as Promise<T>,
   put: <T>(path: string, body: unknown) => xhr("PUT", path, body) as Promise<T>,
+  delete: <T>(path: string) => xhr("DELETE", path) as Promise<T>,
 };
 
 export interface PageData<T> {
@@ -132,6 +136,13 @@ export interface Enterprise {
   is_competitor: number;
   signal_count?: number;
   signals?: SignalItem[];
+  stat?: {
+    bid_count: number;
+    bid_amount_total_wan: number;
+    bid_amount_max_wan: number | null;
+    last_win_date: string | null;
+    top_buyer: string | null;
+  } | null;
 }
 
 export interface SignalItem {
@@ -154,7 +165,12 @@ export interface Lead {
   owner_id: number | null;
   grade: string | null;
   lost_reason: string | null;
+  amount_wan?: number | null;
+  probability?: number;
+  expected_close?: string | null;
   last_followed_at: string | null;
+  next_action: string | null;
+  next_time: string | null;
   enterprise?: { id: number; name: string; industry_name: string | null; icp_score: number; intent_score: number };
 }
 

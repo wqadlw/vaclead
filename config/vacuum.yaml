@@ -45,6 +45,12 @@ device_terms:
     - 烧结
 
 downstream_industries:
+  # 科研教育医疗：政采/公共资源成交数据中的设备采购主力（高校实验室/院所/医院灭菌冻干）
+  - key: research_edu
+    name: 科研院所/高校医疗
+    tier: 1
+    industry_codes: ["R73", "R88", "Q84"]
+    keywords: [大学, 学院, 研究所, 研究院, 科学技术, 科学院, 实验室, 医院, 疾控, 疾病预防, 检测中心, 质量检验, 计量]
   - key: semiconductor
     name: 半导体/集成电路
     tier: 1

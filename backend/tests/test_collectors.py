@@ -14,7 +14,7 @@ import json
 import httpx
 import pytest
 
-from app.collectors import amap_poi, tender
+from app.collectors import amap_poi, ccgp, ggzy, tender
 
 
 def run(coro):
@@ -466,3 +466,258 @@ def test_quadtree_recurses_on_truncation():
     names = {p["name"] for p in out}
     assert any(n.startswith("苏州企") for n in names)
     assert any(n.startswith("多边形企") for n in names)
+
+
+# ===========================================================================
+# 官方中标数据（data.ggzy.gov.cn）—— docs/DATA_ACQUISITION.md 契约
+# ===========================================================================
+def _ggzy_client(monkeypatch, handler):
+    """构造 MockTransport 注入的 ggzy client 并关闭限速。"""
+    monkeypatch.setattr(ggzy, "REQUEST_INTERVAL_S", 0.0)
+    monkeypatch.setattr(ggzy, "_last_request_at", 0.0)
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_ggzy_search_entities_shape(monkeypatch):
+    """search_entities 字段透传 + 分页参数校验。"""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        assert request.url.params["pageNo"] == "1"
+        assert request.url.params["pageSize"] == "50"
+        return httpx.Response(200, json={
+            "success": True, "code": 200,
+            "result": {
+                "records": [{
+                    "uniscid": "91320924MA1T6WGX7T",
+                    "estdate": 1509292800000,  # epoch ms 浮点字符串形式
+                    "entname": "盐城市视远真空设备有限公司",
+                    "name": "黄耀锋", "bidCount": 1,
+                }],
+                "total": 49, "size": 50, "current": 1, "pages": 1,
+            },
+        })
+
+    client = _ggzy_client(monkeypatch, handler)
+    try:
+        result = ggzy.search_entities("真空设备", client=client)
+    finally:
+        client.close()
+    assert result["total"] == 49
+    rec = ggzy.normalize_entity_record(result["records"][0])
+    assert rec == {
+        "uscc": "91320924MA1T6WGX7T",
+        "name": "盐城市视远真空设备有限公司",
+        "legal_rep": "黄耀锋",
+        "est_date": "2017-10-30",
+        "bid_count": 1,
+    }
+    assert "data.ggzy.gov.cn" in calls[0]
+    assert "yjcx/index/search" in calls[0]
+
+
+def test_ggzy_search_all_paginates(monkeypatch):
+    """pages=2 → 逐页拉全；第 2 页空则停。"""
+    state = {"page": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["page"] = int(request.url.params["pageNo"])
+        if state["page"] == 1:
+            recs = [{"uniscid": f"U{i}", "entname": f"真空设备厂{i}", "bidCount": 1}
+                    for i in range(2)]
+            return httpx.Response(200, json={"success": True,
+                                             "result": {"records": recs, "total": 3, "pages": 2}})
+        return httpx.Response(200, json={"success": True,
+                                         "result": {"records": [], "total": 3, "pages": 2}})
+
+    client = _ggzy_client(monkeypatch, handler)
+    try:
+        rows = list(ggzy.search_all_entities("真空", max_pages=5, client=client))
+    finally:
+        client.close()
+    assert len(rows) == 2
+    assert state["page"] == 2  # 第 2 页空后停
+
+
+def test_ggzy_bid_list_and_normalization(monkeypatch):
+    """bid_list 明细归一：金额转 float、日期截断、空项目名丢弃。"""
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "yjcx/index/bid_list" in str(request.url)
+        assert request.url.params["uniscid"] == "U1"
+        return httpx.Response(200, json={"success": True, "result": {"data": {
+            "records": [{
+                "id": "ABC123", "projectName": "某高校真空镀膜机采购项目成交公告",
+                "bidPrice": "453.34", "areaCode": "射阳县", "tos": "土地使用权",
+                "tenderOrgName": "射阳县自然资源局", "createTime": "2020-01-10",
+            }, {"id": "X", "projectName": "", "bidPrice": "1"}],  # 无项目名 → 丢
+            "total": 1, "size": 50, "current": 1, "pages": 1,
+        }}})
+
+    client = _ggzy_client(monkeypatch, handler)
+    try:
+        result = ggzy.list_bids("U1", client=client)
+    finally:
+        client.close()
+    bids = [ggzy.normalize_bid_record(r) for r in result["records"]]
+    assert bids[0] == {
+        "project_name": "某高校真空镀膜机采购项目成交公告",
+        "bid_price_wan": 453.34,
+        "area": "射阳县",
+        "trade_type": "土地使用权",
+        "tender_org": "射阳县自然资源局",
+        "tender_agency": None,
+        "pub_date": "2020-01-10",
+        "deal_id": "ABC123",
+    }
+    assert len([b for b in bids if b]) == 1
+
+
+def test_ggzy_retry_on_5xx(monkeypatch):
+    """500 一次后重试成功。"""
+    state = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["n"] += 1
+        if state["n"] == 1:
+            return httpx.Response(500, text="boom")
+        return httpx.Response(200, json={"success": True,
+                                         "result": {"records": [{"entname": "恢复真空设备公司"}],
+                                                    "total": 1, "pages": 1}})
+
+    client = _ggzy_client(monkeypatch, handler)
+    try:
+        result = ggzy.search_entities("真空", client=client)
+    finally:
+        client.close()
+    assert state["n"] == 2
+    assert result["total"] == 1
+
+
+def test_ggzy_business_failure_returns_empty(monkeypatch):
+    """success=false → 空结果不抛异常。"""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"success": False, "message": "参数错误"})
+
+    client = _ggzy_client(monkeypatch, handler)
+    try:
+        result = ggzy.search_entities("x", client=client)
+    finally:
+        client.close()
+    assert result == {"records": [], "total": 0, "pages": 0}
+
+
+def test_ggzy_empty_uscc_short_circuits(monkeypatch):
+    """空 uniscid 不发请求。"""
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("不应发请求")
+
+    assert ggzy.list_bids("  ") == {"records": [], "total": 0, "pages": 0}
+
+
+# ===========================================================================
+# 政采网（search.ccgp.gov.cn/bxsearch）—— 吸收自 refs/CrawlerForCCGP
+# ===========================================================================
+def _ccgp_client(monkeypatch, handler):
+    monkeypatch.setattr(ccgp, "REQUEST_INTERVAL_S", 0.0)
+    monkeypatch.setattr(ccgp, "INTERVAL_JITTER_S", 0.0)
+    monkeypatch.setattr(ccgp, "_last_request_at", 0.0)
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _ccgp_fixture_html():
+    from pathlib import Path
+
+    p = Path(__file__).parent / "fixtures_ccgp_list.html"
+    if not p.exists():
+        pytest.skip("无 ccgp 真实样本 fixture")
+    return p.read_text(encoding="utf-8")
+
+
+def test_ccgp_parse_real_fixture():
+    """真实搜索结果页样本：20 条全解析，采购人/类型/省份/日期齐全。"""
+    from app.collectors.ccgp import parse_list_html
+
+    items = parse_list_html(_ccgp_fixture_html())
+    assert len(items) == 20
+    first = items[0]
+    assert "真空室中标公告" in first["title"]
+    assert first["buyer"] == "中国科学技术大学"
+    assert first["notice_type"] == "中标公告"
+    assert first["pub_date"] == "2026-10-23"
+    assert first["url"].startswith("http://www.ccgp.gov.cn/")
+    # 摘要净化（无标签）
+    assert "<" not in first["summary"]
+    # 磋商公告类型识别
+    assert any(it["notice_type"] == "竞争性磋商公告" for it in items)
+
+
+def test_ccgp_search_via_mock(monkeypatch):
+    """search_ccgp 请求参数与 HTML 解析联动（MockTransport）。"""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        assert request.url.params["kw"] == "真空"
+        assert request.url.params["searchtype"] == "1"
+        assert "search.ccgp.gov.cn" in str(request.url)
+        return httpx.Response(200, text=_ccgp_fixture_html())
+
+    client = _ccgp_client(monkeypatch, handler)
+    try:
+        items = ccgp.search_ccgp("真空", page=1, days=90, client=client)
+    finally:
+        client.close()
+    assert len(items) == 20
+    assert len(calls) == 1
+
+
+def test_ccgp_empty_page_returns_no_items(monkeypatch):
+    """结果列表为空壳（无 ul）→ 空列表不抛异常。"""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html><body>无数据</body></html>")
+
+    client = _ccgp_client(monkeypatch, handler)
+    try:
+        items = ccgp.search_ccgp("真空镀膜机", client=client)
+    finally:
+        client.close()
+    assert items == []
+
+
+def test_ccgp_retry_on_non200(monkeypatch):
+    """非 200 → 重试后成功。"""
+    state = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["n"] += 1
+        if state["n"] == 1:
+            return httpx.Response(503, text="busy")
+        return httpx.Response(200, text=_ccgp_fixture_html())
+
+    client = _ccgp_client(monkeypatch, handler)
+    try:
+        items = ccgp.search_ccgp("真空", client=client)
+    finally:
+        client.close()
+    assert state["n"] == 2
+    assert len(items) == 20
+
+
+def test_ccgp_all_paginates(monkeypatch):
+    """max_pages=2 → 第二页空即停。"""
+    state = {"pages": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["pages"] = int(request.url.params["page_index"])
+        if state["pages"] == 1:
+            return httpx.Response(200, text=_ccgp_fixture_html())
+        return httpx.Response(200, text="<html>空</html>")
+
+    client = _ccgp_client(monkeypatch, handler)
+    try:
+        rows = list(ccgp.search_ccgp_all("真空", max_pages=2, client=client))
+    finally:
+        client.close()
+    assert state["pages"] == 2
+    assert len(rows) == 20

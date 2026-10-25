@@ -1,10 +1,12 @@
-"""企业名归一与实体解析引擎（契约：docs/SPEC.md §1.3 / §3.2 entity_resolver）。
+"""企业名归一与实体解析引擎（契约：docs/SPEC.md §1.3 / §3.2、docs/SPEC-B.md §4）。
 
-解析流程（resolve_enterprise）：
+解析流程（resolve_enterprise / _resolve）：
+  0. uscc 精确匹配（来源带统一社会信用代码时优先，最高置信）
   1. 精确名匹配（Enterprise.name == 原全名）
-  2. 别名表匹配（EnterpriseAlias，先原全名后标准化主体名）
-  3. rapidfuzz token_sort_ratio 对现有企业主体名（canonical_name）比对 ≥90 视为同企业，
-     合并时把变体写入 EnterpriseAlias
+  2. 别名表匹配（EnterpriseAlias，先原全名后标准化主体名）；命中时若目标缺 uscc
+     而来源带 uscc → 回填（官方来源携带 uscc，回填永久提升后续归一）
+  3. rapidfuzz token_sort_ratio 对标准化主体名（canonical_name）比对：
+     ≥90 视为同企业自动合并；80-89 落复核队列（review_queue，人工裁决）
   4. 找不到则创建新 Enterprise（name=原全名, source=source）
 
 本模块只依赖 models，不 import db（不触发全局 ENGINE / 建库），可用内存库独立测试。
@@ -21,13 +23,15 @@ from typing import Any
 from rapidfuzz import fuzz
 from sqlalchemy.orm import Session
 
-from .models import Enterprise, EnterpriseAlias
+from .models import Enterprise, EnterpriseAlias, ReviewQueue
 
 #: rapidfuzz token_sort_ratio 视为同企业的阈值（docs/SPEC.md §3.2）
 FUZZY_THRESHOLD = 90.0
+#: 复核区间下限：80-89 的模糊命中不静默新建，落 review_queue（SPEC-B §4）
+REVIEW_THRESHOLD = 80.0
 
 # 全角/半角括号段（如 "(苏州)" / "（苏州）"）
-_BRACKET_RE = re.compile(r"[（(][^()（）]*[）)]")
+_BRACKET_RE = re.compile(r"[（(]([^()（）]*)[）)]")
 # 常见企业后缀，按长度降序尝试循环剥离
 _SUFFIXES: tuple[str, ...] = (
     "股份有限公司",
@@ -42,12 +46,14 @@ _WS_RE = re.compile(r"\s+")
 def canonical_name(name: str) -> str:
     """清洗企业名，返回标准化主体名。
 
-    - 去掉全角/半角括号及其中的后缀内容（"沃尔真空(苏州)有限公司" → "沃尔真空"）
+    - 剥掉括号外壳但**保留括号内地区/主体字**（"沃尔真空(苏州)有限公司" → "沃尔真空苏州"），
+      避免跨城市同名主体被误并（审计发现：全剥会把 (苏州)/(无锡) 撞成一家）
     - 去掉常见后缀词（有限公司/有限责任公司/股份有限公司/集团/公司，可叠加剥离）
     - 去掉所有空白字符
     """
     s = _WS_RE.sub("", (name or "").strip())
-    s = _BRACKET_RE.sub("", s)
+    # 括号内容前置拼回主体（剥外壳不剥内容）
+    s = _BRACKET_RE.sub(r"\1", s)
     for ch in "()（）":
         s = s.replace(ch, "")
     out = s
@@ -84,18 +90,39 @@ def _add_alias(session: Session, ent: Enterprise, alias: str, source: str) -> No
     session.flush()
 
 
+def _backfill_uscc(session: Session, ent: Enterprise, uscc: str | None) -> None:
+    """目标缺 uscc 而来源带 uscc 时回填（官方来源锚点，永久提升归一）。"""
+    if not uscc or ent.uscc:
+        return
+    ent.uscc = uscc.strip()
+
+
 def _resolve(
-    session: Session, name: str, source: str
+    session: Session,
+    name: str,
+    source: str,
+    uscc: str | None = None,
 ) -> tuple[Enterprise, bool, float]:
     """返回 (enterprise, is_new, confidence)。confidence 为匹配置信度，新建时 0.0。"""
     raw = _WS_RE.sub("", (name or "").strip())
     if not raw:
         raise ValueError("企业名不能为空")
     canon = canonical_name(raw)
+    uscc = (uscc or "").strip() or None
+
+    # 0) uscc 精确匹配（统一社会信用代码是最高优先锚点）
+    if uscc:
+        ent = session.query(Enterprise).filter(Enterprise.uscc == uscc).first()
+        if ent is not None:
+            _add_alias(session, ent, raw, source)
+            if canon and canon != raw:
+                _add_alias(session, ent, canon, "auto")
+            return ent, False, 1.0
 
     # 1) 精确名匹配
     ent = session.query(Enterprise).filter(Enterprise.name == raw).first()
     if ent is not None:
+        _backfill_uscc(session, ent, uscc)
         return ent, False, 1.0
 
     # 2) 别名表匹配（先原全名，后标准化主体名）
@@ -111,9 +138,11 @@ def _resolve(
             target = session.get(Enterprise, row.enterprise_id)
             if target is not None:
                 _add_alias(session, target, raw, source)
+                _backfill_uscc(session, target, uscc)
                 return target, False, 0.95
 
     # 3) rapidfuzz 近似合并（对现有企业主体名比对）
+    #    ≥90 自动合并；80-89 落复核队列（不静默建档）；<80 新建（SPEC-B §4）
     if canon:
         best_ent: Enterprise | None = None
         best_score = 0.0
@@ -128,10 +157,31 @@ def _resolve(
             _add_alias(session, best_ent, raw, source)
             if canon != raw:
                 _add_alias(session, best_ent, canon, "auto")
+            _backfill_uscc(session, best_ent, uscc)
             return best_ent, False, round(best_score / 100.0, 4)
+        if best_ent is not None and best_score >= REVIEW_THRESHOLD:
+            ent = Enterprise(name=raw, source=source)
+            if uscc:
+                ent.uscc = uscc
+            session.add(ent)
+            session.flush()
+            if canon and canon != raw:
+                _add_alias(session, ent, canon, "auto")
+            session.add(
+                ReviewQueue(
+                    candidate_id=ent.id,
+                    target_id=best_ent.id,
+                    score=best_score,
+                    reason="fuzzy_name",
+                )
+            )
+            session.flush()
+            return ent, True, round(best_score / 100.0, 4)
 
     # 4) 新建（name=原全名, source=source），并登记标准化主体名别名便于后续命中
     ent = Enterprise(name=raw, source=source)
+    if uscc:
+        ent.uscc = uscc
     session.add(ent)
     session.flush()
     if canon and canon != raw:
@@ -140,10 +190,13 @@ def _resolve(
 
 
 def resolve_enterprise(
-    session: Session, name: str, source: str = "csv"
+    session: Session, name: str, source: str = "csv", uscc: str | None = None
 ) -> tuple[Enterprise, bool]:
-    """把外部企业名解析到库内唯一 Enterprise，返回 (enterprise, is_new)。"""
-    ent, is_new, _conf = _resolve(session, name, source)
+    """把外部企业名解析到库内唯一 Enterprise，返回 (enterprise, is_new)。
+
+    uscc：来源携带的统一社会信用代码（ggzy 采集必有）——tier0 精确锚点 + 回填。
+    """
+    ent, is_new, _conf = _resolve(session, name, source, uscc)
     return ent, is_new
 
 

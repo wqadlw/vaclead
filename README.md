@@ -1,48 +1,65 @@
 # vaclead · 真空设备智能拓客平台
 
-面向真空设备行业的自用智能拓客平台：筛出下游工厂 → 识别"谁在买设备"的招标意图信号 → 线索跟进闭环。
+> 从**官方公示数据**到**可拨打线索**到**商机成交**的全链路自托管系统。
+> 单进程 · 零外部服务依赖 · SQLite 即真源。
 
-## 功能
+## 这是什么
 
-1. **企业库多维筛选** — 下游行业级联（半导体/镀膜加工/光伏/锂电/冻干/热处理）×省市区×注册资本×信号×评分；同行自动打标排除
-2. **ICP 规则评分** — 0-100 可解释评分（行业/设备词/资本/制造属性/资质加权）
-3. **招投标意图信号** — 设备词表匹配招标公告，时间衰减意图分，S/A/B 线索分级
-4. **高德 POI 拓客任务** — 10 个工业强市 × 行业关键词四叉树采集（简化区县粒度）
-5. **线索 CRM** — 状态机流转、跟进时间线、撞单保护、30 天公海回收
-6. **Agent 工作日志** — 全部 Agent 决策可观测
+一个面向**工业设备（真空设备）行业**销售团队的智能客户获取平台。它不依赖任何付费数据 API——直接从国家公共资源交易平台与中国政府采购网的**官方公开数据**中挖出「谁在买设备」：
+
+```
+官方数据采集 → 信号引擎(词表匹配) → 双向建档(中标方+采购人) → 自动化规则
+     → 商机管线(看板/日历) → 情报页(采购关系图谱/联系人) → 导出/跟进/成交
+```
+
+## 核心能力
+
+| 域 | 能力 |
+|---|---|
+| **数据获取** | data.ggzy.gov.cn 官方中标 API 直采（免 Key）+ ccgp.gov.cn 政采公告全文检索；采集韧性层（错误积分制/指数冷却，吸收 crawlee） |
+| **联系人解锁** | 政采公告详情页的**法定公开联系方式**（项目联系人/电话/地址）自动回填——每条带公告溯源 |
+| **信号引擎** | 34 个设备强词表匹配；intent=Σ分×0.5^(Δ天/30) 半衰；ICP 可解释评分（行业/资本/制造/资质） |
+| **自动化规则** | 条件组（信号类型/行业/来源/分数/有电话/意图分）→ **动作链**（通知→建线索→定级→建待办）+ 否则分支 + dry-run 试运行 |
+| **商机管线** | 拖拽看板（阶段赢率自动更新）+ 日历视图（预计成交日拖拽改期）+ 商机三要素（金额/赢率/成交日） |
+| **情报页** | 采购关系图谱（轮辐 SVG，边宽=金额）、关键联系人（带溯源）、统一时间线（跟进+信号合流） |
+| **检索** | Meilisearch 投影（SQLite 真源双路，毫秒组合筛选+分面）；高级筛选构建器（AND/OR）；快捷筛选 Quick picks |
+| **企业级** | 单进程部署（FastAPI 托管静态导出）、JWT+登录限流、每日增量采集/画像/备份调度、140 项测试 |
+
+## 快速开始
+
+```bash
+# 后端（Python 3.11+）
+cd backend && pip install -r requirements.txt
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# 前端构建（Node 18+）
+cd frontend && npm install && npx next build   # 产物 out/ 由后端托管
+
+# 浏览器打开 http://127.0.0.1:8000 （admin/admin123）
+```
+
+可选：Meilisearch（检索加速）、高德 Key（POI 地图拓客）、EmailEngine（邮件触达）——**全部可选，缺省即降级，不影响主功能**。
+
+## 首次跑数据
+
+登录后 → 拓客任务 → 「官方数据采集（免 Key）」→ 选关键词 → 开始采集。
+每日 03:30 自动增量，04:08 自动回填新公告的联系人电话。
 
 ## 技术栈
 
-- 后端：Python 3.11 · FastAPI · SQLAlchemy 2 · SQLite(WAL+FTS5) · LangGraph（狩猎图编排）
-- 前端：Next.js 14 · React 18 · Ant Design 5 · Tailwind CSS
-- 架构细节见 `docs/SPEC.md`
+FastAPI + SQLAlchemy 2 + SQLite(WAL+FTS5) + Meilisearch(可选) ｜ Next.js 14 + Semi Design ｜ APScheduler ｜ 140 pytest
 
-## 快速启动
+## 文档
 
-```bash
-scripts\dev.bat        # 一键启动后端(:8000)+前端(:3000)
-```
+- [docs/DATA_ACQUISITION.md](docs/DATA_ACQUISITION.md) — 数据获取工程学（合规边界/限流实测/接口契约）
+- [docs/OPERATIONS.md](docs/OPERATIONS.md) — 运维手册（部署/调度/备份）
+- [docs/WORKLOG.md](docs/WORKLOG.md) — 26 轮开发日志
+- [docs/SPEC-B.md](docs/SPEC-B.md) — 数据质量（归一/复核/画像）
 
-账号：`admin/admin123`（管理员）、`sales/sales123`（销售）。
+## 合规红线
 
-首次使用：
-1. 登录后在「设置」页配置高德 Key（可选，POI 采集用）与知了标讯 Key（可选）
-2. 「拓客任务」页导入 `data/sample_enterprises.csv`（52 家示例企业）与 `data/sample_tenders.csv`（20 条招标公告）
-3. 去「企业筛选」页体验筛选/评分/信号；「线索看板」转线索跟进
+只采官方主动公开的数据；固定 UA + 限速 + 指数冷却；不绕验证码不破解 WAF；联系人全部带公告溯源。详见 DATA_ACQUISITION.md。
 
-## 目录
+## License
 
-```
-backend/    FastAPI 应用（app/models.py 数据契约、app/agents/ Agent框架、app/collectors/ 采集器、app/api/ 路由）
-frontend/   Next.js 六页面
-config/     vacuum.yaml 行业词表与评分配置
-data/       示例数据（企业/招标 CSV）
-scripts/    dev.bat 启动 / check.bat 质量门禁
-docs/       SPEC.md 规格 · SETUP.md 环境指引
-```
-
-## 质量门禁
-
-```bash
-scripts\check.bat      # pytest 全量 + next build
-```
+MIT
