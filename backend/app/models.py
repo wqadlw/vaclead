@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     event,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -424,7 +425,14 @@ class Todo(Base):
     __tablename__ = "todo"
     __table_args__ = (
         Index("ix_todo_open", "done", "due_date"),
-        UniqueConstraint("enterprise_id", "title", "done", name="uq_todo_dedup"),
+        # 部分唯一索引（SPEC-E E1）：仅未完成行唯一——同标题完成后可重建，
+        # 且多行 done=1 不再撞约束（修复 toggle 二次完成 IntegrityError）
+        Index(
+            "uq_todo_open_dedup",
+            "enterprise_id", "title",
+            unique=True,
+            sqlite_where=text("done = 0"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

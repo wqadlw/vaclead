@@ -502,3 +502,24 @@ settings 页脚本三锚点全失配（AutomationPanel 抽组件后锚移位）�
   （in_app=ok），todo 生成——两动作各留产物后清理。
 - 发现坑：SQLite 无 AUTOINCREMENT 时删除行后 id 复用——信号水位可能超前于
   复用 id 导致漏处理（仅测试场景；生产水位单调推进不受影响）。
+
+
+## 2026-10-26 · W27 SPEC-E 结构治理第一波（正规流程：二次审计→官方模板对照→计划→落地）
+
+**摸底**：二次全面审计（Explore Agent，13 模块逐行）+ FastAPI 官方 full-stack 模板对照。
+规模：后端 8895/前端 5595/测试 2356（较上次审计翻倍）。核心发现：
+- **2 个真 bug**：Todo 唯一约束含 done 列（二次完成必撞）/ 通知双写撞约束
+- **半接线第 2 次**：generate_notifications 不走渠道层（W25 同类问题复发）
+- tasks.py 1219 行：4 worker 同构样板逐字重复 5 处
+- 零测试：automation/todos/analytics/引擎分支
+
+**落地（E1+E3+E2 部分）**：
+- E1 真 bug：uq_todo_dedup→partial unique(done=0)（真库迁移完成）+ in_app 渠道
+  幂等预查重 + generate_notifications 走 notify_dispatch（user_id 从订阅行取，去硬编码）
+- E3 测试补全 test_e3.py 6 用例：CRUD/链持久化/dry-run 零写/**toggle 二次完成回归**/
+  引擎 else 分支真执行/analytics shape —— 140→146
+- E2 结构治理启动：task_runtime.py（signal_exists 收口 7 处重复 + tail_hooks +
+  lifecycle 三分支 + spawn）；ggzy/ccgp 两 worker 已迁移（1219→1142 行，
+  尾部 50 行样板×2 删除），真库回归通过（done+collector_health）
+
+**门禁**：146 全绿。**下一步**：enrich/notice 两 worker 迁移 + E4 前端拆分。

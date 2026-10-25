@@ -295,28 +295,21 @@ def generate_notifications(session: Session) -> dict:
             .limit(20)
             .all()
         )
+        from .notify.channels import notify_dispatch
+
         for sig in signals:
             for uid in user_ids:
-                exists = (
-                    session.query(Notification)
-                    .filter(
-                        Notification.ref_type == "signal",
-                        Notification.ref_id == sig.id,
-                        Notification.user_id == uid,
-                    )
-                    .first()
-                )
-                if exists is not None:
-                    continue
-                session.add(Notification(
-                    user_id=uid,
+                results = notify_dispatch(
+                    session, uid,
                     kind="signal",
                     title=f"【{_KIND_CN.get(sig.type, '新动态')}】{ent.name}",
                     body=(sig.evidence_claim or sig.title or "")[:120],
                     ref_type="signal",
                     ref_id=sig.id,
-                ))
-                created += 1
+                )
+                # in_app 渠道 dedup=已存在，ok=新增（SPEC-E E1-A4：统一渠道层）
+                if results.get("in_app") == "ok":
+                    created += 1
     session.commit()
     return {"notifications": created, "subscriptions": len(subs)}
 

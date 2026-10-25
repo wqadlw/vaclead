@@ -386,7 +386,7 @@ def start_ggzy_harvest(
             return {"terms": w_hits, "hit_part": "title", "score": title_pts * weak_discount}
         return None
 
-    def _worker() -> None:
+    def _worker() -> dict:  # SPEC-E E2：返回 totals 交给 lifecycle
         totals = {"entities": 0, "new_entities": 0, "bids": 0, "signals": 0, "buyers": 0}
         affected: set[int] = set()
         competitor_ids: set[int] = set()  # 采集端基于中标事实的同行打标（apply_icp 不许覆盖）
@@ -527,54 +527,15 @@ def start_ggzy_harvest(
                             e2.is_competitor = 1  # 中标事实优先于名称规则
                         recompute_intent(s, eid)
                         s.commit()
-            # 检索投影
-            try:
-                from .. import search as meili
-
-                with SessionLocal() as s:
-                    meili.sync_all(s)
-            except Exception:  # noqa: BLE001 — 检索层失败不影响采集（SQLite 为真源）
-                logger.warning("采集后 Meili 同步失败，检索投影滞后（task=%s）", task_id, exc_info=True)
-            # 自动化规则扫描（吸收 twenty workflow：信号事件触发动作）
-            try:
-                from ..jobs import run_automation_rules
-
-                with SessionLocal() as s:
-                    run_automation_rules(s)
-            except Exception:  # noqa: BLE001 — 规则失败不影响采集
-                logger.warning("采集后规则扫描失败", exc_info=True)
-            # 订阅监控扫播（SPEC-C F1）：采集产生新信号即通知关注者
-            try:
-                from ..jobs import generate_notifications
-                from ..db import SessionLocal as _SL
-
-                with _SL() as s:
-                    generate_notifications(s)
-            except Exception:  # noqa: BLE001 — 通知失败不影响采集
-                logger.warning("采集后通知扫播失败", exc_info=True)
-            # 健康度指标随任务落账（吸收 crawlee Statistics：完成态可见）
-            from ..collectors.resilience import all_stats
-
-            totals["collector_health"] = all_stats()
-            _checkpoint(task_id, status="done", progress=100,
-                        state_json=json.dumps(totals, ensure_ascii=False))
-            _broadcast(task_id, {"type": "done", "summary": totals})
-            _log(task_id, f"采集完成：{totals}")
+            return totals  # 生命周期（cancelled/failed/done）由 task_runtime.lifecycle 接管
         except TaskCancelled:
-            with SessionLocal() as s:
-                cp = s.get(TaskCheckpoint, task_id)
-                if cp is not None:
-                    cp.status = "cancelled"
-                    cp.updated_at = utcnow()
-                    s.commit()
-            _broadcast(task_id, {"type": "cancelled", "summary": totals})
-        except Exception as exc:  # noqa: BLE001 — 任务线程兜底：任何异常都要落到 checkpoint
-            logger.exception("ggzy harvest task %s failed", task_id)
-            _checkpoint(task_id, status="failed",
-                        state_json=json.dumps({"error": str(exc)}, ensure_ascii=False))
-            _broadcast(task_id, {"type": "error", "log": f"任务失败：{exc}"})
+            raise  # 取消向上传播给 lifecycle 落 cancelled 态
+        except Exception:
+            raise  # 异常向上传播给 lifecycle 落 failed 态
 
-    threading.Thread(target=_worker, daemon=True).start()
+    from .task_runtime import spawn
+
+    spawn(task_id, _worker, label="ggzy-harvest")
     return {"task_id": task_id, "keywords": keywords}
 
 
@@ -624,7 +585,7 @@ def start_ccgp_scan(
             return {"terms": b_hits, "hit_part": "body", "score": body_pts}
         return None
 
-    def _worker() -> None:
+    def _worker() -> dict:  # SPEC-E E2：返回 totals 交给 lifecycle
         totals = {"announcements": 0, "buyers": 0, "signals": 0, "suppliers": 0}
         affected: set[int] = set()
         competitor_ids: set[int] = set()
@@ -750,53 +711,15 @@ def start_ccgp_scan(
                             e2.is_competitor = 1
                         recompute_intent(s, eid)
                         s.commit()
-            try:
-                from .. import search as meili
-
-                with SessionLocal() as s:
-                    meili.sync_all(s)
-            except Exception:  # noqa: BLE001 — 检索层失败不影响采集（SQLite 为真源）
-                logger.warning("采集后 Meili 同步失败，检索投影滞后（task=%s）", task_id, exc_info=True)
-            # 自动化规则扫描（吸收 twenty workflow：信号事件触发动作）
-            try:
-                from ..jobs import run_automation_rules
-
-                with SessionLocal() as s:
-                    run_automation_rules(s)
-            except Exception:  # noqa: BLE001 — 规则失败不影响采集
-                logger.warning("采集后规则扫描失败", exc_info=True)
-            # 订阅监控扫播（SPEC-C F1）：采集产生新信号即通知关注者
-            try:
-                from ..jobs import generate_notifications
-                from ..db import SessionLocal as _SL
-
-                with _SL() as s:
-                    generate_notifications(s)
-            except Exception:  # noqa: BLE001 — 通知失败不影响采集
-                logger.warning("采集后通知扫播失败", exc_info=True)
-            # 健康度指标随任务落账（吸收 crawlee Statistics：完成态可见）
-            from ..collectors.resilience import all_stats
-
-            totals["collector_health"] = all_stats()
-            _checkpoint(task_id, status="done", progress=100,
-                        state_json=json.dumps(totals, ensure_ascii=False))
-            _broadcast(task_id, {"type": "done", "summary": totals})
-            _log(task_id, f"采集完成：{totals}")
+            return totals  # 生命周期（尾部钩子/三分支收尾）由 task_runtime.lifecycle 接管
         except TaskCancelled:
-            with SessionLocal() as s:
-                cp = s.get(TaskCheckpoint, task_id)
-                if cp is not None:
-                    cp.status = "cancelled"
-                    cp.updated_at = utcnow()
-                    s.commit()
-            _broadcast(task_id, {"type": "cancelled", "summary": totals})
-        except Exception as exc:  # noqa: BLE001 — 任务线程兜底
-            logger.exception("ccgp scan task %s failed", task_id)
-            _checkpoint(task_id, status="failed",
-                        state_json=json.dumps({"error": str(exc)}, ensure_ascii=False))
-            _broadcast(task_id, {"type": "error", "log": f"任务失败：{exc}"})
+            raise
+        except Exception:
+            raise
 
-    threading.Thread(target=_worker, daemon=True).start()
+    from .task_runtime import spawn
+
+    spawn(task_id, _worker, label="ccgp-scan")
     return {"task_id": task_id, "keywords": keywords}
 
 

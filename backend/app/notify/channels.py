@@ -44,6 +44,18 @@ def user_channels(session: Session, user_id: int) -> list[str]:
 
 def _deliver_in_app(session: Session, user_id: int, *, kind: str, title: str,
                     body: str, ref_type: str, ref_id: int) -> str:
+    """幂等：同 (ref_type,ref_id,user) 已存在直接返回 dedup（SPEC-E E1-A3）。"""
+    dup = (
+        session.query(Notification)
+        .filter(
+            Notification.user_id == user_id,
+            Notification.ref_type == ref_type,
+            Notification.ref_id == ref_id,
+        )
+        .first()
+    )
+    if dup is not None:
+        return "dedup"
     session.add(Notification(
         user_id=user_id, kind=kind, title=title, body=body,
         ref_type=ref_type, ref_id=ref_id,
