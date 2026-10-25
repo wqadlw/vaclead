@@ -4,11 +4,19 @@
  *  安全约束：仅允许访问来源白名单 BASE 下的 /api/ 相对路径，路径与来源双重校验。 */
 
 const ALLOWED_BASES = ["http://127.0.0.1:8000", "http://localhost:8000"] as const;
-/** 单进程部署（前端由 FastAPI 托管在 8000 端口）时走同源相对路径。 */
-const SAME_ORIGIN = typeof window !== "undefined" && window.location.port === "8000";
-const BASE: string = SAME_ORIGIN
-  ? ""
-  : ALLOWED_BASES[0];
+/**
+ * 同源优先：单进程部署（FastAPI 托管，任意端口）走相对路径；
+ * 仅开发双进程（:3000 dev server）时回落到 8000 后端。
+ * 惰性求值——SSG 预渲染（无 window）时回落 8000 不报错。
+ */
+function resolveBase(): string {
+  if (typeof window === "undefined") return ALLOWED_BASES[0];
+  const { port, hostname, protocol } = window.location;
+  const sameOrigin = port !== "3000" && port !== "" && hostname === "127.0.0.1" && protocol === "http:";
+  return sameOrigin ? "" : ALLOWED_BASES[0];
+}
+let BASE: string = ALLOWED_BASES[0];
+if (typeof window !== "undefined") BASE = resolveBase();
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;

@@ -341,7 +341,8 @@ export default function EnterprisesPage() {
     if (province) params.set("province", province);
     if (applied.source) params.set("source", applied.source);
     params.set("is_competitor", String(applied.is_competitor));
-    return `http://127.0.0.1:8000/api/enterprises/export?${params.toString()}`;
+    if (typeof window === "undefined") return "#";  // SSG 预渲染守卫
+    return `${window.location.port === "3000" ? "http://127.0.0.1:8000" : ""}/api/enterprises/export?${params.toString()}`;
   };
 
   const columns = [

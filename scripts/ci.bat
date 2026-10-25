@@ -12,7 +12,11 @@ cd ..\frontend
 call npx next build || goto :fail
 if not exist out\index.html goto :fail
 
-echo [3/3] backend import smoke...
+echo [3/4] E2E tests...
+cd ..rontend
+call npx playwright test || goto :fail
+
+echo [4/4] backend import smoke...
 cd ..\backend
 python -c "from app.main import app; print('app OK')" || goto :fail
 

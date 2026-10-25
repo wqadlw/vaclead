@@ -67,7 +67,7 @@ export default function TasksPage() {
 
   const subscribeTask = (tid: string) => {
     esRef.current?.close();
-    const base = "http://127.0.0.1:8000";
+    const base = window.location.port === "3000" ? "http://127.0.0.1:8000" : "";
     const es = new EventSource(`${base}/api/tasks/${tid}/events`);
     esRef.current = es;
     setTaskId(tid);
