@@ -523,3 +523,13 @@ settings 页脚本三锚点全失配（AutomationPanel 抽组件后锚移位）�
   尾部 50 行样板×2 删除），真库回归通过（done+collector_health）
 
 **门禁**：146 全绿。**下一步**：enrich/notice 两 worker 迁移 + E4 前端拆分。
+
+
+## 附 W27 第二波（同日续）
+
+- **E2 收官**：enrich-pipeline / tender-scan 两 worker 迁移 task_runtime.lifecycle
+  （全部 4 任务统一；信号查重换 signal_exists 收口）。tasks.py 1219→**1113 行**
+  （-106 行重复样板）。真库 enrich 回归 done。
+- **E4 启动**：LeadCard 提取独立组件（修内嵌函数组件每次渲染重建），
+  leads/page.tsx 646→620 + LeadCard.tsx 69。
+- **门禁**：146 全绿 + build + 双页服务健康。

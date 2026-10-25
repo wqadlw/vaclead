@@ -11,6 +11,7 @@ import {
 } from "@douyinfe/semi-ui";
 import { KanbanSquare, PhoneCall, Rows3, Settings2 } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import LeadCard from "@/components/LeadCard";
 import { api } from "@/lib/api";
 import type { FollowupItem, Lead, PageData } from "@/lib/api";
 import { GRADE_COLOR, LEAD_STATUS, LOST_REASONS } from "@/lib/constants";
@@ -287,45 +288,6 @@ export default function LeadsPage() {
     { title: "操作", width: 330, render: (_: unknown, r: Lead) => actions(r) },
   ];
 
-  /** 看板卡片（twenty record-board-card 模式的 framed-sheet 扁平版） */
-  const LeadCard = ({ lead }: { lead: Lead }) => (
-    <div
-      draggable
-      onDragStart={() => setDragId(lead.id)}
-      onDragEnd={() => { setDragId(null); setDragOver(null); }}
-      className={`mb-2 cursor-grab rounded-lg border bg-white px-3 py-2.5 transition-shadow hover:border-[var(--accent)] ${
-        dragId === lead.id ? "opacity-40" : "border-[var(--border)]"
-      }`}
-      onClick={() => openOpp(lead)}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--ink)]" title={lead.enterprise?.name}>
-          {lead.enterprise?.name}
-        </div>
-        {lead.grade && <Tag color={GRADE_TAG[lead.grade]} type="solid" size="small">{lead.grade}</Tag>}
-      </div>
-      <div className="mt-1.5 flex items-center justify-between text-[11.5px] text-[var(--muted)]">
-        <span className="tabular-nums">
-          {lead.amount_wan != null ? `${Math.round(lead.amount_wan)} 万` : "金额待估"}
-          {lead.expected_close ? ` · ${lead.expected_close.slice(5)}` : ""}
-        </span>
-        <span className="tabular-nums">{lead.probability ?? 0}%</span>
-      </div>
-      {/* 赢率条（twenty probability 可视化） */}
-      <div className="mt-1 h-1 rounded-full bg-[var(--raised)]">
-        <div
-          className="h-full rounded-full bg-[var(--accent)]"
-          style={{ width: `${Math.min(lead.probability ?? 0, 100)}%` }}
-        />
-      </div>
-      {lead.next_action && (
-        <div className="mt-1.5 truncate text-[11px] leading-4 text-[var(--muted)]" title={lead.next_action}>
-          下一步：{lead.next_action}
-        </div>
-      )}
-    </div>
-  );
-
   /** 日历月视图：7 列网格，商机卡按 expected_close 落格，可拖拽改期 */
   const calendarEl = useMemo(() => {
     const first = new Date(calMonth.y, calMonth.m, 1);
@@ -430,7 +392,19 @@ export default function LeadsPage() {
                     拖卡片到这里
                   </div>
                 ) : (
-                  items.map((l) => <LeadCard key={l.id} lead={l} />)
+                  items.map((l) => (
+                    <LeadCard
+                      key={l.id}
+                      lead={l}
+                      dragging={dragId === l.id}
+                      onDragStart={() => setDragId(l.id)}
+                      onDragEnd={() => {
+                        setDragId(null);
+                        setDragOver(null);
+                      }}
+                      onOpen={() => openOpp(l)}
+                    />
+                  ))
                 )}
               </div>
             </div>

@@ -280,11 +280,13 @@ def start_tender_scan(
     session.add(TaskCheckpoint(task_id=task_id, kind="tender", status="running", progress=0))
     session.commit()
 
-    def _worker() -> None:
+    def _worker() -> dict:  # SPEC-E E2：返回 totals 交给 lifecycle
         import asyncio
 
         from ..collectors.tender import fetch_zhiliaoke_tenders
-        from .imports import _COMPANY_RE  # noqa: PLC2701
+        from .task_runtime import signal_exists
+
+        totals: dict = {"signals_created": 0}
 
         async def _main() -> None:
             posts = await fetch_zhiliaoke_tenders(device_strong_terms()[:6], body.days, key)
@@ -303,16 +305,7 @@ def start_tender_scan(
 
                     name = extract_enterprise_name(title, content) or f"待归属·{title[:18].strip()}"
                     ent, _ = resolve_enterprise(s, name, source="tender")
-                    exists = (
-                        s.query(Signal)
-                        .filter(
-                            Signal.url == p.get("url", ""),
-                            Signal.enterprise_id == ent.id,
-                            Signal.title == title,  # 与 ggzy/ccgp 同口径；无 title 的空 url 信号不互相误判重
-                        )
-                        .first()
-                    )
-                    if exists is None:
+                    if not signal_exists(s, ent.id, p.get("url", ""), title):
                         s.add(
                             Signal(
                                 enterprise_id=ent.id,
@@ -328,12 +321,14 @@ def start_tender_scan(
                         )
                         created += 1
                 s.commit()
-                _checkpoint(task_id, status="done", progress=100,
-                            state_json=json.dumps({"signals_created": created}, ensure_ascii=False))
+                totals["signals_created"] = created
 
         asyncio.run(_main())
+        return totals
 
-    threading.Thread(target=_worker, daemon=True).start()
+    from .task_runtime import spawn
+
+    spawn(task_id, _worker, label="tender-scan")
     return {"task_id": task_id}
 
 
@@ -957,7 +952,7 @@ def start_enrich_pipeline(
     session.add(TaskCheckpoint(task_id=task_id, kind="enrich", status="running", progress=0))
     session.commit()
 
-    def _worker() -> None:
+    def _worker() -> dict:  # SPEC-E E2：返回 totals 交给 lifecycle
         totals = {"scanned": 0, "uscc_found": 0, "legal_added": 0,
                   "stat_built": 0, "gongshang_updated": 0, "failed": 0}
         try:
@@ -1037,39 +1032,15 @@ def start_enrich_pipeline(
                 pct = 5 + int((i + 1) / max(len(targets), 1) * 90)
                 _checkpoint(task_id, progress=pct,
                             state_json=json.dumps(totals, ensure_ascii=False))
-            try:
-                from .. import search as meili
-
-                with SessionLocal() as s:
-                    meili.sync_all(s)
-            except Exception:  # noqa: BLE001 — 检索层失败不影响补全
-                logger.warning("补全后 Meili 同步失败", exc_info=True)
-            try:
-                from ..jobs import generate_notifications
-
-                with SessionLocal() as s:
-                    generate_notifications(s)
-            except Exception:  # noqa: BLE001
-                logger.warning("补全后通知扫播失败", exc_info=True)
-            _checkpoint(task_id, status="done", progress=100,
-                        state_json=json.dumps(totals, ensure_ascii=False))
-            _broadcast(task_id, {"type": "done", "summary": totals})
-            _log(task_id, f"补全流水线完成：{totals}")
+            return totals  # 生命周期（尾部钩子/三分支收尾）由 task_runtime.lifecycle 接管
         except TaskCancelled:
-            with SessionLocal() as s:
-                cp = s.get(TaskCheckpoint, task_id)
-                if cp is not None:
-                    cp.status = "cancelled"
-                    cp.updated_at = utcnow()
-                    s.commit()
-            _broadcast(task_id, {"type": "cancelled", "summary": totals})
-        except Exception as exc:  # noqa: BLE001 — 任务线程兜底
-            logger.exception("enrich pipeline %s failed", task_id)
-            _checkpoint(task_id, status="failed",
-                        state_json=json.dumps({"error": str(exc)}, ensure_ascii=False))
-            _broadcast(task_id, {"type": "error", "log": f"任务失败：{exc}"})
+            raise
+        except Exception:
+            raise
 
-    threading.Thread(target=_worker, daemon=True).start()
+    from .task_runtime import spawn
+
+    spawn(task_id, _worker, label="enrich-pipeline")
     return {"task_id": task_id}
 
 
