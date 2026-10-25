@@ -123,6 +123,25 @@ def _run_job_with_watermark(job_name: str, fn, job_kwargs: dict | None = None) -
             mark_watermark(s, job_name, "failed", {"error": str(exc)})
 
 
+def _stale_incremental_hours() -> float | None:
+    """上次增量距今小时数；从未跑过返回 None（SPEC-G G4：>26h 启动补跑）。"""
+    from datetime import datetime, timezone
+
+    from .models import SyncWatermark
+
+    with SessionLocal() as s:
+        row = s.get(SyncWatermark, "daily_incremental")
+    if row is None or not row.last_run_at:
+        return None
+    try:
+        last = datetime.fromisoformat(row.last_run_at)
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - last).total_seconds() / 3600
+    except ValueError:
+        return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -134,6 +153,34 @@ async def lifespan(app: FastAPI):
     from .api.tasks import set_main_loop
 
     set_main_loop(asyncio.get_running_loop())
+
+    # SPEC-G G4：进程不常开——启动时若上次增量>26h（或从未跑过且有数据）自动后台补一次
+    try:
+        from .db import SessionLocal as _SL0
+        from .models import Enterprise as _Ent
+
+        with _SL0() as _s0:
+            _has_data = _s0.query(_Ent).count() > 0
+        _hours = _stale_incremental_hours()
+        if _has_data and (_hours is None or _hours > 26):
+            import threading as _th
+
+            from .jobs import run_daily_incremental
+
+            def _catchup() -> None:
+                _run_job_with_watermark("daily_incremental", run_daily_incremental)
+
+            _th.Thread(target=_catchup, daemon=True).start()
+            import logging as _lg
+
+            _lg.getLogger("vaclead.jobs").info(
+                "启动补跑增量（距上次 %s 小时）", "从未" if _hours is None else round(_hours)
+            )
+    except Exception:  # noqa: BLE001 — 补跑失败不影响启动
+        import logging
+
+        logging.getLogger("vaclead.jobs").warning("启动补增量检查失败", exc_info=True)
+
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -161,7 +208,14 @@ async def lifespan(app: FastAPI):
 
         scheduler.add_job(_notify_sweep, "cron", hour=4, minute=5)
 
-        scheduler.add_job(_notify_sweep, "cron", hour=4, minute=5)
+        def _digest_flush() -> dict:
+            from .notify.channels import digest_flush
+            from .db import SessionLocal as _SL
+
+            with _SL() as s:
+                return digest_flush(s)
+
+        scheduler.add_job(_digest_flush, "cron", hour=8, minute=5)  # SPEC-G：静默期聚合出舱
 
         def _automation_sweep() -> dict:
             from .jobs import run_automation_rules

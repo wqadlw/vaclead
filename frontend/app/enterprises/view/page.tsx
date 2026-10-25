@@ -33,6 +33,13 @@ interface RelatedData {
   peers: { id: number; name: string; via: string }[];
 }
 
+const SEGMENT_LABELS: { key: string; label: string }[] = [
+  { key: "size", label: "企业规模" },
+  { key: "industry", label: "行业适配" },
+  { key: "digital", label: "数字化程度" },
+  { key: "pain", label: "采购意图" },
+];
+
 const ROLE_CN: Record<string, string> = {
   legal_rep: "法定代表人",
   buyer_unit: "采购单位",
@@ -244,6 +251,48 @@ function IntelInner() {
                       {r.rule} +{r.points}
                     </Tag>
                   ))}
+                </div>
+              </div>
+            )}
+            {/* 四段评分（SPEC-G G1：opengtm 分段模式——每段独立得分条+理由） */}
+            {detail.icp_segments && (
+              <div className="mt-5">
+                <div className="mb-2 text-[12.5px] text-[var(--muted)]">
+                  四段评分（规模/行业/数字化/意图，合计 {SEGMENT_LABELS.reduce(
+                    (a, seg) => a + (detail.icp_segments![seg.key]?.score ?? 0), 0,
+                  )} 分）
+                </div>
+                <div className="space-y-2.5">
+                  {SEGMENT_LABELS.map((seg) => {
+                    const s = detail.icp_segments![seg.key];
+                    if (!s) return null;
+                    const pct = Math.round((s.score / s.max) * 100);
+                    return (
+                      <div key={seg.key} className="rounded-lg border border-[var(--border)] px-3.5 py-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[13px] font-medium text-[var(--ink)]">{seg.label}</span>
+                          <span className="text-[12.5px] tabular-nums text-[var(--muted)]">
+                            {s.score}/{s.max}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 h-1.5 rounded-full bg-[var(--raised)]">
+                          <div
+                            className={`h-full rounded-full ${pct >= 70 ? "bg-[var(--accent)]" : "bg-[#89aab6]"}`}
+                            style={{ width: `${Math.max(pct, 2)}%` }}
+                          />
+                        </div>
+                        {s.reasons.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            {s.reasons.map((r, i) => (
+                              <Tag key={i} color="cyan" type="light" size="small">
+                                {r.rule} +{r.points}
+                              </Tag>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

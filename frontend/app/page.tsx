@@ -64,6 +64,10 @@ export default function DashboardPage() {
   const [sum, setSum] = useState<SummaryData | null>(null);
   const [health, setHealth] = useState<{ next_action?: { hint?: string } } | null>(null);
   const [todos, setTodos] = useState<TodoItem[]>([]);
+  // 今日作战清单（SPEC-G G5）：四源合并排序
+  const [myDay, setMyDay] = useState<
+    { priority: number; kind: string; id: number; title: string; hint: string }[]
+  >([]);
   const [newTodo, setNewTodo] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -76,6 +80,12 @@ export default function DashboardPage() {
     api.get<SummaryData>("/api/dashboard/summary").then(setSum).catch(() => undefined);
     api.get<HealthData2>("/api/health").then(setHealth).catch(() => undefined);
     api.get<{ items: TodoItem[] }>("/api/todos").then((d) => setTodos(d.items)).catch(() => undefined);
+    api
+      .get<{ items: { priority: number; kind: string; id: number; title: string; hint: string }[] }>(
+        "/api/dashboard/my-day",
+      )
+      .then((d) => setMyDay(d.items))
+      .catch(() => undefined);
   }, []);
 
   const myLeads = data?.my_leads_by_status ?? {};
@@ -161,6 +171,50 @@ export default function DashboardPage() {
         </Button>
       </div>
 
+      {/* 空库 Onboarding（SPEC-G G3：新环境三步引导直达首批数据） */}
+      {(sum?.kpis.enterprises.total ?? data?.total_enterprises ?? 0) < 20 && (
+        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+          {[
+            {
+              step: 1,
+              title: "跑第一批官方数据",
+              desc: "免 Key 免配置，直连国家公共资源交易平台——一键采集中标企业 + 采购人",
+              cta: "去采集",
+              href: "/tasks",
+            },
+            {
+              step: 2,
+              title: "看数据长出来",
+              desc: "几十秒出结果：企业库/信号流/采购关系图谱自动生成，带公告溯源",
+              cta: "看企业库",
+              href: "/enterprises",
+            },
+            {
+              step: 3,
+              title: "让系统自动干活",
+              desc: "建一条自动化规则（如：科研教育中标 → 自动建线索+待办），之后每天自动跑",
+              cta: "去设置规则",
+              href: "/settings",
+            },
+          ].map((s) => (
+            <a
+              key={s.step}
+              href={s.href}
+              className="group rounded-xl border border-[var(--border)] bg-white p-5 transition-colors hover:border-[var(--accent)]"
+            >
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent)] text-[13px] font-medium text-white">
+                {s.step}
+              </div>
+              <div className="mt-3 text-[14.5px] font-medium text-[var(--ink)]">{s.title}</div>
+              <p className="mt-1.5 text-[12.5px] leading-5 text-[var(--muted)]">{s.desc}</p>
+              <span className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-[var(--accent)]">
+                {s.cta} <span className="transition-transform group-hover:translate-x-0.5">→</span>
+              </span>
+            </a>
+          ))}
+        </div>
+      )}
+
       {/* KPI 环比条（tremor 模式：值 + Delta 徽标 + 迷你趋势） */}
       <div className="mt-5 grid grid-cols-2 overflow-hidden rounded-lg border border-[var(--border)] lg:grid-cols-4">
         {kpis.map((k, i) => (
@@ -223,7 +277,40 @@ export default function DashboardPage() {
       {/* 待跟进 + 最新信号 */}
       <div className="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
         <div>
-          {/* 我的待办（吸收 twenty task：手动+自动生成，到期分层） */}
+          {/* 今日作战清单（SPEC-G G5：四源合并——逾期/到期/久未跟/高分新线索/规则命中） */}
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-[15px] font-medium text-[var(--ink)]">今日作战</h2>
+            <span className="text-[12px] text-[var(--muted)]">
+              {myDay.length > 0 ? `${myDay.length} 项待处理` : "今天没有必须处理的事"}
+            </span>
+          </div>
+          {myDay.length > 0 && (
+            <div className="mb-3 space-y-1.5">
+              {myDay.slice(0, 6).map((m) => (
+                <div
+                  key={`${m.kind}-${m.id}`}
+                  className="flex items-center gap-2.5 rounded-lg border border-[var(--border)] bg-white px-3 py-2"
+                >
+                  <span
+                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10.5px] font-medium ${
+                      m.priority === 0
+                        ? "bg-[color:var(--negative)]/10 text-[var(--negative)]"
+                        : m.priority === 1
+                          ? "bg-[color:var(--accent)]/10 text-[var(--accent)]"
+                          : "bg-[var(--raised)] text-[var(--muted)]"
+                    }`}
+                  >
+                    {{ overdue_todo: "逾期", due_today: "今日", stale_intent: "久未跟", fresh_lead: "新线索", rule_hits: "自动化" }[m.kind] ?? m.kind}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--ink)]" title={m.title}>
+                    {m.title}
+                  </span>
+                  <span className="shrink-0 text-[11.5px] text-[var(--muted)]">{m.hint}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-[15px] font-medium text-[var(--ink)]">我的待办</h2>
             <span className="text-[12px] text-[var(--muted)]">

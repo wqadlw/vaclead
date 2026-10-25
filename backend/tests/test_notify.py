@@ -93,3 +93,45 @@ def test_emailengine_stub_skips_unconfigured(client, admin_headers):
         assert is_configured(s) is False
         assert submit(s, to="x@y.z", subject="s", text="t") is False
         assert list_messages(s) == []
+
+
+def test_quiet_hours_and_digest_chain(client, admin_headers):
+    """SPEC-G G2：静默期挂起 → digest_flush 聚合 → 原行 digested=2 链路。"""
+    from app.db import SessionLocal
+    from app.models import Notification, SettingsKV
+    from app.notify.channels import digest_flush, notify_dispatch
+
+    with SessionLocal() as s:
+        # 设静默时段覆盖当前时间（00:00-23:59 全天）
+        s.query(SettingsKV).filter(SettingsKV.key == "notify_quiet_hours").delete()
+        s.add(SettingsKV(key="notify_quiet_hours", value="00:00-23:59"))
+        s.commit()
+        r = notify_dispatch(s, 1, kind="signal", title="digest测试A", body="a",
+                            ref_type="signal", ref_id=9001)
+        assert r["in_app"] == "queued-for-digest"
+        r2 = notify_dispatch(s, 1, kind="signal", title="digest测试B", body="b",
+                             ref_type="signal", ref_id=9002)
+        assert r2["in_app"] == "queued-for-digest"
+        s.commit()
+        # 两行挂起
+        pending = s.query(Notification).filter(Notification.digested == 1).count()
+        assert pending == 2
+        # flush 聚合
+        stats = digest_flush(s)
+        assert stats["digested"] == 2 and stats["digests"] == 1
+        digest = (
+            s.query(Notification)
+            .filter(Notification.kind == "digest", Notification.ref_type == "digest")
+            .first()
+        )
+        assert digest is not None and "2 条" in digest.title
+        assert "digest测试A" in digest.body and "digest测试B" in digest.body
+        # 原行标记已折入
+        assert s.query(Notification).filter(Notification.digested == 1).count() == 0
+        # 清理
+        s.query(SettingsKV).filter(SettingsKV.key == "notify_quiet_hours").delete()
+        s.query(Notification).filter(
+            Notification.ref_id.in_([9001, 9002])
+        ).delete(synchronize_session=False)
+        s.query(Notification).filter(Notification.kind == "digest").delete()
+        s.commit()

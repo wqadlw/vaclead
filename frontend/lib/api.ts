@@ -136,6 +136,10 @@ export interface Enterprise {
   is_competitor: number;
   signal_count?: number;
   signals?: SignalItem[];
+  icp_segments?: Record<
+    string,
+    { score: number; max: number; reasons: { rule: string; points: number }[] }
+  > | null;
   stat?: {
     bid_count: number;
     bid_amount_total_wan: number;
