@@ -38,6 +38,16 @@ def ggzy_name_terms() -> list[str]:
     return list(GGZY_NAME_TERMS)
 
 
+def icp_segments() -> dict:
+    """ICP 分段权重（SPEC-F F2，opengtm 四段模式：size/industry/digital/pain）。"""
+    return load().get("icp_segments", {})
+
+
+def hiring_keywords() -> list[str]:
+    """招聘信号词表（SPEC-F F3：在招设备岗=采购/扩张前兆）。"""
+    return list(load().get("hiring_keywords", []))
+
+
 def device_weak_terms() -> list[str]:
     return list(load()["device_terms"]["weak"])
 

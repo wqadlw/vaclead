@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button, Table } from "@douyinfe/semi-ui";
 import { ArrowRight } from "lucide-react";
 import AppShell from "@/components/AppShell";
-import { AreaTrend, BarList, DeltaBadge, FunnelBars, SparkBars } from "@/components/charts";
+import { AreaTrend, BarList, DeltaBadge, FunnelBars, ProvinceBars, SparkBars } from "@/components/charts";
 import { api } from "@/lib/api";
 import { LEAD_STATUS } from "@/lib/constants";
 
@@ -44,6 +44,7 @@ interface SummaryData {
   kpis: Record<string, { total: number; delta: number }>;
   trend: { date: string; count: number }[];
   sources: { name: string; value: number }[];
+  geo: { province: string; count: number }[];
   funnel: { status: string; label: string; value: number }[];
 }
 
@@ -202,6 +203,10 @@ export default function DashboardPage() {
           <section className="rounded-lg border border-[var(--border)] bg-white p-5">
             <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">线索漏斗</h2>
             <FunnelBars items={sum?.funnel ?? []} />
+          </section>
+          <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+            <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">客户省份分布</h2>
+            <ProvinceBars items={sum?.geo ?? []} />
           </section>
           <section className="rounded-lg border border-[var(--border)] bg-white p-5">
             <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">企业来源分布</h2>

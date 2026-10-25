@@ -218,6 +218,9 @@ class Notification(Base):
     ref_type: Mapped[str] = mapped_column(Text, nullable=False, default="signal")
     ref_id: Mapped[int] = mapped_column(Integer, nullable=False)
     read: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # digest 聚合键（SPEC-F F1，吸收 novu）：同键单条聚合；企业动态用 "ent:{id}"
+    digest_key: Mapped[str | None] = mapped_column(Text)
+    digested: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 1=已折入汇总
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
 
 

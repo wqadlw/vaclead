@@ -509,6 +509,39 @@ def advanced_filter_enterprises(
         _op.and_ if body.logic == "and" else _op.or_, clauses
     )
 
+def _segments_of(e, session) -> dict | None:
+    """ICP 分段评分（SPEC-F F2）：情报页分组展示。"""
+    from datetime import datetime, timedelta
+
+    from ..models import Signal
+
+    cutoff = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%d")
+    recent = (
+        session.query(Signal)
+        .filter(Signal.enterprise_id == e.id, Signal.pub_date >= cutoff)
+        .first()
+    )
+    any_tender = (
+        session.query(Signal)
+        .filter(Signal.enterprise_id == e.id)
+        .first()
+    )
+    try:
+        from ..agents.impl.icp_judge_rule import judge_segments
+
+        r = judge_segments(
+            name=e.name,
+            business_scope=e.business_scope or "",
+            registered_capital_wan=e.registered_capital_wan,
+            industry_key=e.industry_key,
+            signal_active=recent is not None,
+            has_tender=any_tender is not None,
+        )
+        return r["segments"]
+    except Exception:  # noqa: BLE001 — 分段失败不影响详情
+        return None
+
+
 @router.get("/enterprises/{eid}")
 def enterprise_detail(
     eid: int,
@@ -543,6 +576,7 @@ def enterprise_detail(
         "source": e.source,
         "icp_score": e.icp_score,
         "icp_reasons": e.reasons_list(),
+        "icp_segments": _segments_of(e, session),
         "intent_score": e.intent_score,
         "is_competitor": e.is_competitor,
         "stat": {

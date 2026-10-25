@@ -100,6 +100,29 @@ icp_weights:
   qualification: 15
   max_score: 100
 
+# ICP 分段评分（SPEC-F F2，吸收 opengtm qualify 四段模式）：
+# 每段独立打分带理由，情报页分组展示；各段上限之和=100
+icp_segments:
+  size:                    # 企业规模段（注册资本/信号活跃度）
+    capital_gte_1000w: 12
+    capital_100w_1000w: 7
+    signal_active_90d: 5   # 近90天有信号（活跃买家）
+    max: 20
+  industry:                # 行业适配段（下游行业词表命中）
+    tier1: 40
+    tier2: 30
+    generic: 10
+    research_edu_bonus: 5  # 科研教育（政采主力）加成
+    max: 45
+  digital:                 # 数字化/现代化痕迹（经营范围技术词）
+    tech_terms: 10         # 含 研发/技术/智能/自动化 等
+    online_trace: 5        # 有官网域名或 ICP 记录（P3 接入）
+    max: 15
+  pain:                    # 痛点/意图信号段
+    device_usage: 10       # 经营范围含设备使用词
+    tender_intent: 15      # 历史中标/采购信号强
+    max: 20
+
 signal_weights:
   tender_title_hit: 70    # 招标标题命中 strong 词
   tender_body_hit: 50     # 正文命中 strong 词 / 标题命中 weak 词减半
@@ -131,3 +154,14 @@ profile_templates:
     filters: {industry_key: freeze_dried, score_min: 50}
   - name: 有采购信号的高意向客户
     filters: {signal_days: 30, score_min: 60}
+
+# 招聘信号词表（SPEC-F F3，吸收 Job-Signal-Scraper 思想：在招设备岗=采购/扩张前兆）
+hiring_keywords:
+  - 真空设备工程师
+  - 真空工艺工程师
+  - 镀膜工程师
+  - 真空技术员
+  - 设备维护工程师
+  - 真空镀膜技师
+  - 半导体设备工程师
+  - 光伏工艺工程师

@@ -533,3 +533,25 @@ settings 页脚本三锚点全失配（AutomationPanel 抽组件后锚移位）�
 - **E4 启动**：LeadCard 提取独立组件（修内嵌函数组件每次渲染重建），
   leads/page.tsx 646→620 + LeadCard.tsx 69。
 - **门禁**：146 全绿 + build + 双页服务健康。
+
+
+## 2026-10-26 · W28 SPEC-F 标杆化第六轮（第五轮新调研驱动）
+
+**调研**（"打造标杆"）：意图数据/线索评分/访客识别/竞对情报/技术栈指纹 5 域。
+关键结论：buyer intent/访客识别域开源空白（印证我们公示数据路线稀缺）。
+克隆深读 3 新项目：opengtm（ICP 分段评分）/ B2B-Job-Signal-Scraper（招聘=采购前兆）
+/WebsiteTechMiner（技术栈指纹 P3）。
+
+**落地**：
+- **F1 novu digest 防轰炸**：Notification +digest_key/digested 列；静默时段
+  （notify_quiet_hours "22:00-08:00" 跨零点）内非 automation 通知折入挂起；
+  digest_flush 聚合单条汇总（08:05 定时接入下轮）
+- **F2 ICP 分段评分器**（opengtm 四段模式）：size(20)/industry(45 含科研教育加成)
+  /digital(15)/pain(20) 各段独立 (score,reasons)，vacuum.yaml icp_segments 配置化；
+  情报页 detail 带 icp_segments。真库冒烟：北京大学 82 分四段理由齐全
+- **F3 招聘信号词表**：hiring_keywords 8 词入 yaml（信号源架构位就绪，抓取 P2 CDP）
+- **F4 客户省份分布**：analytics geo 聚合 + 工作台 ProvinceBars（色深=量），
+  截图验收（江苏 23/广东 16/安徽 5…）
+
+**坑**：icp_judge_rule 在 agents/impl/ 下需三级 ...vertical（全局替换二级踩坑后还原）。
+**门禁**：146 全绿 + build + 浏览器验收。

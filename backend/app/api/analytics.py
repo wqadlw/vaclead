@@ -88,6 +88,18 @@ def dashboard_summary(
         key=lambda x: -x["value"],
     )
 
+    # ---- 省份地理分布（SPEC-F F4：地图视图数据源）----
+    geo_rows = (
+        session.query(Enterprise.province, func.count())
+        .filter(Enterprise.province.isnot(None), Enterprise.province != "")
+        .group_by(Enterprise.province)
+        .all()
+    )
+    geo = sorted(
+        [{"province": str(p_).strip(), "count": int(c)} for p_, c in geo_rows if str(p_).strip()],
+        key=lambda x: -x["count"],
+    )
+
     # ---- 线索漏斗（状态计数，按流转顺序）----
     funnel_order = ["new", "following", "intent", "won", "pool", "lost"]
     lead_rows = session.query(Lead.status, func.count()).group_by(Lead.status).all()
@@ -101,4 +113,4 @@ def dashboard_summary(
         if s in funnel_order
     ]
 
-    return {"kpis": kpis, "trend": trend, "sources": sources, "funnel": funnel}
+    return {"kpis": kpis, "trend": trend, "sources": sources, "geo": geo, "funnel": funnel}

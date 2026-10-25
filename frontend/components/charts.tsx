@@ -135,3 +135,33 @@ export function BarList({ items }: { items: { name: string; value: number }[] })
     </div>
   );
 }
+
+/** 省份分布条（SPEC-F F4 地图的数据可得版：SVG 中国地图需省界路径，
+    先以横向量条呈现，色深=数量；P3 配高德后换真地图） */
+export function ProvinceBars({ items }: { items: { province: string; count: number }[] }) {
+  const max = Math.max(...items.map((i) => i.count), 1);
+  return (
+    <div className="space-y-1">
+      {items.slice(0, 10).map((it) => (
+        <div key={it.province} className="flex items-center gap-2.5">
+          <span className="w-14 shrink-0 truncate text-right text-[12px] text-[var(--ink)]">
+            {it.province}
+          </span>
+          <div className="h-4 flex-1 rounded-sm bg-[var(--raised)]">
+            <div
+              className="h-full rounded-sm"
+              style={{
+                width: `${Math.max((it.count / max) * 100, 2)}%`,
+                background: "var(--accent)",
+                opacity: 0.35 + (0.65 * it.count) / max,
+              }}
+            />
+          </div>
+          <span className="w-8 shrink-0 text-right text-[12px] tabular-nums text-[var(--muted)]">
+            {it.count}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
