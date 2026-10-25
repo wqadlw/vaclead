@@ -555,3 +555,12 @@ settings 页脚本三锚点全失配（AutomationPanel 抽组件后锚移位）�
 
 **坑**：icp_judge_rule 在 agents/impl/ 下需三级 ...vertical（全局替换二级踩坑后还原）。
 **门禁**：146 全绿 + build + 浏览器验收。
+
+
+## 附 W28 E4 尾项收官（同日）
+
+enterprises/page.tsx 1005→**755 行**：QuickPicks/SummaryBar(+AGG_OPS/aggValue)/
+AdvancedFilterModal（含自含状态）三块提取到 components/EnterprisesWidgets.tsx（331 行），
+死代码（afLogic/afRows/runAdvanced/内联 AGG 定义）清理。
+浏览器回归：快捷筛选/汇总条/高级筛选钮全 OK，"有联系电话"点击→29 家交互完好。
+146 全绿。**SPEC-E 全部工作项完成。**
