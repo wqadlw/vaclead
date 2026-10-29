@@ -46,6 +46,12 @@ interface SummaryData {
   sources: { name: string; value: number }[];
   geo: { province: string; count: number }[];
   funnel: { status: string; label: string; value: number }[];
+  forecast?: {
+    months: { month: string; weighted: number }[];
+    current_month_weighted: number;
+    target: number | null;
+    attain: number | null;
+  };
 }
 
 const SOURCE_CN: Record<string, string> = {
@@ -254,6 +260,52 @@ export default function DashboardPage() {
         </section>
 
         <div className="space-y-5">
+          {/* SPEC-J J6：加权管道预测（espocrm Forecasts 思想） */}
+          <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+            <div className="mb-3 flex items-baseline justify-between">
+              <h2 className="text-[15px] font-medium text-[var(--ink)]">本月加权预测</h2>
+              <span className="text-[12px] text-[var(--muted)]">Σ 金额×赢率</span>
+            </div>
+            {sum?.forecast ? (
+              <div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[26px] font-semibold leading-none text-[var(--ink)]">
+                    {sum.forecast.current_month_weighted.toLocaleString()}
+                  </span>
+                  <span className="text-[12px] text-[var(--muted)]">万元</span>
+                  {sum.forecast.target != null && (
+                    <span className="ml-auto text-[12px] text-[var(--muted)]">
+                      目标 {sum.forecast.target.toLocaleString()} 万
+                      {sum.forecast.attain != null && (
+                        <> · 达成 {Math.round(sum.forecast.attain * 100)}%</>
+                      )}
+                    </span>
+                  )}
+                </div>
+                {sum.forecast.target != null && sum.forecast.target > 0 && (
+                  <div className="mt-3 h-1.5 w-full rounded-full bg-[var(--border)]">
+                    <div
+                      className="h-1.5 rounded-full bg-[var(--accent)]"
+                      style={{
+                        width: `${Math.min(100, Math.round((sum.forecast.attain ?? 0) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                )}
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-[var(--muted)]">
+                  {(sum.forecast.months ?? []).slice(0, 4).map((m) => (
+                    <span key={m.month}>
+                      {m.month}：<span className="text-[var(--ink)]">{m.weighted.toLocaleString()}</span> 万
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-[13px] text-[var(--muted)]">
+                给跟进中/意向商机填上金额、赢率与预计成交月，即可看到加权预测。
+              </div>
+            )}
+          </section>
           <section className="rounded-lg border border-[var(--border)] bg-white p-5">
             <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">线索漏斗</h2>
             <FunnelBars items={sum?.funnel ?? []} />

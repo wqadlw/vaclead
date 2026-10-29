@@ -226,6 +226,11 @@ def resolve_enterprise(
     uscc：来源携带的统一社会信用代码（ggzy 采集必有）——tier0 精确锚点 + 回填。
     """
     ent, is_new, _conf = _resolve(session, name, source, uscc)
+    if is_new:
+        # SPEC-J J1 审计：用户驱动的建档留痕（采集路径 actor=0 被守卫排除）
+        from .audit import log_insert
+
+        log_insert(session, ent)
     return ent, is_new
 
 

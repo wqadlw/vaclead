@@ -113,7 +113,49 @@ def dashboard_summary(
         if s in funnel_order
     ]
 
-    return {"kpis": kpis, "trend": trend, "sources": sources, "geo": geo, "funnel": funnel}
+    # ---- SPEC-J J6 加权管道预测（espocrm Forecasts 思想）----
+    # Σ(amount×probability) 按预计成交月分组；对照个人月度目标算达成率
+    from ..models import UserTarget
+
+    forecast: dict = {"months": [], "current_month_weighted": 0.0}
+    open_rows = (
+        session.query(Lead)
+        .filter(
+            Lead.status.in_(["following", "intent"]),
+            Lead.amount_wan.is_not(None),
+            Lead.expected_close.is_not(None),
+        )
+        .all()
+    )
+    by_month: dict[str, float] = {}
+    for lead in open_rows:
+        month = str(lead.expected_close)[:7]
+        if not month:
+            continue
+        by_month[month] = by_month.get(month, 0.0) + float(lead.amount_wan) * (
+            int(lead.probability or 0) / 100.0
+        )
+    this_month = datetime.now(timezone.utc).strftime("%Y-%m")
+    forecast["current_month_weighted"] = round(by_month.get(this_month, 0.0), 1)
+    forecast["months"] = [
+        {"month": m, "weighted": round(v, 1)} for m, v in sorted(by_month.items())
+    ][:6]
+    target = (
+        session.query(UserTarget)
+        .filter(UserTarget.user_id == user.id, UserTarget.month == this_month)
+        .first()
+    )
+    forecast["target"] = float(target.amount_wan) if target else None
+    forecast["attain"] = (
+        round(forecast["current_month_weighted"] / target.amount_wan, 3)
+        if target and target.amount_wan > 0
+        else None
+    )
+
+    return {
+        "kpis": kpis, "trend": trend, "sources": sources,
+        "geo": geo, "funnel": funnel, "forecast": forecast,
+    }
 
 
 @router.get("/dashboard/my-day")

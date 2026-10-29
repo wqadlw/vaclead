@@ -5,6 +5,7 @@ import { Button, Descriptions, Input, InputNumber, Table, Tabs, Tag, Toast } fro
 import { Bot, KeyRound } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import AutomationPanel from "@/components/AutomationPanel";
+import { ApiKeysPanel, AuditPanel, SubRulesPanel, TargetPanel } from "@/components/GovernancePanels";
 import { api } from "@/lib/api";
 import type { PageData } from "@/lib/api";
 import { INDUSTRY_OPTIONS } from "@/lib/constants";
@@ -190,11 +191,20 @@ export default function SettingsPage() {
             { tab: "数据复核", itemKey: "review" },
             { tab: "自动化", itemKey: "automation" },
             { tab: "通知偏好", itemKey: "notify" },
+            { tab: "订阅规则", itemKey: "subrules" },
+            { tab: "月度目标", itemKey: "target" },
+            { tab: "审计日志", itemKey: "audit" },
+            { tab: "API 密钥", itemKey: "apikeys" },
             { tab: "词表预览", itemKey: "vocab" },
             { tab: "Agent 日志", itemKey: "agents" },
             { tab: "后端切换", itemKey: "backends" },
           ]}
         >
+          {/* SPEC-J 治理面板 */}
+          <SubRulesPanel />
+          <TargetPanel />
+          <AuditPanel />
+          <ApiKeysPanel />
           {/* Keys */}
           <div className="p-6 max-w-[560px]">
             <div className="text-[13px] text-slate-500 mb-5 leading-6">

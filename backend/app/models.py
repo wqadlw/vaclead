@@ -451,3 +451,73 @@ class Todo(Base):
     source: Mapped[str] = mapped_column(Text, nullable=False, default="manual")  # manual|automation
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class AuditLog(Base):
+    """审计日志（SPEC-J J1，espocrm 审计思想）：关键实体写操作全留痕。
+
+    user_id=0 表示系统来源（采集/任务/调度）；insert 不落字段 diff（after 即全量），
+    update 落字段级 [before, after]，delete 落 [before, None]。
+    """
+
+    __tablename__ = "audit_log"
+    __table_args__ = (
+        Index("ix_audit_entity", "entity", "entity_id"),
+        Index("ix_audit_created", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    action: Mapped[str] = mapped_column(Text, nullable=False)  # insert/update/delete
+    entity: Mapped[str] = mapped_column(Text, nullable=False)  # enterprise/lead/contact
+    entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    changes_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class UserApiKey(Base):
+    """API 密钥（SPEC-J J1，twenty api-key 思想）：机器对机器访问通道。
+
+    明文只在创建响应里出现一次，库存 sha256；scopes=read 时仅放行 GET/HEAD。
+    """
+
+    __tablename__ = "user_api_key"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    key_hash: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    prefix: Mapped[str] = mapped_column(Text, nullable=False, default="")  # 展示用前 12 位
+    scopes: Mapped[str] = mapped_column(Text, nullable=False, default="read")  # read|rw
+    last_used_at: Mapped[str | None] = mapped_column(Text)
+    revoked: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class UserTarget(Base):
+    """月度目标（SPEC-J J6，espocrm Forecasts 思想）：万元/人/月。"""
+
+    __tablename__ = "user_target"
+    __table_args__ = (UniqueConstraint("user_id", "month", name="uq_user_target"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    month: Mapped[str] = mapped_column(Text, nullable=False)  # YYYY-MM
+    amount_wan: Mapped[float] = mapped_column(REAL, nullable=False, default=0.0)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class SubscriptionRule(Base):
+    """关键词/地区订阅规则（SPEC-J J7）：每日新信号按规则匹配 → 通知。
+
+    与按企业订阅（subscription 表）互补；value=关键词文本或省市名。
+    """
+
+    __tablename__ = "subscription_rule"
+    __table_args__ = (UniqueConstraint("user_id", "kind", "value", name="uq_sub_rule"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)  # keyword|region
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)

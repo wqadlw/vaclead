@@ -681,6 +681,10 @@ def enterprise_to_lead(
             tenant_id=e.tenant_id,
         )
         session.add(lead)
+        session.flush()
+        from ..audit import log_insert
+
+        log_insert(session, lead)
     session.commit()
     return {
         "id": lead.id,
@@ -773,6 +777,7 @@ def batch_create_leads(
     from ..models import Lead
 
     converted = existed = skipped_competitor = missing = 0
+    created_leads: list[Lead] = []
     for eid in body.ids[:200]:  # 单批上限
         e = session.get(Enterprise, eid)
         if e is None:
@@ -784,8 +789,16 @@ def batch_create_leads(
         if session.query(Lead).filter(Lead.enterprise_id == eid).first():
             existed += 1
             continue
-        session.add(Lead(enterprise_id=eid, status="new", tenant_id=e.tenant_id))
+        lead = Lead(enterprise_id=eid, status="new", tenant_id=e.tenant_id)
+        session.add(lead)
+        created_leads.append(lead)
         converted += 1
+    if created_leads:
+        session.flush()
+        from ..audit import log_insert
+
+        for lead in created_leads:
+            log_insert(session, lead)
     session.commit()
     return {
         "converted": converted, "existed": existed,

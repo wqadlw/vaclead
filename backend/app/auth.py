@@ -92,11 +92,49 @@ def _load_user(
     return user
 
 
-def current_user(
+def _load_api_key(raw: str, request: Request, session: Session) -> User:
+    """X-Api-Key 认证（SPEC-J J1，twenty api-key 思想）：机器通道。
+
+    scopes=read 仅放行 GET/HEAD；rw 全放行。明文不落库（sha256），
+    命中即刷新 last_used_at。
+    """
+    import hashlib
+
+    from .models import UserApiKey
+
+    key_hash = hashlib.sha256(raw.encode()).hexdigest()
+    row = (
+        session.query(UserApiKey)
+        .filter(UserApiKey.key_hash == key_hash, UserApiKey.revoked == 0)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=401, detail="API Key 无效或已吊销")
+    if row.scopes == "read" and request.method not in ("GET", "HEAD"):
+        raise HTTPException(status_code=403, detail="该 API Key 为只读 scope")
+    user = session.get(User, row.user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="API Key 所属用户不存在")
+    row.last_used_at = datetime.now(timezone.utc).isoformat()  # 随端点事务落库（尽力而为）
+    return user
+
+
+async def current_user(
+    request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
     session: Session = Depends(get_session),
 ) -> User:
-    return _load_user(creds, session)
+    """async 依赖：在请求上下文（事件循环）里 set actor contextvar，
+    使同一请求的线程池端点继承（sync 依赖里 set 只活在各自线程副本，SPEC-J 实测踩坑）。"""
+    from .audit import current_actor
+
+    api_key = (request.headers.get("X-Api-Key") or "").strip()
+    if api_key:
+        user = _load_api_key(api_key, request, session)
+    else:
+        user = _load_user(creds, session)
+    current_actor.set(user.id)
+    return user
 
 
 def admin_only(user: User = Depends(current_user)) -> User:

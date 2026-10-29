@@ -11,7 +11,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,90 @@ from .models import Enterprise, EnterpriseStat, Signal, SyncWatermark, utcnow
 logger = logging.getLogger("vaclead.jobs")
 
 _AMOUNT_RE = re.compile(r"成交价([\d.]+)万元")
+
+
+# ---------------------------------------------------------------------------
+# SPEC-J J7 关键词/地区订阅规则 → 通知；J1 审计滚动清理
+# ---------------------------------------------------------------------------
+def run_subscription_rules(session: Session) -> dict:
+    """新信号按用户订阅规则（关键词/地区）匹配 → notify_dispatch（幂等可重扫）。
+
+    扫描窗口：自上次水位以来的新信号（单轮 ≤500 条防炸）；去重靠
+    Notification 唯一约束 (ref_type, ref_id, user_id) + 预查。
+    """
+    from .models import Notification, SubscriptionRule
+    from .notify.channels import notify_dispatch
+
+    rules = session.query(SubscriptionRule).all()
+    if not rules:
+        return {"matched": 0, "signals": 0, "rules": 0}
+    last_run = session.get(SyncWatermark, "subscription_rules")
+    cutoff = last_run.last_run_at if last_run and last_run.last_run_at else None
+    q = session.query(Signal)
+    if cutoff:
+        q = q.filter(Signal.created_at > cutoff)
+    signals = q.order_by(Signal.id.desc()).limit(500).all()
+    if not signals:
+        return {"matched": 0, "signals": 0, "rules": len(rules)}
+
+    matched = 0
+    notified: set[tuple[int, int]] = set()  # (signal_id, user_id) 同轮防重（autoflush=False 下查询不可见 pending）
+    for sig in signals:
+        ent = session.get(Enterprise, sig.enterprise_id)
+        if ent is None:
+            continue
+        for rule in rules:
+            if rule.kind == "keyword":
+                hit = rule.value in (sig.title or "") or rule.value in (ent.name or "")
+            else:  # region
+                hit = rule.value in ((ent.province or "") + (ent.city or ""))
+            if not hit or (sig.id, rule.user_id) in notified:
+                continue
+            dup = (
+                session.query(Notification)
+                .filter(
+                    Notification.ref_type == "sub_signal",
+                    Notification.ref_id == sig.id,
+                    Notification.user_id == rule.user_id,
+                )
+                .first()
+            )
+            if dup is not None:
+                continue
+            notified.add((sig.id, rule.user_id))
+            notify_dispatch(
+                session, rule.user_id,
+                kind="signal",
+                title=f"订阅命中：{rule.value}",
+                body=f"「{ent.name}」新信号「{sig.title}」（{sig.pub_date or '日期未知'}）",
+                ref_type="sub_signal",
+                ref_id=sig.id,
+            )
+            matched += 1
+    return {"matched": matched, "signals": len(signals), "rules": len(rules)}
+
+
+def audit_cleanup(session: Session, keep: int = 50000) -> dict:
+    """审计日志滚动清理（SPEC-J J1）：保留最近 keep 条（默认 5 万）。"""
+    from .models import AuditLog
+
+    total = session.query(func.count()).select_from(AuditLog).scalar() or 0
+    if total <= keep:
+        return {"total": total, "removed": 0}
+    if keep <= 0:
+        removed = session.query(AuditLog).delete(synchronize_session=False)
+        session.commit()
+        return {"total": total, "removed": removed}
+    min_id = session.execute(
+        select(AuditLog.id).order_by(AuditLog.id.desc()).offset(keep - 1).limit(1)
+    ).scalar()
+    if min_id is None:
+        return {"total": total, "removed": 0}
+    removed = (
+        session.query(AuditLog).filter(AuditLog.id < min_id).delete(synchronize_session=False)
+    )
+    session.commit()
+    return {"total": total, "removed": removed}
 
 
 # ---------------------------------------------------------------------------

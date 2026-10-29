@@ -163,6 +163,10 @@ async def lifespan(app: FastAPI):
     init_db()
     _inject_tools()
     _recover_interrupted_tasks()
+    # 审计钩子（SPEC-J J1）：update/delete 落 audit_log
+    from .audit import install as _install_audit
+
+    _install_audit()
     # 记录主事件循环：采集线程用它把 SSE 事件推回订阅者
     import asyncio
 
@@ -290,6 +294,24 @@ async def lifespan(app: FastAPI):
         _register_cron("notice_contacts", _notice_contacts_daily, 4, 8)
         _register_cron("backup_sqlite", backup_sqlite, 4, 10,
                        {"backup_dir": str(_DATA_DIR / "backups")})
+
+        def _subscription_rules_sweep() -> dict:
+            from .db import SessionLocal as _SL
+            from .jobs import run_subscription_rules
+
+            with _SL() as s:
+                return run_subscription_rules(s)
+
+        _register_cron("subscription_rules", _subscription_rules_sweep, 4, 6)
+
+        def _audit_cleanup_sweep() -> dict:
+            from .db import SessionLocal as _SL
+            from .jobs import audit_cleanup
+
+            with _SL() as s:
+                return audit_cleanup(s)
+
+        _register_cron("audit_cleanup", _audit_cleanup_sweep, 4, 12)
         scheduler.start()
     except Exception:  # noqa: BLE001 — APScheduler 不可用时跳过定时任务（不影响主功能）
         import logging
@@ -353,6 +375,9 @@ app.include_router(todos.router, prefix="/api")
 from .api import analytics  # noqa: E402
 
 app.include_router(analytics.router, prefix="/api")
+from .api import governance  # noqa: E402
+
+app.include_router(governance.router, prefix="/api")
 
 
 # ---- 单进程部署：托管前端静态导出（frontend/out），SPA 回退 ----

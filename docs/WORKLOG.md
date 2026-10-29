@@ -684,3 +684,34 @@ TestClient lifespan 满足"有企业+无水位"→ 后台线程对真网络跑�
   修：跑 E2E 前清代理环境 + 杀残留实例；ci.bat 持久化 `set NO_PROXY=127.0.0.1,localhost`
 - **四步门禁全绿**：pytest 152/102s + build(静态导出) + E2E 6/23.3s + import smoke
 - 教训：Debug 用 `DEBUG=pw:webserver`——一条日志同时暴露 502 劫持与 db 占用崩溃
+
+
+## 2026-10-30 · W32 SPEC-J 企业级功能扩展 Wave 1（用户"大力发展功能"驱动）
+
+**流程**：GitHub 功能差距调研（子 Agent：EspoCRM/Krayin/SuiteCRM/listmonk/Chatwoot/twenty
+功能矩阵对标）→ SPEC-J.md 契约（J1-J7 七项按价值×无Key可落地性排序）→ Wave 1 实施三个 S 项。
+
+**落地（J1 审计+API Key / J6 加权预测 / J7 订阅获客）**：
+- **J1 审计**：audit_log 表 + before_flush 钩子（update/delete 字段级 [before,after] diff，
+  机器计算字段 intent/icp 排除）+ insert 显式埋点（resolve_enterprise/lead 两处，
+  actor=0 系统路径守卫排除）+ GET /api/audit（admin）+ 每日 04:12 滚动清理（保 5 万条）
+- **J1 API Key**：user_api_key 表（sha256 存储、明文仅创建时返回、prefix 展示）+
+  current_user 双通道认证（JWT ∥ X-Api-Key）+ read scope 仅放行 GET/HEAD +
+  /api/api-keys CRUD + 吊销
+- **J6 预测**：加权管道 Σ(amount×probability) 按预计成交月分组进 /api/dashboard/summary
+  + user_target 表 + /api/my-target GET/PUT + 工作台「本月加权预测」卡（达成率进度条）
+- **J7 订阅获客**：subscription_rule 表（keyword|region，UNIQUE 防重）+ CRON 04:06
+  run_subscription_rules（水位增量扫描→notify_dispatch→digest 通道）+ 设置页面板
+
+**踩坑（三轮真金白银）**：
+- **contextvar 线程池陷阱**：sync 依赖 current_user 里 set 的 contextvar 只活在
+  该次 run_in_threadpool 的上下文副本里，端点线程看不到——insert 审计落空。
+  解法：current_user 改 async（依赖跑在事件循环=请求上下文，端点线程池副本继承它）
+- **autoflush=False 第三次踩**：订阅规则同轮重复命中时 dup 查询看不到 pending 通知
+  → 进程内 seen 集合防重；测试断言前先 s.flush()
+- **审计滚动清理差一错误**：offset(keep) 多留一条，正确是 offset(keep-1)（保 3 删到第 3 新）
+- Mimosa 误报两次：Core 参数化 execute 被判 SQL 注入（改 before_flush+session.add）、
+  测试里的无效 Key 字面量被判硬编码凭据（用合法 Key 反转派生）
+
+**SPEC-J 余项**：J2 联系人中心 / J3 产品报价 / J5 web-to-lead（Wave 2）、
+J4 邮件触达闭环（L，契约已在 SPEC-J §J4，独立轮）。
