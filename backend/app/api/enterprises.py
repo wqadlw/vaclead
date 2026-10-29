@@ -78,16 +78,12 @@ def list_enterprises(
     user: User = Depends(current_user),
 ):
     # Quick picks（gmaps-scraper 模式）：has_contact=1 → 只看有可拨打联系人的企业。
-    # 联系人是低频写高基数维度，SQLite 侧集合过滤即可（不走 Meili filter）。
-    contact_ids: list[int] | None = None
+    # SPEC-I I5：不再物化全量 id 列表（limit(5000) 会静默漏企业）——
+    # SQLite 路径走 IN 子查询半连接；Meili 路径只对当前页 id 做存活过滤。
     if has_contact:
         from ..models import Contact
 
-        contact_ids = [
-            int(r[0])
-            for r in session.query(Contact.enterprise_id).distinct().limit(5000).all()
-        ]
-        if not contact_ids:
+        if session.query(Contact.id).limit(1).scalar() is None:
             return {"items": [], "total": 0, "page": page, "page_size": page_size}
     # Meili 优先（毫秒级组合筛选+分面）；不可用回退 SQLite LIKE 路径
     if meili.available():
@@ -110,8 +106,15 @@ def list_enterprises(
             if r["items"] and "id" in r["items"][0]:
                 ids = [it["id"] for it in r["items"]]
                 rows = {e.id: e for e in session.query(Enterprise).filter(Enterprise.id.in_(ids)).all()}
-                if contact_ids is not None:
-                    allow = set(contact_ids)
+                if has_contact:
+                    from ..models import Contact
+
+                    allow = {
+                        int(r[0])
+                        for r in session.query(Contact.enterprise_id)
+                        .filter(Contact.enterprise_id.in_(ids))
+                        .distinct()
+                    }
                     rows = {eid: e for eid, e in rows.items() if eid in allow}
                 items = []
                 for it in r["items"]:
@@ -146,8 +149,10 @@ def list_enterprises(
             pass
 
     stmt = select(Enterprise)
-    if contact_ids is not None:
-        stmt = stmt.where(Enterprise.id.in_(contact_ids))
+    if has_contact:
+        from ..models import Contact
+
+        stmt = stmt.where(Enterprise.id.in_(select(Contact.enterprise_id)))
     if industry_key:
         stmt = stmt.where(Enterprise.industry_key == industry_key)
     if province:
@@ -420,11 +425,17 @@ def export_enterprises(
     from ..models import Contact
 
     # 联系人列（销售刚需：导出即名单）——每企业全部联系人"姓名(角色):电话"拼接
-    all_contacts = session.query(Contact).all()
+    # SPEC-I I5：只按导出行 enterprise ids 查询，不再全表加载 Contact
+    ent_ids = [e.id for e in rows]
+    export_contacts = (
+        session.query(Contact).filter(Contact.enterprise_id.in_(ent_ids)).all()
+        if ent_ids
+        else []
+    )
     by_ent: dict[int, list[str]] = {}
     import re as _re
 
-    for c in all_contacts:
+    for c in export_contacts:
         phone = c.title or ""
         # 电话槽位含数字才展示（legal_rep 回填的槽位是角色名，非号码）
         phone_part = f":{phone}" if phone and _re.search(r"\d", phone) else ""

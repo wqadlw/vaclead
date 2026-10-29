@@ -584,3 +584,103 @@ AdvancedFilterModal（含自含状态）三块提取到 components/EnterprisesWi
 
 **坑**：Lead 无 intent_score（在 Enterprise）——排序字段修正。
 **门禁**：147 全绿（+digest 链路）+ build + 双页浏览器验收。
+
+
+## 2026-10-26 · W30 SPEC-H E2E 体系 + v1.0.0 发布
+
+**E2E 基建**：Playwright 1.64 + @playwright/test，webServer 自动拉起后端 :8010
+（独立临时库 e2e/tmp + 确定性种子 3 企业/2信号/2联系人/1规则/1待办，Meili 指死端口
+强制 SQLite 真源路径）。
+
+**E2E 用例（6 全绿）**：
+- journey.spec：登录→工作台→快捷筛选计数→Side Panel→情报页四页签四段评分→
+  转线索→列表跟进→待办勾选→主题切换→g2 导航→Ctrl+K 搜索（10 步全链路）
+- regress.spec：行内编辑/汇总条/视图保存/铃铛/高级筛选执行
+
+**顺带修复 3 个真 bug**（E2E 逼出来的）：
+1. API BASE 硬编码 8000——任意端口单进程同源自适应（SSG 惰性求值守卫）
+2. SSE/export 两处端口硬编码同修
+3. exportUrl 在 SSG 预渲染时 window 未定义崩溃（曾导致静态导出失败 out/ 缺失）
+
+**CI**：ci.bat 加 playwright test（四步门禁）。
+**发布**：CHANGELOG.md + tag v1.0.0 + GitHub Release。
+**门禁**：后端 147 + E2E 6 全绿。
+
+
+## 2026-10-29 · W31 SPEC-I P0 生产故障修复 + 调度治理（接手轮）
+
+**背景**：接手时 SPEC-I 已开工一半（I1-I3 代码在work区未提交）。按正规流程补全：
+摸底（调度器全貌/I5 两处/测试基线 147+1挂）→ 子Agent调研四域最佳实践
+（APScheduler/rapidfuzz/CSV导出/SQLite重建表 + litellm 签名，报告入 refs/STUDY.md）
+→ SPEC-I.md 补 I0 → 实施 → 门禁 → 真库验证。
+
+**接手复核新发现（比审计 Agent 多挖出 3 个）**：
+- **I0-P0** `refresh_enterprise_stats` 水位亦 failed（10-26 04:00）：调度注册漏传
+  job_kwargs，refresh_all_stats(session) 被无参调用 TypeError。根因=注册无签名防呆，
+  三种注册风格混用；recycle/notify/digest/automation/notice_contacts 五任务失败不落
+  水位（违反 SPEC-B §6"失败不静默"）
+- **I0b** `_notice_contacts_daily` 用 `from ..api.tasks`（双点越顶层导入）——
+  每日 04:08 必 ImportError 且无水位静默失败，从未成功过
+- **I1b** 真库实跑复现：ggzy 段攒批尾 commit + autoflush=False，批内同名成交公示
+  exists 查不到 pending 写入 → 双双入库撞新约束（企业 113 实证，插 9 条后崩）
+
+**落地**：
+- **I0 调度治理**：`_cron_signature_ok`（inspect.signature().bind 防呆）+ `_register_cron`
+  统一注册（防呆+全任务落水位+misfire_grace_time=3600/coalesce/max_instances=1）+
+  `_refresh_stats_sweep` 对齐 sweep 风格 + 双点导入修复
+- **I1**：约束四元组（前会话完成，接手复核 DDL+水位实证）+ e2e mock 用例
+  （run_daily_incremental 真实 resolve/入库路径，含批内重复记录）
+- **I1b**：ggzy 批内 seen_titles 去重 + 单批次 IntegrityError 降级（rollback 跳过，
+  一条脏数据不再炸管道）
+- **I3**：会话级 canon 缓存（前会话代码）+ 等价性测试（800 家基准：变体必并/
+  异主体不误并）+ 性能断言（200 次 fuzz 归一 <3s，旧路径同数据量数倍）
+- **I4**：gitignore 补 frontend/test-results/ e2e/tmp/ playwright-report/
+- **I5**：has_contact 去 limit(5000) 静默截断——SQLite 路径 IN 子查询半连接，
+  Meili 路径页内存活过滤；导出 Contact 按 ent_ids 查询不再全表加载
+- **I6**：STUDY 补 litellm completion(response_format=BaseModel) 签名（P2 GLM Key
+  激活参照）+ 四则最佳实践；OPERATIONS §3 重写（水位名列全 8 任务+调度治理三守则）
+  §6 补 SQLite 重建表 12 步 §8 登记 signal 约束变更
+
+**流程事故（自查自纠）**：test_spec_i.py 漏设 VACLEAD_DB（全套唯一漏网模块）——
+单独跑时打到真库（幸测试均自带清理）。已补 setdefault + autouse init_db fixture。
+教训：新测试模块必须从 test_api.py 抄隔离头两行。
+
+**验证**：
+- 后端 **152 全绿**（147+新增 5：I0 防呆×2/I1 共存+e2e/I3 等价性能）
+- 真库 refresh_enterprise_stats 实跑 → 86 家画像重建，水位翻 **ok**
+- 真库 daily_incremental 实跑（直连）→ I1b 修复后完整跑完，水位翻 ok（见下）
+- 水位表现：全任务落水位后 sync_watermark 一表可查全量任务健康
+
+**坑**：
+- pytest 模块导入顺序决定 setdefault 生效者——首导入模块的环境变量赢
+- autoflush=False 的 session：add 后同 session 内 query 不可见（第二次踩，见 W21），
+  这次炸在生产水位而非测试——攒批写+批内查重的组合必须配显式 seen 集合或 flush
+
+### 附 W31 续：I0c/I1c（全量门禁逼出的并发与事务边界缺陷）
+
+全量门禁三轮复跑 7-8 个非确定性失败（失败面每次不同，StopIteration/KeyError/断言全中）。
+二分+INFO 日志实证：**G4 启动补跑在测试库点火**——agents 模块建档后，api 模块
+TestClient lifespan 满足"有企业+无水位"→ 后台线程对真网络跑每日增量，
+与用例并发写 SQLite → `database is locked` → 导入端点随机 500 连坐。
+这同时暴露生产级根因：**ggzy 段持写事务跨 HTTP**（resolve 落库后开着的写锁
+去做秒级 list_bids）——SQLite 单写者被锁秒级，生产 API 同样会撞 busy timeout。
+
+- **I0c**：`VACLEAD_DISABLE_JOBS=1` 环境开关（lifespan 跳过补跑+调度注册）；
+  tests/conftest.py 全局设置 + e2e/server.py 设置（conftest 先于测试模块加载，
+  不改各模块 setdefault VACLEAD_DB 的既有语义）
+- **I1c**：ggzy 段三段式——建档短事务（提交）→ 网络抓取（无会话）→ 入库短事务
+  （seen 去重+exists+IntegrityError 降级）；行为改进：明细抓取失败不再连带丢建档
+  （对齐"零丢失"）
+- ci.bat 修复：step-3 路径含 form-feed 字节（`cd ..\x0crontend`），**E2E 步从未能跑**；
+  顺带标签统一 [1/4]~[4/4]
+- 教训：pytest 侧 database is locked 类非确定性失败，先查 lifespan 后台任务点火，
+  `--log-cli-level=INFO` 直接看"启动补跑增量"行
+
+### 附 W31 门禁收官：E2E 两层拦路虎 + 四步门禁全绿
+
+- **E2E webServer 超时真相**：①系统代理(Clash 7890)把 playwright 就绪探针
+  (127.0.0.1:8010) 劫成 502（首探 502→自启 server→后续探针仍走代理→永不就绪）；
+  ②手工诊断起的 :8010 实例占着 e2e.db，playwright 实例删库 WinError 32 崩溃。
+  修：跑 E2E 前清代理环境 + 杀残留实例；ci.bat 持久化 `set NO_PROXY=127.0.0.1,localhost`
+- **四步门禁全绿**：pytest 152/102s + build(静态导出) + E2E 6/23.3s + import smoke
+- 教训：Debug 用 `DEBUG=pw:webserver`——一条日志同时暴露 502 劫持与 db 占用崩溃

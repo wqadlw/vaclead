@@ -97,6 +97,27 @@ def _backfill_uscc(session: Session, ent: Enterprise, uscc: str | None) -> None:
     ent.uscc = uscc.strip()
 
 
+def _canon_cache(session: Session) -> dict[str, int]:
+    """会话级规范名→id 缓存（SPEC-I I3：批量 fuzz 用，替代逐行全表查）。
+
+    挂在 session.info（SQLAlchemy 会话字典）上；新建企业时失效重建。
+    """
+    cache = session.info.get("_canon_cache")
+    if cache is None:
+        cache = {}
+        for ent in session.query(Enterprise.id, Enterprise.name).all():
+            canon = canonical_name(ent.name)
+            if canon:
+                cache[canon] = ent.id
+        session.info["_canon_cache"] = cache
+    return cache
+
+
+def _canon_cache_invalidate(session: Session) -> None:
+    """新建/合并企业后使缓存失效（下次比对重建）。"""
+    session.info.pop("_canon_cache", None)
+
+
 def _resolve(
     session: Session,
     name: str,
@@ -143,16 +164,22 @@ def _resolve(
 
     # 3) rapidfuzz 近似合并（对现有企业主体名比对）
     #    ≥90 自动合并；80-89 落复核队列（不静默建档）；<80 新建（SPEC-B §4）
+    #    规模优化（SPEC-I I3）：会话级 (id, canon) 缓存 + process.extractOne 批量比对，
+    #    替代逐行全表查询+逐条 fuzz（原 O(N) 查询/行 → 每会话一次载入）。
     if canon:
+        cache = _canon_cache(session)
         best_ent: Enterprise | None = None
         best_score = 0.0
-        for exist in session.query(Enterprise).all():
-            exist_canon = canonical_name(exist.name)
-            if not exist_canon:
-                continue
-            score = float(fuzz.token_sort_ratio(canon, exist_canon))
-            if score > best_score:
-                best_ent, best_score = exist, score
+        if cache:
+            from rapidfuzz import process as _process
+
+            hit = _process.extractOne(
+                canon, list(cache.keys()), scorer=fuzz.token_sort_ratio,
+                score_cutoff=REVIEW_THRESHOLD,
+            )
+            if hit is not None:
+                exist_canon, best_score, _ = hit
+                best_ent = session.get(Enterprise, cache[exist_canon])
         if best_ent is not None and best_score >= FUZZY_THRESHOLD:
             _add_alias(session, best_ent, raw, source)
             if canon != raw:
@@ -164,6 +191,7 @@ def _resolve(
             if uscc:
                 ent.uscc = uscc
             session.add(ent)
+            _canon_cache_invalidate(session)
             session.flush()
             if canon and canon != raw:
                 _add_alias(session, ent, canon, "auto")
@@ -183,6 +211,7 @@ def _resolve(
     if uscc:
         ent.uscc = uscc
     session.add(ent)
+    _canon_cache_invalidate(session)
     session.flush()
     if canon and canon != raw:
         _add_alias(session, ent, canon, "auto")

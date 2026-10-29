@@ -60,7 +60,8 @@ def test_signal_dedup_unique_constraint_columns(engine):
         for constr in Base.metadata.tables["signal"].constraints
         if isinstance(constr, UniqueConstraint)
     }
-    assert ("url", "enterprise_id", "type") in uq_cols
+    # SPEC-I I1：title 入约束（与全库查重口径一致），空 url 不同项目信号须共存
+    assert ("url", "enterprise_id", "type", "title") in uq_cols
 
 
 # ---------------- LEAD_TRANSITIONS 常量 ----------------
@@ -146,11 +147,12 @@ def test_signal_unique_constraint_blocks_duplicate(session):
     session.add(s1)
     session.commit()
 
-    # 同 (url, enterprise_id, type) 再插 → 违反 uq_signal_dedup
+    # 真·同键四元组 (url, enterprise_id, type, title) 再插 → 违反 uq_signal_dedup
+    # （SPEC-I I1 约束已含 title：仅同 url 不同 title 须共存，见 test_spec_i）
     s2 = Signal(
         enterprise_id=ent.id,
         type="tender",
-        title="真空泵采购公告(重复)",
+        title="真空泵采购公告",
         url="http://tender.example/1",
         base_score=70.0,
     )

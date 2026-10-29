@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.0.1（2026-10-29）
+
+P0 生产故障修复轮（SPEC-I）：第三方审计发现每日增量管道实际已断，接手复核又挖出 3 个关联缺陷。**152 项后端测试全绿**（+5 回归用例）。
+
+### 修复（P0）
+- **每日增量管道断裂**：signal 唯一约束 (url,enterprise_id,type) 不含 title——同企业第二条不同项目中标即 IntegrityError，且后续 04:00/04:10 任务连锁中断、启动补跑反复撞同一错。约束迁移为 (url,enterprise_id,type,title)，真库已重建 signal 表
+- **批内去重缺陷**（真库实跑复现）：ggzy 段攒批尾提交 + autoflush=False，批内同名成交公示查重不可见 → 撞约束。批内去重 + 单批次 IntegrityError 降级（一条脏数据不再炸整条管道）
+- **画像刷新任务**：调度注册漏传 session 参数，静默 failed。注册前签名防呆（inspect bind 校验），不匹配任务拒绝注册并响亮告警
+- **联系人回填任务**：越顶层相对导入（`..api.tasks`），每日 04:08 必 ImportError 且无水位静默失败——从未成功过
+
+### 加固（调度治理）
+- 全部 8 个定时任务统一注册：签名防呆 + **失败全部落 sync_watermark**（此前 5 个任务失败不落水位）+ misfire_grace_time/coalesce/max_instances 标准参数
+- 归一引擎 O(N²) → 会话级规范名缓存 + rapidfuzz extractOne 剪枝（800 家基准回归：变体必并/异主体不误并/批量化不回退）
+- 快捷筛选 has_contact 去 limit(5000) 静默截断（子查询半连接）；导出联系人按行内企业查询（不再全表加载）
+- CI 脚本修复：E2E 步骤路径含 form-feed 字节从未能跑
+
+### 验证
+- 真库实跑：refresh_enterprise_stats（86 画像）与 daily_incremental（ggzy+ccgp 全段）水位翻 ok，PRAGMA integrity ok
+- 调研沉淀：litellm response_format=BaseModel 签名（P2 LLM 激活参照）、APScheduler/rapidfuzz/SQLite 重建表最佳实践（refs/STUDY.md、docs/OPERATIONS.md §3/§6/§8）
+
 ## v1.0.0（2026-10-26）
 
 真空设备智能拓客平台首个正式版：**从官方公示数据到可拨打线索到商机成交的全链路自托管系统**。单进程零外部依赖，147 项后端测试 + 6 项 E2E 全绿。

@@ -100,7 +100,8 @@ class Signal(Base):
     __table_args__ = (
         Index("ix_signal_enterprise", "enterprise_id"),
         Index("ix_signal_pubdate", "pub_date"),
-        UniqueConstraint("url", "enterprise_id", "type", name="uq_signal_dedup"),
+        # title 入约束（SPEC-I I1）：与全库 5 处查重口径一致——空 url 的同企业不同项目信号须共存
+        UniqueConstraint("url", "enterprise_id", "type", "title", name="uq_signal_dedup"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

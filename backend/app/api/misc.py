@@ -299,10 +299,17 @@ def list_notifications(
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    """站内通知列表 + 未读数（SPEC-C F1）。"""
+    """站内通知列表 + 未读数（SPEC-C F1）。
+
+    digested=2 的原行已折入 digest 汇总，列表不再展示（SPEC-I I2 防重复）。
+    """
     from ..models import Notification
 
-    base = session.query(Notification).filter(Notification.user_id == user.id)
+    base = (
+        session.query(Notification)
+        .filter(Notification.user_id == user.id)
+        .filter(Notification.digested != 2)
+    )
     unread_count = base.filter(Notification.read == 0).count()
     stmt = base
     if unread:

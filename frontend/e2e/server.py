@@ -21,6 +21,9 @@ for suffix in ("-wal", "-shm"):
 
 os.environ["VACLEAD_DB"] = str(DB)
 os.environ["VACLEAD_JWT_SECRET"] = "e2e-secret"
+# 禁用定时任务注册与 G4 启动补跑：种子库有企业且无水位，lifespan 会对着真网络
+# 跑每日增量并持写事务，与 E2E 用例并发写库（SPEC-I I0c）
+os.environ["VACLEAD_DISABLE_JOBS"] = "1"
 os.environ["MEILI_URL"] = "http://127.0.0.1:17999"  # 死端口：禁用投影，强制 SQLite 真源路径
 for k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
     os.environ.pop(k, None)

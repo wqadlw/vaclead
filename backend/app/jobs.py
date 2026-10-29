@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .models import Enterprise, EnterpriseStat, Signal, SyncWatermark, utcnow
@@ -152,18 +153,44 @@ def run_daily_incremental() -> dict:
             rec = normalize_entity_record(raw)
             if rec is None:
                 continue
-            with SessionLocal() as s:
-                ent, is_new = resolve_enterprise(
-                    s, rec["name"], source="ggzy", uscc=rec["uscc"]
+            # Phase 1 建档短事务：解析+建档即提交（SQLite 单写者——写事务绝不跨
+            # HTTP 调用，否则 API 请求被锁到 busy timeout，SPEC-I I1c）
+            try:
+                with SessionLocal() as s:
+                    ent, is_new = resolve_enterprise(
+                        s, rec["name"], source="ggzy", uscc=rec["uscc"]
+                    )
+                    if is_new:
+                        stats["ggzy_new"] += 1
+                    s.commit()
+            except IntegrityError:
+                logger.warning(
+                    "ggzy 增量：企业「%s」建档撞约束，已跳过", rec["name"], exc_info=True
                 )
-                if is_new:
-                    stats["ggzy_new"] += 1
-                if rec["uscc"] and rec["bid_count"] > 0:
-                    result = list_bids(rec["uscc"], page=1, size=20)
-                    for b in result.get("records") or []:
-                        nb = normalize_bid_record(b)
-                        if nb is None:
-                            continue
+                continue
+            if not (rec["uscc"] and rec["bid_count"] > 0):
+                continue
+            # Phase 2 网络抓取：无会话无事务
+            try:
+                result = list_bids(rec["uscc"], page=1, size=20)
+            except Exception:  # noqa: BLE001 — 单主体明细失败不影响其余主体
+                logger.warning("ggzy 增量：主体 %s 中标明细抓取失败", rec["uscc"], exc_info=True)
+                continue
+            # autoflush=False：批内同名成交公示（源数据重复行）先 seen 去重
+            pending: list[dict] = []
+            seen_titles: set[str] = set()
+            for b in result.get("records") or []:
+                nb = normalize_bid_record(b)
+                if nb is None or nb["project_name"] in seen_titles:
+                    continue
+                seen_titles.add(nb["project_name"])
+                pending.append(nb)
+            if not pending:
+                continue
+            # Phase 3 入库短事务：exists 查重对已提交数据有效
+            try:
+                with SessionLocal() as s:
+                    for nb in pending:
                         exists = (
                             s.query(Signal)
                             .filter(
@@ -189,7 +216,13 @@ def run_daily_incremental() -> dict:
                                 evidence_claim=f"该主体在公共资源交易平台中标「{nb['project_name']}」",
                                 base_score=50.0,
                             ))
-                s.commit()
+                    s.commit()
+            except IntegrityError:
+                # 单主体批次降级：一条脏数据不再炸整条每日增量管道
+                logger.warning(
+                    "ggzy 增量：主体 %s 明细批次撞唯一约束，已跳过该批次", rec["uscc"],
+                    exc_info=True,
+                )
 
     # --- ccgp 强词增量（近 7 天，只扫第一页）---
     from .vertical import device_strong_terms as _dst

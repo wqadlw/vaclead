@@ -30,6 +30,9 @@ frontend.log
 *.db
 frontend/out/
 frontend/.next/
+frontend/test-results/
+frontend/e2e/tmp/
+frontend/playwright-report/
 meili/
 .mimosa/
 meili/

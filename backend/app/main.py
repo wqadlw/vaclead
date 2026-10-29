@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -112,7 +113,7 @@ def _run_job_with_watermark(job_name: str, fn, job_kwargs: dict | None = None) -
     try:
         stats = fn(**(job_kwargs or {}))
         with SessionLocal() as s:
-            mark_watermark(s, job_name, "ok", stats)
+            mark_watermark(s, job_name, "ok", stats if stats is not None else {})
     except Exception as exc:  # noqa: BLE001 — 定时任务兜底：失败必须落水位
         import logging
 
@@ -121,6 +122,21 @@ def _run_job_with_watermark(job_name: str, fn, job_kwargs: dict | None = None) -
         )
         with SessionLocal() as s:
             mark_watermark(s, job_name, "failed", {"error": str(exc)})
+
+
+def _cron_signature_ok(fn, job_kwargs: dict | None) -> bool:
+    """调度注册防呆（SPEC-I I0）：fn 必须能用注册的 kwargs 调起。
+
+    曾有 refresh_all_stats(session) 漏传 job_kwargs 被无参调用，任务静默 failed
+    三天才被发现——注册前 bind 校验，不匹配的直接不注册并响亮告警。
+    """
+    import inspect
+
+    try:
+        inspect.signature(fn).bind(**(job_kwargs or {}))
+        return True
+    except TypeError:
+        return False
 
 
 def _stale_incremental_hours() -> float | None:
@@ -154,50 +170,83 @@ async def lifespan(app: FastAPI):
 
     set_main_loop(asyncio.get_running_loop())
 
+    # 测试/E2E 环境禁用全部后台任务（G4 补跑会对着真网络跑增量并持写事务，
+    # 与用例并发写库 → database is locked，SPEC-I I0c）
+    _jobs_disabled = os.environ.get("VACLEAD_DISABLE_JOBS") == "1"
+
     # SPEC-G G4：进程不常开——启动时若上次增量>26h（或从未跑过且有数据）自动后台补一次
+    if not _jobs_disabled:
+        try:
+            from .db import SessionLocal as _SL0
+            from .models import Enterprise as _Ent
+
+            with _SL0() as _s0:
+                _has_data = _s0.query(_Ent).count() > 0
+            _hours = _stale_incremental_hours()
+            if _has_data and (_hours is None or _hours > 26):
+                import threading as _th
+
+                from .jobs import run_daily_incremental
+
+                def _catchup() -> None:
+                    _run_job_with_watermark("daily_incremental", run_daily_incremental)
+
+                _th.Thread(target=_catchup, daemon=True).start()
+                import logging as _lg
+
+                _lg.getLogger("vaclead.jobs").info(
+                    "启动补跑增量（距上次 %s 小时）", "从未" if _hours is None else round(_hours)
+                )
+        except Exception:  # noqa: BLE001 — 补跑失败不影响启动
+            import logging
+
+            logging.getLogger("vaclead.jobs").warning("启动补增量检查失败", exc_info=True)
+
     try:
-        from .db import SessionLocal as _SL0
-        from .models import Enterprise as _Ent
-
-        with _SL0() as _s0:
-            _has_data = _s0.query(_Ent).count() > 0
-        _hours = _stale_incremental_hours()
-        if _has_data and (_hours is None or _hours > 26):
-            import threading as _th
-
-            from .jobs import run_daily_incremental
-
-            def _catchup() -> None:
-                _run_job_with_watermark("daily_incremental", run_daily_incremental)
-
-            _th.Thread(target=_catchup, daemon=True).start()
-            import logging as _lg
-
-            _lg.getLogger("vaclead.jobs").info(
-                "启动补跑增量（距上次 %s 小时）", "从未" if _hours is None else round(_hours)
-            )
-    except Exception:  # noqa: BLE001 — 补跑失败不影响启动
         import logging
 
-        logging.getLogger("vaclead.jobs").warning("启动补增量检查失败", exc_info=True)
-
-    try:
         from apscheduler.schedulers.background import BackgroundScheduler
 
-        from .jobs import backup_sqlite, refresh_all_stats, run_daily_incremental
         from .db import DATA_DIR as _DATA_DIR
+        from .jobs import backup_sqlite, refresh_all_stats, run_daily_incremental
 
         scheduler = BackgroundScheduler()
-        scheduler.add_job(_recycle_leads, "cron", hour=2, minute=0)
-        # SPEC-B §6：每日增量采集 → 画像刷新 → 备份（串行错峰）
-        scheduler.add_job(
-            _run_job_with_watermark, "cron", hour=3, minute=30,
-            args=["daily_incremental", run_daily_incremental],
-        )
-        scheduler.add_job(
-            _run_job_with_watermark, "cron", hour=4, minute=0,
-            args=["refresh_enterprise_stats", refresh_all_stats],
-        )
+
+        def _register_cron(job_name: str, fn, hour: int, minute: int,
+                           job_kwargs: dict | None = None) -> None:
+            """统一 cron 注册（SPEC-I I0）：签名防呆 + 失败落水位 + 防重入。
+
+            注册前 bind 校验拦下参数笔误（曾有 refresh_all_stats 漏传 session
+            静默 failed 三天）；misfire 宽限/合并/单实例为每日任务标准加固。
+            """
+            if _jobs_disabled:
+                logging.getLogger("vaclead.jobs").info(
+                    "VACLEAD_DISABLE_JOBS=1：跳过注册定时任务 %s（测试环境）", job_name
+                )
+                return
+            if not _cron_signature_ok(fn, job_kwargs):
+                logging.getLogger("vaclead.jobs").error(
+                    "定时任务 %s 注册签名不匹配（fn=%r kwargs=%r），已跳过——请修复注册参数",
+                    job_name, fn, job_kwargs,
+                )
+                return
+            scheduler.add_job(
+                _run_job_with_watermark, "cron", hour=hour, minute=minute,
+                args=[job_name, fn, job_kwargs],
+                misfire_grace_time=3600, coalesce=True, max_instances=1,
+            )
+
+        # SPEC-B §6：全部定时任务统一走水位包装（公海回收 → 增量采集 → 画像 → 备份串行错峰）
+        _register_cron("recycle_leads", _recycle_leads, 2, 0)
+        _register_cron("daily_incremental", run_daily_incremental, 3, 30)
+
+        def _refresh_stats_sweep() -> dict:
+            from .db import SessionLocal as _SL
+
+            with _SL() as s:
+                return refresh_all_stats(s)
+
+        _register_cron("refresh_enterprise_stats", _refresh_stats_sweep, 4, 0)
 
         def _notify_sweep() -> dict:
             from .jobs import generate_notifications
@@ -206,7 +255,7 @@ async def lifespan(app: FastAPI):
             with _SL() as s:
                 return generate_notifications(s)
 
-        scheduler.add_job(_notify_sweep, "cron", hour=4, minute=5)
+        _register_cron("notify_sweep", _notify_sweep, 4, 5)
 
         def _digest_flush() -> dict:
             from .notify.channels import digest_flush
@@ -215,7 +264,7 @@ async def lifespan(app: FastAPI):
             with _SL() as s:
                 return digest_flush(s)
 
-        scheduler.add_job(_digest_flush, "cron", hour=8, minute=5)  # SPEC-G：静默期聚合出舱
+        _register_cron("digest_flush", _digest_flush, 8, 5)  # SPEC-G：静默期聚合出舱
 
         def _automation_sweep() -> dict:
             from .jobs import run_automation_rules
@@ -224,26 +273,23 @@ async def lifespan(app: FastAPI):
             with _SL() as s:
                 return run_automation_rules(s)
 
-        scheduler.add_job(_automation_sweep, "cron", hour=4, minute=7)
+        _register_cron("automation_sweep", _automation_sweep, 4, 7)
 
         def _notice_contacts_daily() -> dict:
-            import time as _t
-            from ..api.tasks import backfill_notice_contacts as _fn
+            # 直接复用端点逻辑（内部限速/幂等/限流即停），免 HTTP 依赖。
+            # 曾写成 "..api.tasks" 越顶层导入（SPEC-I I0）：每日 04:08 必 ImportError
+            # 且不走水位静默失败。
+            from .api.tasks import backfill_notice_contacts as _fn
 
-            # 直接复用端点逻辑（内部限速/幂等/限流即停），免 HTTP 依赖
             from .db import SessionLocal as _SL
 
             with _SL() as s:
                 result = _fn(type("B", (), {"limit": 30})(), s, None)
-            _t.sleep(0)
             return result if isinstance(result, dict) else {}
 
-        scheduler.add_job(_notice_contacts_daily, "cron", hour=4, minute=8)
-        scheduler.add_job(
-            _run_job_with_watermark, "cron", hour=4, minute=10,
-            args=["backup_sqlite", backup_sqlite,
-                  {"backup_dir": str(_DATA_DIR / "backups")}],
-        )
+        _register_cron("notice_contacts", _notice_contacts_daily, 4, 8)
+        _register_cron("backup_sqlite", backup_sqlite, 4, 10,
+                       {"backup_dir": str(_DATA_DIR / "backups")})
         scheduler.start()
     except Exception:  # noqa: BLE001 — APScheduler 不可用时跳过定时任务（不影响主功能）
         import logging

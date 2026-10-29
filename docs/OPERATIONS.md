@@ -27,16 +27,26 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 ## 3. 定时任务（随进程启动）
 
-| 时刻 | 任务 | 说明 |
+| 时刻 | 水位名 | 说明 |
 |---|---|---|
-| 02:00 | 公海回收 | 超 N 天未跟进退回公海 |
-| 03:30 | 每日增量采集 | ggzy 宽词 + ccgp 细词，近 7 天 |
-| 04:00 | 中标画像刷新 | enterprise_stat 全量聚合 |
-| 04:05 | 通知扫播 | 订阅企业新信号 → 站内通知 |
-| 04:08 | **联系人回填** | ccgp_buyer 详情页抓项目联系人/电话/地址（每次 ≤30 页，幂等） |
-| 04:10 | SQLite 备份 | backup API → `data/backups/`，滚动保留 7 份 |
+| 02:00 | recycle_leads | 公海回收：超 N 天未跟进退回公海 |
+| 03:30 | daily_incremental | ggzy 宽词 + ccgp 细词，近 7 天 |
+| 04:00 | refresh_enterprise_stats | 中标画像：enterprise_stat 全量聚合 |
+| 04:05 | notify_sweep | 订阅企业新信号 → 站内通知 |
+| 04:07 | automation_sweep | 自动化规则扫播（动作链） |
+| 04:08 | notice_contacts | ccgp_buyer 详情页抓联系人/电话/地址（每次 ≤30 页，幂等） |
+| 04:10 | backup_sqlite | backup API → `data/backups/`，滚动保留 7 份 |
+| 08:05 | digest_flush | 静默期通知聚合出舱（SPEC-G） |
+
+**调度治理（SPEC-I I0）**：全部任务统一经 `_register_cron` 注册——
+①注册前 `inspect.signature().bind()` 防呆，参数不匹配的任务跳过注册并打 error 日志
+（曾有 refresh_all_stats 漏传 session 静默 failed 三天才被发现）；
+②全部任务落 `sync_watermark`（失败 last_status=failed + 错误详情），不再有静默任务；
+③统一 `misfire_grace_time=3600, coalesce=True, max_instances=1`。
+新增定时任务必须走 `_register_cron`，需要 DB 会话的写成自开 SessionLocal 的零参 sweep。
 
 水位查询：`SELECT * FROM sync_watermark`（失败任务 last_status=failed + stats）。
+启动补增量：距上次 >26h 或从未跑过（且有数据）→ 后台自动补一轮 daily_incremental（G4）。
 
 ## 4. 备份与恢复
 
@@ -58,6 +68,11 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 - **schema 演进**：create_all 只建缺失表。**给已有表加列需手工执行**（或写一次性脚本）：
   `python -c "import sqlite3; sqlite3.connect(r'data/vaclead.db').execute('ALTER TABLE ...')"`
   并在本文件登记变更记录（下方 §8）
+- **改表级约束（UNIQUE 等）必须重建表**（SQLite 不支持 ALTER CONSTRAINT），官方 12 步：
+  `PRAGMA foreign_keys=OFF` → 建 `X_new`（含新约束）→ `INSERT INTO X_new SELECT ... FROM X`
+  → `DROP TABLE X` → `ALTER TABLE X_new RENAME TO X` → 重建索引 → `PRAGMA foreign_key_check`
+  （非空则回滚）→ 提交。**先建新后删旧**（先 rename 旧表会破坏触发器/外键引用）。
+  手工执行后务必登记 §8 并核对 `sqlite_master` 的 DDL
 - **Meili 检索投影重建**：Meili 数据丢失/不一致后，调一次任意导入或采集任务即自动 sync_all；
   或 `python -c "from app.db import SessionLocal; from app import search; ..."` 手动全量
 - **采集任务卡死**：进程重启会把 running 任务标记 error（启动恢复机制）；SSE 断线靠 checkpoint 轮询兜底
@@ -73,6 +88,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | 日期 | 变更 | 方式 |
 |---|---|---|
 | 2026-10-25 | 全部建表 | create_all（13 表 + FTS） |
+| 2026-10-29 | signal 唯一约束 (url,enterprise_id,type) → **(url,enterprise_id,type,title)** | 表重建（12 步手工，SPEC-I I1） |
 
 ## 9. 账号
 
