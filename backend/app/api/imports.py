@@ -230,6 +230,8 @@ _HEADER_SYNONYMS: dict[str, str] = {
     "注册资本(万元)": "registered_capital_wan", "注册资本(万)": "registered_capital_wan",
     "capital": "registered_capital_wan",
     "industry_key": "industry_key", "行业": "industry_key", "行业键": "industry_key",
+    "established_at": "established_at", "成立日期": "established_at",
+    "成立时间": "established_at", "成立年份": "established_at",
 }
 
 
@@ -288,6 +290,8 @@ async def import_paste(
         for field in ("province", "city", "district", "address", "business_scope"):
             if row.get(field):
                 setattr(ent, field, row[field])
+        if row.get("established_at") and not ent.established_at:
+            ent.established_at = row["established_at"][:10]  # YYYY-MM-DD 前缀容错
         if row.get("registered_capital_wan"):
             try:
                 ent.registered_capital_wan = float(row["registered_capital_wan"])
@@ -326,6 +330,11 @@ async def import_enterprises(
     text_content = _decode_csv_bytes(raw)
 
     reader = csv.DictReader(io.StringIO(text_content))
+    # 表头同义词归一（SPEC-M：与粘贴路径同语义——此前上传路径只有英文表头能命中映射）
+    raw_fields = reader.fieldnames or []
+    reader.fieldnames = [
+        _HEADER_SYNONYMS.get(f.lower(), _HEADER_SYNONYMS.get(f, f)) for f in raw_fields
+    ]
     inserted, merged, skipped = 0, 0, 0
     batch_id = uuid.uuid4().hex[:12]
     for row in reader:
@@ -344,6 +353,8 @@ async def import_enterprises(
         ent.district = row.get("district") or ent.district
         ent.address = row.get("address") or ent.address
         ent.business_scope = row.get("business_scope") or ent.business_scope
+        if row.get("established_at") and not ent.established_at:
+            ent.established_at = row["established_at"][:10]
         if row.get("registered_capital_wan"):
             try:
                 ent.registered_capital_wan = float(row["registered_capital_wan"])

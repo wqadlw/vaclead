@@ -36,7 +36,47 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     role: Mapped[str] = mapped_column(Text, nullable=False, default="sales")  # admin/sales
     display_name: Mapped[str] = mapped_column(Text, default="")
+    # SPEC-N 组织化：邮箱/启用（禁用=拒登录）/所属团队；旧库由 init_db 幂等 ALTER 补列
+    email: Mapped[str | None] = mapped_column(Text)
+    active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("team.id"))
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class Team(Base):
+    """团队（SPEC-N N2，EspoCRM Teams 思想）：负责人 leader 可见成员线索。"""
+
+    __tablename__ = "team"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    leader_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class AssignmentRule(Base):
+    """线索自动分配规则（SPEC-N N3，EspoCRM Assignment Rules 思想）。
+
+    conditions 全空=命中所有；round_robin 用持久 cursor 列（修 EspoCRM 论坛
+    并发涌入轮转失效同款问题）；before_flush 钩子统一分配，覆盖全部线索创建入口。
+    """
+
+    __tablename__ = "assignment_rule"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    conditions: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    # JSON {industry_key?,province?,source?}，全空=命中所有
+    target_team_id: Mapped[int | None] = mapped_column(ForeignKey("team.id"))
+    target_user_ids: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON
+    strategy: Mapped[str] = mapped_column(Text, nullable=False, default="fixed")
+    # fixed=固定第一人 | round_robin=按序轮转（cursor 持久化）
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    cursor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    run_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_run_at: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
 
 
 class Enterprise(Base):

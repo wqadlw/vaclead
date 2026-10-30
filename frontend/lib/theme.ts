@@ -1,6 +1,7 @@
 /** 页面标题映射与品牌常量（UI 库无关层）。 */
 export const PAGE_TITLES: Record<string, string> = {
   "/": "工作台",
+  "/signals": "标讯中心",
   "/enterprises": "企业筛选",
   "/leads": "线索看板",
   "/tasks": "拓客任务",

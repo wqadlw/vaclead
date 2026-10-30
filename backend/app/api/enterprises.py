@@ -71,12 +71,18 @@ def list_enterprises(
     is_competitor: int = -1,
     source: str | None = None,
     has_contact: int = 0,
+    established_within_years: int | None = None,
+    bid_min: int | None = None,
+    bid_amount_min: float | None = None,
     page: int = 1,
     page_size: int = 20,
     facets: int = 0,
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
+    # SPEC-M M2：新维度（成立年限/中标力）只支持 SQLite 路径——带参时跳过 Meili，
+    # 保证 total/分页语义正确（Meili 投影不含这两列）
+    sqlite_only = bool(established_within_years or bid_min or bid_amount_min)
     # Quick picks（gmaps-scraper 模式）：has_contact=1 → 只看有可拨打联系人的企业。
     # SPEC-I I5：不再物化全量 id 列表（limit(5000) 会静默漏企业）——
     # SQLite 路径走 IN 子查询半连接；Meili 路径只对当前页 id 做存活过滤。
@@ -86,7 +92,7 @@ def list_enterprises(
         if session.query(Contact.id).limit(1).scalar() is None:
             return {"items": [], "total": 0, "page": page, "page_size": page_size}
     # Meili 优先（毫秒级组合筛选+分面）；不可用回退 SQLite LIKE 路径
-    if meili.available():
+    if meili.available() and not sqlite_only:
         try:
             r = meili.search(
                 q or "",
@@ -183,6 +189,27 @@ def list_enterprises(
     if q:
         ids = fts_search_ids(session, q)
         stmt = stmt.where(Enterprise.id.in_(ids if ids else [-1]))
+    # SPEC-M M2a：成立年限（新锐企业筛选）
+    if established_within_years:
+        cutoff_year = datetime.now(timezone.utc).year - established_within_years
+        stmt = stmt.where(
+            Enterprise.established_at.is_not(None),
+            Enterprise.established_at >= f"{cutoff_year}-01-01",
+        )
+    # SPEC-M M2b：中标力（EnterpriseStat 半连接）
+    if bid_min is not None or bid_amount_min is not None:
+        from ..models import EnterpriseStat
+
+        stat_cond = []
+        if bid_min is not None:
+            stat_cond.append(EnterpriseStat.bid_count >= bid_min)
+        if bid_amount_min is not None:
+            stat_cond.append(EnterpriseStat.bid_amount_total_wan >= bid_amount_min)
+        stmt = stmt.where(
+            Enterprise.id.in_(
+                select(EnterpriseStat.enterprise_id).where(*stat_cond)
+            )
+        )
 
     total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = session.scalars(

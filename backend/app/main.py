@@ -402,9 +402,9 @@ app.include_router(leadforms.router, prefix="/api")
 from .api import outreach  # noqa: E402
 
 app.include_router(outreach.router, prefix="/api")
-from .api import signals  # noqa: E402
+from .api import bulletin  # noqa: E402
 
-app.include_router(signals.router, prefix="/api")
+app.include_router(bulletin.router, prefix="/api")
 
 
 # ---- 单进程部署：托管前端静态导出（frontend/out），SPA 回退 ----

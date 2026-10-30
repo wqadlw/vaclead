@@ -123,6 +123,7 @@ def _resolve(
     name: str,
     source: str,
     uscc: str | None = None,
+    est_date: str | None = None,
 ) -> tuple[Enterprise, bool, float]:
     """返回 (enterprise, is_new, confidence)。confidence 为匹配置信度，新建时 0.0。"""
     raw = _WS_RE.sub("", (name or "").strip())
@@ -190,6 +191,8 @@ def _resolve(
             ent = Enterprise(name=raw, source=source)
             if uscc:
                 ent.uscc = uscc
+            if est_date:
+                ent.established_at = est_date
             session.add(ent)
             _canon_cache_invalidate(session)
             session.flush()
@@ -210,6 +213,8 @@ def _resolve(
     ent = Enterprise(name=raw, source=source)
     if uscc:
         ent.uscc = uscc
+    if est_date:
+        ent.established_at = est_date
     session.add(ent)
     _canon_cache_invalidate(session)
     session.flush()
@@ -219,13 +224,21 @@ def _resolve(
 
 
 def resolve_enterprise(
-    session: Session, name: str, source: str = "csv", uscc: str | None = None
+    session: Session,
+    name: str,
+    source: str = "csv",
+    uscc: str | None = None,
+    est_date: str | None = None,
 ) -> tuple[Enterprise, bool]:
     """把外部企业名解析到库内唯一 Enterprise，返回 (enterprise, is_new)。
 
     uscc：来源携带的统一社会信用代码（ggzy 采集必有）——tier0 精确锚点 + 回填。
+    est_date：成立日期（SPEC-M M2a，ggzy estdate）——新建时落 established_at，
+    已有企业仅在空值时补填（不覆盖）。
     """
-    ent, is_new, _conf = _resolve(session, name, source, uscc)
+    ent, is_new, _conf = _resolve(session, name, source, uscc, est_date)
+    if not is_new and est_date and not ent.established_at:
+        ent.established_at = est_date
     if is_new:
         # SPEC-J J1 审计：用户驱动的建档留痕（采集路径 actor=0 被守卫排除）
         from .audit import log_insert
