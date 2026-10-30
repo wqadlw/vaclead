@@ -900,3 +900,74 @@ Counter（量级匹配反而更对）③查询条件避开 f-string like 用 con
 
 **遗留**：企业列表页 UI 的两个新筛选控件（后端参数已就绪）——enterprises/page.tsx 是
 Agent A WIP 文件，待其 J4 合并后补 UI。
+
+
+## 2026-10-31 · W37 认领 · SPEC-O 报表中心 + 筛选订阅（Agent B）
+
+补 PRODUCT_GAP ④数据简报（业绩排行榜已归 Agent A SPEC-N，本 SPEC 不做 owner 维度）
++ 剑鱼/阿里云"按筛选条件订阅"标配。契约 docs/SPEC-O.md。调研采纳 espocrm
+"报表=dashlet+邮件+导出单一 payload"模式。
+**动文件**：api/reports.py（新）/app/reports/page.tsx（新）/governance.py/bulletin.py/
+signals page/SubRulesPanel（均我的领地）；共享文件仅 main.py cron 一段 + AppShell
+ADMIN_NAV 一行 + jobs.py run_subscription_rules 内扩 filter 分支（我拥有的函数，
+追加式）。不碰：SPEC-N 全部文件（org.py/assign.py/leads.py/auth.py/db.py）。
+
+
+## 2026-10-31 · W37 认领：SPEC-P Webhooks 出站（Agent A）
+
+**调研已沉淀 refs/STUDY.md**（EspoCRM webhook 实体/签名/重试/SSRF 白名单 + svix
+最佳实践 + twenty 出站原生入站缺席的行业共识）。文件边界（避开 SPEC-O reports/
+governance/bulletin/signals 与 SPEC-N 前端在改的 settings/page.tsx/charts）：
+新文件 app/webhookbus.py（事件总线+投递引擎）、app/api/webhooks.py、
+tests/test_spec_p.py；共享文件仅 models.py 追加两表 + main.py interval 注册一段。
+注：models.py 组织三表已被 Agent B 随 SPEC-M 提交捎带入 HEAD（3173e8a），
+本方后续提交不再含 models.py 的组织段。
+
+
+## 2026-10-31 · W36/W37 SPEC-N 组织与分配 + SPEC-P Webhooks 出站（Agent A 落地，双 SPEC 合并提交）
+
+**为什么合并提交**：两轮共享 main.py 的钩子安装段（assign 钩子与 webhook 钩子同在
+lifespan）——分两次提交会造出"提交 A 的树引用未提交的 webhookbus"断树；树自洽优先。
+
+### SPEC-N 落地（契约 docs/SPEC-N.md，调研 EspoCRM/SuiteCRM/twenty 见 STUDY.md）
+- **N1 用户管理**：/api/users CRUD（admin）——禁用=拒登录+API 通道同步拒；
+  自禁拒+最后 admin 禁用/降级拒（防锁死）；密码 bcrypt
+- **N2 团队**：team 表+/api/teams；线索可见范围收口 auth.visible_owner_ids
+  （admin 全库/sales 自己+公海/团队 leader 追加成员）——leads.py 单点接入
+- **N3 线索自动分配**：assignment_rule 表（conditions 全空=命中所有）；
+  **before_flush 钩子一处覆盖全部线索创建入口**（导入/留资/自动化/手动），
+  不侵入任何业务文件；fixed/round_robin（持久 cursor 列，修 EspoCRM 论坛并发
+  轮转失效同款问题）；dry-run 端点零写预览（pick_target advance=False）
+- **N4 业绩排行榜**：/api/analytics-leaderboard（Σwon 金额/新增线索/跟进数按月）
+  + 工作台卡（前三徽章+自 SVG 条）
+- **前端**（子 Agent）：设置页「成员管理/团队/线索分配」三面板+工作台业绩卡；
+  **顺带修复既有缺陷**——设置页 Semi Tabs 用 tabList+裸 div children 时全部面板
+  堆叠不切换（Semi 只对 TabPane 子元素隐藏），12 个旧面板包 TabPane 后 15 tab 正确单切
+- **schema 演进自动化**：db.init_db `_ensure_columns()` 幂等 ALTER（user 三列），
+  旧库免手工——OPERATIONS §8 登记为"首次自动化"
+
+### SPEC-P 落地（契约 docs/SPEC-P.md，EspoCRM webhooks+svix 见 STUDY.md）
+- webhook/webhook_delivery 两表；事件总线三拍：before_flush 取属性历史（update 的
+  业务字段 diff，机器字段排除）→ after_flush 拿自增主键组包入队（同事务原子）→
+  interval 10min 投递 worker
+- 投递：POST JSON 数组（EspoCRM 批量语义）+ X-Vaclead-Signature: HMAC-SHA256(secret,
+  原文) + Timestamp 防重放；2xx=ok；**410 Gone 自动停用 webhook**；失败指数退避
+  2^attempts 分钟、4 次终态 failed（终态清 next_attempt_at）
+- **SSRF 防护**：_url_allowed 仅 http(s)+默认拒回环/私网/链路本地，
+  settings_kv webhook_allow_private 显式放行（对齐 EspoCRM webhookAllowedAddressList）
+- 端点：/api/webhooks CRUD（secret 明文仅创建时返回）+deliveries 日志+test ping
+  （定向投递不经 emit，避免订阅副作用）+interval 水位 webhook_flush
+
+### 踩坑
+- WebhookIn 全必填导致 PUT {active} 422——部分更新端点的 pydantic 模型一律 Optional
+- Python 3.11 ipaddress 将 TEST-NET（203.0.113.0/24）判 is_private——测试用真公网 IP
+- 直连 session 的测试不经 TestClient lifespan，模块级钩子（assign/webhookbus）必须
+  在测试文件显式 install()（幂等）——**新钩子型功能的测试都要带这一行**
+- 重试引擎的退避基准要取注入的 now 而非真实时钟（测试模拟时间才一致）
+- settings/page.tsx 的 Semi Tabs 缺陷是存量 bug（tabList+裸 div），非本轮引入
+
+### 门禁
+**207 后端全绿**（197+P10：SSRF 规则/钩子采集/update diff 与机器字段排除/订阅过滤/
+签名与数组 payload/410 停用/退避终态/CRUD 打码/ping/白名单）+ build 18/18 +
+E2E 6/6 + import smoke。主线程（Agent A）与 1 个前端子 Agent 分工，与 Agent B 的
+SPEC-M（已提交 3173e8a）/SPEC-O（WIP：reports.py/SPEC-O.md）零文件交集。

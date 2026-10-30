@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..auth import current_user
+from ..auth import current_user, visible_owner_ids
 from ..db import get_session
 from ..models import (
     Enterprise,
@@ -62,9 +62,11 @@ def list_leads(
     stmt = select(Lead)
     if status:
         stmt = stmt.where(Lead.status == status)
-    # 销售只看自己的线索与公海；管理员看全部
-    if user.role != "admin":
-        stmt = stmt.where((Lead.owner_id == user.id) | (Lead.status == "pool"))
+    # 数据范围（SPEC-N N2）：admin 全库；销售=自己+公海；团队负责人追加成员线索
+    owner_ids = visible_owner_ids(user, session)
+    if owner_ids is not None:
+        cond = Lead.owner_id.in_(owner_ids) | (Lead.status == "pool")
+        stmt = stmt.where(cond)
     total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = session.scalars(
         stmt.order_by(Lead.updated_at.desc())

@@ -152,6 +152,8 @@ def login(
         if request is not None:
             record_login_failure(request)
         raise HTTPException(401, "用户名或密码错误")
+    if not user.active:  # SPEC-N N1：禁用账号拒登录
+        raise HTTPException(401, "账号已禁用，请联系管理员")
     if request is not None:
         clear_login_failures(request)
     return {

@@ -37,6 +37,9 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | 04:08 | notice_contacts | ccgp_buyer 详情页抓联系人/电话/地址（每次 ≤30 页，幂等） |
 | 04:10 | backup_sqlite | backup API → `data/backups/`，滚动保留 7 份 |
 | 08:05 | digest_flush | 静默期通知聚合出舱（SPEC-G） |
+| 08:30 周一 | reports_weekly | 经营周报生成+通知（SPEC-O，day_of_week 参数已扩展 _register_cron） |
+| 09:30 / 14:30 | outreach_dispatch | 邮件触达：收件同步+预算内发送（SPEC-J J4） |
+| 每 10 分钟 | webhook_flush (interval) | SPEC-P 出站 webhook 投递引擎（指数退避，唯一 interval 任务） |
 
 **调度治理（SPEC-I I0）**：全部任务统一经 `_register_cron` 注册——
 ①注册前 `inspect.signature().bind()` 防呆，参数不匹配的任务跳过注册并打 error 日志
@@ -99,7 +102,10 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | 2026-10-30 | contact +email/decision_role/verify_state；automation_rule +cond_has_email_decision | 幂等 ALTER（PRAGMA table_info 检查后 ADD COLUMN，SPEC-J J2） |
 | 2026-10-30 | 新增表：audit_log/user_api_key/user_target/subscription_rule（J1/J6/J7）、product/quote/quote_item（J3）、lead_form/lead_capture_log（J5） | create_all 自动建（重启生效） |
 | 2026-10-31 | enterprise +established_at（成立日期，SPEC-M M2a） | 幂等 ALTER + ggzy 池回填 160 家 |
+| 2026-10-31 | user +email/active/team_id（SPEC-N N1 组织化）+ 新增表 team/assignment_rule | **首次自动化**：db.init_db `_ensure_columns()` 启动幂等 ALTER（旧库免手工）+ create_all |
+| 2026-10-31 | 新增表 webhook/webhook_delivery（SPEC-P） | create_all 自动建；调度见 §3 webhook_flush（interval 10min） |
 
 ## 9. 账号
 
 - admin/admin123（管理员）、sales/sales123（销售）——生产环境**必须立即改密**
+| 2026-10-31 | user +email/active/team_id（SPEC-N N1 组织化）+ 新增表 team/assignment_rule | **首次自动化**：db.init_db `_ensure_columns()` 启动幂等 ALTER（旧库免手工）+ create_all |

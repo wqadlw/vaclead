@@ -171,6 +171,14 @@ async def lifespan(app: FastAPI):
     from .audit import install as _install_audit
 
     _install_audit()
+    # 线索自动分配钩子（SPEC-N N3）：before_flush 统一覆盖全部线索创建入口
+    from .assign import install as _install_assign
+
+    _install_assign()
+    # Webhooks 出站事件钩子（SPEC-P）：enterprise/lead/signal/quote 变更入投递队列
+    from .webhookbus import install as _install_webhooks
+
+    _install_webhooks()
     # 记录主事件循环：采集线程用它把 SSE 事件推回订阅者
     import asyncio
 
@@ -221,11 +229,13 @@ async def lifespan(app: FastAPI):
         scheduler = BackgroundScheduler()
 
         def _register_cron(job_name: str, fn, hour: int, minute: int,
-                           job_kwargs: dict | None = None) -> None:
+                           job_kwargs: dict | None = None,
+                           day_of_week: str | None = None) -> None:
             """统一 cron 注册（SPEC-I I0）：签名防呆 + 失败落水位 + 防重入。
 
             注册前 bind 校验拦下参数笔误（曾有 refresh_all_stats 漏传 session
             静默 failed 三天）；misfire 宽限/合并/单实例为每日任务标准加固。
+            day_of_week：APScheduler 语义（如 "mon"），供周任务使用（SPEC-O）。
             """
             if _jobs_disabled:
                 logging.getLogger("vaclead.jobs").info(
@@ -238,10 +248,12 @@ async def lifespan(app: FastAPI):
                     job_name, fn, job_kwargs,
                 )
                 return
+            extra = {"day_of_week": day_of_week} if day_of_week else {}
             scheduler.add_job(
                 _run_job_with_watermark, "cron", hour=hour, minute=minute,
                 args=[job_name, fn, job_kwargs],
                 misfire_grace_time=3600, coalesce=True, max_instances=1,
+                **extra,
             )
 
         # SPEC-B §6：全部定时任务统一走水位包装（公海回收 → 增量采集 → 画像 → 备份串行错峰）
@@ -273,6 +285,14 @@ async def lifespan(app: FastAPI):
                 return digest_flush(s)
 
         _register_cron("digest_flush", _digest_flush, 8, 5)  # SPEC-G：静默期聚合出舱
+
+        def _reports_weekly_sweep() -> dict:
+            from .api.reports import reports_weekly_sweep
+
+            return reports_weekly_sweep()
+
+        # SPEC-O：每周一 08:30 上周经营周报摘要 → admin（email 渠道走 J4 emailengine）
+        _register_cron("reports_weekly", _reports_weekly_sweep, 8, 30, day_of_week="mon")
 
         def _automation_sweep() -> dict:
             from .jobs import run_automation_rules
@@ -327,6 +347,24 @@ async def lifespan(app: FastAPI):
 
         _register_cron("outreach_dispatch", _outreach_dispatch_sweep, 9, 30)
         _register_cron("outreach_dispatch", _outreach_dispatch_sweep, 14, 30)
+
+        # SPEC-P：webhook 投递引擎——分钟级 interval（_register_cron 是 hour:minute 粒度）
+        if not _jobs_disabled:
+            def _webhook_flush_sweep() -> dict:
+                from .db import SessionLocal as _SLW
+                from .webhookbus import flush_deliveries
+
+                with _SLW() as _sw:
+                    return flush_deliveries(_sw)
+
+            scheduler.add_job(
+                _run_job_with_watermark, "interval", minutes=10,
+                args=["webhook_flush", _webhook_flush_sweep, None],
+                misfire_grace_time=300, coalesce=True, max_instances=1,
+            )
+            logging.getLogger("vaclead.jobs").info(
+                "webhook 投递引擎已注册（interval 10min）"
+            )
         scheduler.start()
     except Exception:  # noqa: BLE001 — APScheduler 不可用时跳过定时任务（不影响主功能）
         import logging
@@ -390,6 +428,9 @@ app.include_router(todos.router, prefix="/api")
 from .api import analytics  # noqa: E402
 
 app.include_router(analytics.router, prefix="/api")
+from .api import reports  # noqa: E402
+
+app.include_router(reports.router, prefix="/api")
 from .api import governance  # noqa: E402
 
 app.include_router(governance.router, prefix="/api")
@@ -402,9 +443,15 @@ app.include_router(leadforms.router, prefix="/api")
 from .api import outreach  # noqa: E402
 
 app.include_router(outreach.router, prefix="/api")
+from .api import org  # noqa: E402
+
+app.include_router(org.router, prefix="/api")
 from .api import bulletin  # noqa: E402
 
 app.include_router(bulletin.router, prefix="/api")
+from .api import webhooks  # noqa: E402
+
+app.include_router(webhooks.router, prefix="/api")
 
 
 # ---- 单进程部署：托管前端静态导出（frontend/out），SPA 回退 ----

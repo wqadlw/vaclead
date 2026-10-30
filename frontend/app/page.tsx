@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Table } from "@douyinfe/semi-ui";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { AreaTrend, BarList, DeltaBadge, FunnelBars, ProvinceBars, SparkBars } from "@/components/charts";
 import { api } from "@/lib/api";
@@ -62,6 +62,165 @@ const SOURCE_CN: Record<string, string> = {
   tender: "招标导入",
   manual: "手工",
 };
+
+/* ---------------- SPEC-N N4 本月业绩榜（工作台卡） ---------------- */
+
+interface LeaderboardItem {
+  user_id?: number;
+  id?: number;
+  display_name?: string | null;
+  name?: string | null;
+  username?: string | null;
+  won_amount_wan?: number | null;
+  amount_wan?: number | null;
+  won_amount?: number | null;
+  new_leads?: number | null;
+  leads_new?: number | null;
+  new_lead_count?: number | null;
+  followups?: number | null;
+  followup_count?: number | null;
+  follow_up_count?: number | null;
+}
+
+function currentMonth(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function shiftMonth(ym: string, delta: number): string {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, (m || 1) - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** 响应容错：兼容裸数组与 { items: [...] }，异常一律空态 */
+function normalizeLeaderboard(d: unknown): LeaderboardItem[] {
+  const rows = Array.isArray(d) ? d : (d as { items?: unknown } | null)?.items;
+  return Array.isArray(rows) ? (rows as LeaderboardItem[]) : [];
+}
+
+function LeaderboardCard() {
+  const [month, setMonth] = useState(currentMonth);
+  const [rows, setRows] = useState<LeaderboardItem[] | null>(null);
+
+  useEffect(() => {
+    let stale = false;
+    api
+      .get<unknown>(`/api/analytics-leaderboard?month=${month}`)
+      .then((d) => {
+        if (!stale) setRows(normalizeLeaderboard(d));
+      })
+      .catch(() => {
+        if (!stale) setRows([]);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [month]);
+
+  const items = rows ?? [];
+  const amountOf = (r: LeaderboardItem) =>
+    Number(r.won_amount_wan ?? r.amount_wan ?? r.won_amount ?? 0) || 0;
+  const nameOf = (r: LeaderboardItem) =>
+    r.display_name || r.name || r.username || `用户#${r.user_id ?? r.id ?? "?"}`;
+  const newLeadsOf = (r: LeaderboardItem) =>
+    Number(r.new_leads ?? r.leads_new ?? r.new_lead_count ?? 0) || 0;
+  const followupsOf = (r: LeaderboardItem) =>
+    Number(r.followups ?? r.followup_count ?? r.follow_up_count ?? 0) || 0;
+  const maxAmount = Math.max(...items.map(amountOf), 0);
+  const thisMonth = currentMonth();
+  const cardTitle =
+    month === thisMonth
+      ? "本月业绩榜"
+      : `${Number(month.slice(0, 4))}年${Number(month.slice(5, 7))}月业绩榜`;
+
+  return (
+    <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+      <div className="mb-2 flex items-baseline justify-between">
+        <h2 className="text-[15px] font-medium text-[var(--ink)]">{cardTitle}</h2>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setMonth(shiftMonth(month, -1))}
+            aria-label="上一月"
+            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-[var(--muted)] transition-colors hover:bg-[var(--raised)] hover:text-[var(--ink)]"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <span className="min-w-[52px] text-center text-[12px] tabular-nums text-[var(--muted)]">
+            {month}
+          </span>
+          <button
+            onClick={() => setMonth(shiftMonth(month, 1))}
+            disabled={month >= thisMonth}
+            aria-label="下一月"
+            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-[var(--muted)] transition-colors hover:bg-[var(--raised)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      </div>
+      {rows === null ? (
+        <div className="py-5 text-center text-[12.5px] text-[var(--muted)]">加载中…</div>
+      ) : items.length === 0 ? (
+        <div className="py-5 text-center text-[12.5px] text-[var(--muted)]">本月暂无业绩数据</div>
+      ) : (
+        <div>
+          {items.map((r, i) => {
+            const amt = amountOf(r);
+            const pct = maxAmount > 0 ? Math.max((amt / maxAmount) * 100, 2) : 2;
+            const badgeCls =
+              i === 0
+                ? "bg-[var(--ink)] text-white"
+                : i < 3
+                  ? "bg-[var(--raised)] text-[var(--muted)]"
+                  : "";
+            return (
+              <div
+                key={r.user_id ?? r.id ?? `name-${nameOf(r)}`}
+                className={`flex items-start gap-2.5 py-2.5 ${i > 0 ? "border-t border-[var(--rule)]" : ""}`}
+              >
+                <span
+                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[11px] font-semibold tabular-nums ${badgeCls} ${i >= 3 ? "text-[var(--muted)]" : ""}`}
+                >
+                  {i + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span
+                      className="min-w-0 truncate text-[13px] font-medium text-[var(--ink)]"
+                      title={nameOf(r)}
+                    >
+                      {nameOf(r)}
+                    </span>
+                    <span className="shrink-0 text-[13px] tabular-nums text-[var(--ink)]">
+                      {amt.toLocaleString("zh-CN")}
+                      <span className="ml-0.5 text-[11px] font-normal text-[var(--muted)]">万</span>
+                    </span>
+                  </div>
+                  {/* 金额条：自绘 SVG（BarList 风格，扁平零依赖，禁渐变） */}
+                  <div className="mt-1.5 h-1.5 w-full rounded-sm bg-[var(--raised)]">
+                    <svg
+                      viewBox="0 0 100 6"
+                      preserveAspectRatio="none"
+                      className="h-1.5 w-full"
+                      aria-hidden
+                    >
+                      <rect x="0" y="0" width={pct} height="6" fill="var(--accent)" />
+                    </svg>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between text-[11px] text-[var(--muted)]">
+                    <span className="tabular-nums">新增线索 {newLeadsOf(r)}</span>
+                    <span className="tabular-nums">跟进 {followupsOf(r)}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
 
 /* 分析页版式（吸收 ant-design-pro analysis + tremor）：KPI 环比条 → 30 天趋势 → 漏斗+来源 → 待跟进+最新信号 */
 export default function DashboardPage() {
@@ -306,6 +465,8 @@ export default function DashboardPage() {
               </div>
             )}
           </section>
+          {/* SPEC-N N4 本月业绩榜 */}
+          <LeaderboardCard />
           <section className="rounded-lg border border-[var(--border)] bg-white p-5">
             <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">线索漏斗</h2>
             <FunnelBars items={sum?.funnel ?? []} />

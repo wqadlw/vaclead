@@ -89,6 +89,8 @@ def _load_user(
     user = session.get(User, int(payload["sub"]))
     if user is None:
         raise HTTPException(status_code=401, detail="用户不存在")
+    if not user.active:
+        raise HTTPException(status_code=401, detail="账号已禁用")
     return user
 
 
@@ -133,6 +135,8 @@ async def current_user(
         user = _load_api_key(api_key, request, session)
     else:
         user = _load_user(creds, session)
+    if not user.active:  # API Key 通道同样执行禁用拦截（SPEC-N N1）
+        raise HTTPException(status_code=401, detail="账号已禁用")
     current_actor.set(user.id)
     return user
 
@@ -141,3 +145,26 @@ def admin_only(user: User = Depends(current_user)) -> User:
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="需要管理员权限")
     return user
+
+
+def visible_owner_ids(user: User, session: Session) -> list[int] | None:
+    """线索可见的 owner 集合（SPEC-N N2）：None=不限（admin）。
+
+    sales=自己；团队负责人（team.leader_id=自己）追加全部成员；
+    公海（owner NULL）由调用方另行放行，本函数只管"人"的集合。
+    """
+    if user.role == "admin":
+        return None
+    ids = [user.id]
+    if user.team_id is not None:
+        from .models import Team
+
+        team = session.get(Team, user.team_id)
+        if team is not None and team.leader_id == user.id:
+            ids = [
+                int(uid)
+                for (uid,) in session.query(User.id)
+                .filter(User.team_id == user.team_id, User.active == 1)
+                .all()
+            ]
+    return ids

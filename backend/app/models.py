@@ -782,3 +782,42 @@ class Unsubscribe(Base):
     lead_id: Mapped[int | None] = mapped_column(Integer)
     reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+# ---------------------------------------------------------------------------
+# SPEC-P Webhooks 出站（开放集成）
+# ---------------------------------------------------------------------------
+class Webhook(Base):
+    """出站 webhook 订阅（EspoCRM Webhooks 思想）：事件类型 + 目标 URL + 签名密钥。"""
+
+    __tablename__ = "webhook"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    event_types: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON
+    secret: Mapped[str] = mapped_column(Text, nullable=False)  # HMAC-SHA256 签名密钥
+    active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class WebhookDelivery(Base):
+    """投递队列/日志：随业务事务原子入队，flush worker 异步投递（指数退避）。"""
+
+    __tablename__ = "webhook_delivery"
+    __table_args__ = (Index("ix_wd_status", "status", "next_attempt_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    webhook_id: Mapped[int] = mapped_column(
+        ForeignKey("webhook.id", ondelete="CASCADE"), nullable=False
+    )
+    event: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False, default="{}")  # JSON
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    # pending|ok|failed（failed=重试耗尽终态）
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    next_attempt_at: Mapped[str | None] = mapped_column(Text)
+    delivered_at: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)

@@ -58,9 +58,34 @@ def _seed_defaults(session: Session) -> None:
         session.add(PoolSetting(name="默认公海", recycle_days=30, receive_limit=0, remind_days=3))
 
 
+#: 旧库补列清单（幂等 ALTER，PRAGMA table_info 检查后 ADD COLUMN，OPERATIONS §8）：
+#: key=表名，value=[(列名, DDL 片段)]——只放"已有表追加的列"，新表走 create_all
+_EVOLUTION_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "user": [
+        ("email", "TEXT"),
+        ("active", "INTEGER NOT NULL DEFAULT 1"),
+        ("team_id", "INTEGER"),
+    ],
+}
+
+
+def _ensure_columns() -> None:
+    """给已存在的表补缺失列（SPEC-N：User 组织化三列；旧真库无需手工 ALTER）。"""
+    with ENGINE.connect() as conn:
+        for table, cols in _EVOLUTION_COLUMNS.items():
+            if not conn.dialect.has_table(conn, table):
+                continue
+            existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            for col, ddl in cols:
+                if col not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+        conn.commit()
+
+
 def init_db(seed: bool = True) -> None:
     """建表 + FTS5 虚表与同步触发器（全部静态 DDL）+ 种子用户。"""
     Base.metadata.create_all(ENGINE)
+    _ensure_columns()
     with ENGINE.connect() as conn:
         conn.execute(
             text(
