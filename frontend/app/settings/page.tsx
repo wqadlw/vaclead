@@ -1158,6 +1158,21 @@ export default function SettingsPage() {
       .finally(() => setReviewLoading(false));
   }, []);
 
+  const [scanStarting, setScanStarting] = useState(false);
+  const startDupScan = async () => {
+    setScanStarting(true);
+    try {
+      await api.post("/api/tasks/dup-scan", {});
+      Toast.success("查重扫描已启动，稍后自动刷新结果");
+      // 扫描为后台任务（数百级企业秒级完成），延时拉取复核队列
+      setTimeout(loadReview, 3000);
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "启动失败");
+    } finally {
+      setScanStarting(false);
+    }
+  };
+
   const actReview = async (rid: number, action: "merge" | "reject") => {
     setActingId(rid);
     try {
@@ -1399,6 +1414,9 @@ export default function SettingsPage() {
               <p className="text-[13px] leading-6 text-[var(--muted)] max-w-[640px]">
                 归一引擎对 80-89 分的疑似重复企业不做静默合并，落在此处等待人工裁决：确认同主体选「合并为一档」（信号与别名全部迁移），确为两家选「不是同一家」。
               </p>
+              <Button theme="borderless" type="tertiary" loading={scanStarting} onClick={startDupScan}>
+                查重扫描
+              </Button>
               <Button theme="borderless" type="tertiary" loading={reviewLoading} onClick={loadReview}>
                 刷新
               </Button>

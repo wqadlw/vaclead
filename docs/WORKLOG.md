@@ -992,3 +992,11 @@ tests/test_spec_q.py（新）、tasks.py dup-scan 端点、main.py 周六 05:00 
   （后端参数已就绪），接线 URL 同步+fetchData+导出 CSV 三处——导出=所见。
 - 门禁：**211 后端全绿**（207+Q4）+ build + E2E 6/6。
 
+## W38 续 SPEC-R 数据质量 UI 闭环（Agent A）
+
+- 设置页「数据复核」加「查重扫描」按钮：POST /api/tasks/dup-scan + 3s 后自动
+  loadReview（扫描数百级企业秒级完成，轮询过度设计）；dup_scan 行的候选/目标/
+  来源/分数渲染复核页签已通用兼容，零改动。发现→复核→merge 全链路 UI 闭环。
+- 门禁：build + E2E 6/6（后端零改动，211 基线沿用）。
+
+
