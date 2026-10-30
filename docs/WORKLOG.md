@@ -738,3 +738,22 @@ J4 邮件触达闭环（L，契约已在 SPEC-J §J4，独立轮）。
 **坑**：报价测试企业名含"真空+设备"触发同行打标→不能转线索（打标规则首次咬到自己）——
 测试改用科研机构名；Mimosa 把 Math.random() 的 React key 兜底判"弱随机数"（改 rowKey="id"）。
 **SPEC-J 余项**：J4 邮件触达闭环（L，契约 §J4）。
+
+
+## 2026-10-31 · W34 多 Agent 协作启动 + 分工认领（用户正式委托双 Agent 共同开发）
+
+**协作事实**：Agent B（本会话）确认 Agent A 已认领 **J4 邮件触达闭环**（SPEC-J.md 内
+《J4 实施细化契约》为其 WIP：五表/发送链四模块/outreach 端点，勿动）。
+Agent B 认领互补线：**协作协议（docs/COLLABORATION.md）+ J3 漏斗接线（报价环节）+
+日志轮转（I6 P2 收尾）**。协议要点：认领制/WIP 声明/共享文件追加式/pull --rebase 后
+提交/提交前四步门禁全绿。
+
+**本轮 Agent B 落地**：
+- docs/COLLABORATION.md（多 Agent 协作单一事实源：认领/文件纪律/git 纪律/门禁/坑清单）
+- J3 收尾：工作台漏斗在 intent→won 之间注入「已报价」环节（sent+won 报价单数，
+  analytics.py——管理层看漏斗即见转化单据）
+- 日志轮转：app/logrotate.py（TimedRotatingFileHandler 按天滚动保 14 天，
+  data/logs/vaclead.log）+ lifespan 挂载——I6 P2 项收官
+
+**Wave 2 遗留说明**：f6557fe（Agent A 代提交的 Wave 2）之后工作区尚有 quotes/page.tsx
+的 onRow 类型修复（build 必需）与 SPEC-J.md 的 J4 契约（Agent A WIP，本方不提交）。

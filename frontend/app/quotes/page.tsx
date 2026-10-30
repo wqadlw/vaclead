@@ -121,8 +121,8 @@ export default function QuotesPage() {
           dataSource={items}
           rowKey="id"
           pagination={false}
-          onRow={(r) => ({
-            onClick: () => api.get<QuoteRow>(`/api/quotes/${r.id}`).then(setDetail).catch(() => undefined),
+          onRow={(r?: QuoteRow) => ({
+            onClick: () => r && api.get<QuoteRow>(`/api/quotes/${r.id}`).then(setDetail).catch(() => undefined),
             style: { cursor: "pointer" },
           })}
           columns={[

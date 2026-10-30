@@ -75,6 +75,8 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
   手工执行后务必登记 §8 并核对 `sqlite_master` 的 DDL
 - **Meili 检索投影重建**：Meili 数据丢失/不一致后，调一次任意导入或采集任务即自动 sync_all；
   或 `python -c "from app.db import SessionLocal; from app import search; ..."` 手动全量
+- **日志**：`data/logs/vaclead.log` 按天滚动保留 14 份（logrotate.py，随进程启动挂载）；
+  logger：vaclead.http / vaclead.jobs / vaclead.collectors.* / vaclead.auth
 - **采集任务卡死**：进程重启会把 running 任务标记 error（启动恢复机制）；SSE 断线靠 checkpoint 轮询兜底
 
 ## 7. 监控要点

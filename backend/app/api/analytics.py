@@ -104,14 +104,25 @@ def dashboard_summary(
     funnel_order = ["new", "following", "intent", "won", "pool", "lost"]
     lead_rows = session.query(Lead.status, func.count()).group_by(Lead.status).all()
     lead_by_status = {str(r[0]): int(r[1]) for r in lead_rows}
+    # SPEC-J J3：报价数是 intent→won 之间的转化环节（发出+赢单的报价单数）
+    from ..models import Quote
+
+    quoted = (
+        session.query(func.count())
+        .select_from(Quote)
+        .filter(Quote.status.in_(["sent", "won"]))
+        .scalar()
+        or 0
+    )
     funnel = [
         {"status": s, "label": lb, "value": lead_by_status.get(s, 0)}
         for s, lb in [
             ("new", "新线索"), ("following", "跟进中"), ("intent", "意向"),
-            ("won", "成交"), ("pool", "公海"), ("lost", "放弃"),
+            ("quoted", "已报价"), ("won", "成交"), ("pool", "公海"), ("lost", "放弃"),
         ]
-        if s in funnel_order
+        if s in funnel_order or s == "quoted"
     ]
+    funnel[3]["value"] = int(quoted)  # quoted 非 lead 状态，单独注入
 
     # ---- SPEC-J J6 加权管道预测（espocrm Forecasts 思想）----
     # Σ(amount×probability) 按预计成交月分组；对照个人月度目标算达成率
