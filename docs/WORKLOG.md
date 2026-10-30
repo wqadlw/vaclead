@@ -1010,3 +1010,11 @@ tests/test_spec_q.py（新）、tasks.py dup-scan 端点、main.py 周六 05:00 
 
 
 
+
+## W40 SPEC-T 公海批量领取（Agent A）
+
+- POST /api/leads/batch-claim：仅领取公海行，按公海规则领取上限截断（allowance=
+  receive_limit-held，0=不限），超额计入 skipped_limit；前端公海页签加行选择+
+  「批量领取所选」按钮（结果 Toast 带超限计数）。**leads 页 load 是 (t,p) 签名——
+  空参调用会 build 失败**（第 2 次踩同款页面级签名差异）。
+- 门禁：213 后端全绿 + build + E2E 6/6。

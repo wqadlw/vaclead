@@ -142,6 +142,53 @@ def patch_lead(
     return _lead_dict(lead, session.get(Enterprise, lead.enterprise_id))
 
 
+class BatchClaimIn(BaseModel):
+    ids: list[int]
+
+
+@router.post("/leads/batch-claim")
+def batch_claim(
+    body: BatchClaimIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """公海批量领取（SPEC-T）：按公海规则领取上限截断，超额计入 skipped_limit。"""
+    if not body.ids:
+        raise HTTPException(422, "请选择要领取的线索")
+    from ..models import PoolSetting
+
+    pool = session.query(PoolSetting).filter(PoolSetting.active == 1).first()
+    held = 0
+    allowance: int | None = None  # None=不限
+    if pool is not None and pool.receive_limit > 0:
+        held = (
+            session.query(func.count())
+            .select_from(Lead)
+            .filter(Lead.owner_id == user.id, Lead.status.in_(["following", "intent"]))
+            .scalar()
+        ) or 0
+        allowance = max(0, pool.receive_limit - held)
+    rows = (
+        session.query(Lead)
+        .filter(Lead.id.in_(body.ids), Lead.status == "pool")
+        .all()
+    )
+    claimed = skipped_limit = 0
+    for lead in rows:
+        if allowance is not None and claimed >= allowance:
+            skipped_limit += 1
+            continue
+        lead.owner_id = user.id
+        lead.claimed_at = utcnow()
+        lead.status = "following"
+        lead.probability = LEAD_STAGE_PROBABILITY["following"]
+        lead.updated_at = utcnow()
+        claimed += 1
+    session.commit()
+    return {"claimed": claimed, "skipped_limit": skipped_limit,
+            "requested": len(body.ids), "held": held}
+
+
 class OpportunityPatch(BaseModel):
     """商机编辑（吸收 twenty opportunity：amount/closeDate/probability 可独立于阶段修改）。"""
     amount_wan: float | None = None

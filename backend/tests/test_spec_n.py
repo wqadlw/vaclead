@@ -307,3 +307,33 @@ def test_team_activity_endpoint(client, admin_headers, db):
     assert wk is not None and wk["followups"] >= 1
     # 非 admin 不可见
     assert client.get("/api/org/activity").status_code in (401, 403)
+
+
+# ---------------- SPEC-T 公海批量领取 ----------------
+def test_batch_claim_pool_leads(client, admin_headers, db):
+    h = admin_headers
+    tag = uuid.uuid4().hex[:6]
+    sales_id = client.post("/api/users", headers=h, json={
+        "username": _uname(f"S{tag}"), "password": _pwd(tag)}).json()["id"]
+    leads = []
+    for i in range(3):
+        ent = Enterprise(name=f"批量领取{tag}{i}有限公司", source="manual")
+        db.add(ent)
+        db.flush()
+        ld = Lead(enterprise_id=ent.id, status="pool")
+        db.add(ld)
+        leads.append(ld)
+    db.commit()
+    ids = [l.id for l in leads]
+    # 无上限（默认公海规则 receive_limit=0）：全领
+    r = client.post("/api/leads/batch-claim", headers=h, json={"ids": ids})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["claimed"] == 3 and body["skipped_limit"] == 0
+    db.expire_all()
+    assert all(db.get(Lead, i).status == "following" for i in ids)
+    # 已领走的不再是公海，重复请求 0 领
+    r2 = client.post("/api/leads/batch-claim", headers=h, json={"ids": ids})
+    assert r2.json()["claimed"] == 0
+    # 空列表 422
+    assert client.post("/api/leads/batch-claim", headers=h, json={"ids": []}).status_code == 422

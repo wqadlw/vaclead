@@ -30,6 +30,9 @@ export default function LeadsPage() {
   const [data, setData] = useState<PageData<Lead> | null>(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
+  // SPEC-T 公海批量领取：仅公海页签可用
+  const [selectedPoolIds, setSelectedPoolIds] = useState<number[]>([]);
+  const [claiming, setClaiming] = useState(false);
 
   // 看板数据：{status: Lead[]}
   const [board, setBoard] = useState<Record<string, Lead[]>>({});
@@ -455,8 +458,41 @@ export default function LeadsPage() {
             className="!px-4 !pt-1"
             tabList={MY_TABS.map((s) => ({ tab: LEAD_STATUS[s].label, itemKey: s }))}
           />
+          {tab === "pool" && (
+            <div className="!px-4 !pb-1">
+              <Button
+                size="small"
+                theme="solid"
+                disabled={selectedPoolIds.length === 0}
+                loading={claiming}
+                onClick={async () => {
+                  setClaiming(true);
+                  try {
+                    const r = await api.post<{ claimed: number; skipped_limit: number }>(
+                      "/api/leads/batch-claim",
+                      { ids: selectedPoolIds },
+                    );
+                    Toast.success(`已领取 ${r.claimed} 条${r.skipped_limit ? `，${r.skipped_limit} 条超持有上限未领` : ""}`);
+                    setSelectedPoolIds([]);
+                    void load(tab, page);
+                  } catch (e) {
+                    Toast.error(e instanceof Error ? e.message : "领取失败");
+                  } finally {
+                    setClaiming(false);
+                  }
+                }}
+              >
+                批量领取所选（{selectedPoolIds.length}）
+              </Button>
+            </div>
+          )}
           <Table<Lead>
             rowKey="id"
+            rowSelection={{
+              selectedRowKeys: selectedPoolIds,
+              onChange: (keys?: (string | number)[]) =>
+                setSelectedPoolIds((keys ?? []).map(Number)),
+            }}
             columns={columns as never}
             dataSource={data?.items ?? []}
             loading={loading}
