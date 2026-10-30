@@ -61,6 +61,11 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 3. 不绕验证码、不破解 WAF、不爬登录后商业产品
 4. 联系人数据全部带 evidence_claim 溯源到具体公告
 
+**ggzy 宽词分级（SPEC-L）**：`ggzy_name_terms_core`（20 词，每日 03:30 增量用）+
+`ggzy_name_terms_extended`（25 词长尾，全量扫描/手动任务用）——每词一次请求成本
+（1.5s 限速），勿把 extended 塞进每日增量。词表全在 `config/industrial.yaml`
+（工业领域垂直，2026-10-31 起；vacuum.yaml 归档可回滚），类目=买家行业、强词用复合词。
+
 **ccgp 限流应对**：触发"频繁访问"拦截页时冷却 ≥1 小时；手动全量扫描单日 ≤2 轮。
 
 ## 6. 已知约束与运维操作

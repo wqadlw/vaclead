@@ -1,0 +1,434 @@
+# vaclead 工业设备行业词表与评分配置（SPEC-L）
+# 由 vacuum.yaml 扩展而来（2026-10-31 用户拍板：改成工业领域，不局限于真空行业）。
+# 原则：真空词全保留（存量数据/规则不断档）；类目=买家行业（谁在采购）；
+#      强词用复合词防误命中；类目互斥靠数组顺序 first-match-wins（专精在前）。
+version: 2
+vertical: 工业设备
+
+device_terms:
+  strong:  # 命中即视为设备相关（标题70分/正文50分）——按行业组组织，复合词优先
+    # ---- 真空（全部保留，存量主力）----
+    - 真空泵
+    - 真空机组
+    - 罗茨泵
+    - 分子泵
+    - 旋片泵
+    - 螺杆真空泵
+    - 爪式真空泵
+    - 涡旋真空泵
+    - 扩散泵
+    - 真空镀膜机
+    - 真空镀膜设备
+    - 磁控溅射
+    - 蒸发镀膜
+    - PVD镀膜
+    - PVD设备
+    - CVD设备
+    - 冻干机
+    - 真空冷冻干燥机
+    - 冷冻干燥设备
+    - 真空干燥箱
+    - 真空干燥设备
+    - 真空烧结炉
+    - 真空淬火炉
+    - 真空退火炉
+    - 真空热处理炉
+    - 真空热处理设备
+    - 真空腔体
+    - 真空检漏
+    - 真空包装机
+    - 真空获得设备
+    - 真空阀门
+    - 超高真空
+    - 高真空设备
+    - 真空系统
+    # ---- 医疗卫生（政采最大单一设备品类）----
+    - 医用CT
+    - DR成像系统
+    - 监护仪
+    - 呼吸机
+    - 超声诊断
+    - 麻醉机
+    - 灭菌柜
+    - 医用灭菌器
+    - 手术显微镜
+    - 医用内窥镜
+    - 康复设备
+    - 口腔治疗设备
+    # ---- 机械加工/机床 ----
+    - 数控车床
+    - 加工中心
+    - 立式加工中心
+    - 龙门加工中心
+    - 龙门铣
+    - 线切割机
+    - 电火花成型机
+    - 数控磨床
+    - 铣削复合
+    - 车铣复合
+    # ---- 化工制药装备 ----
+    - 反应釜
+    - 结晶器
+    - 蒸发器
+    - 刮板薄膜蒸发
+    - 储罐成套
+    - 搪玻璃反应罐
+    - 发酵罐
+    - 冻干粉针线
+    - 制粒机
+    - 压片机
+    - 胶囊填充机
+    # ---- 食品饮料 ----
+    - 杀菌釜
+    - 夹层锅
+    - 喷雾干燥塔
+    - 和面机
+    - 隧道式速冻机
+    - 液体灌装线
+    - UHT杀菌
+    # ---- 包装印刷 ----
+    - 灌装机
+    - 贴标机
+    - 封口机
+    - 喷码机
+    - 自动码垛机
+    - 胶印机
+    - 模切机
+    - 糊盒机
+    # ---- 塑料橡胶 ----
+    - 注塑机
+    - 双螺杆挤出机
+    - 吹膜机
+    - 吹瓶机
+    - 密炼机
+    - 开炼机
+    # ---- 焊接切割/金属加工 ----
+    - 激光切割机
+    - 焊接机器人
+    - 氩弧焊机
+    - 等离子切割机
+    - 数控折弯机
+    - 数控转塔冲
+    # ---- 工业炉热处理 ----
+    - 井式炉
+    - 台车炉
+    - 网带炉
+    - 淬火机床
+    - 感应加热设备
+    - 推杆炉
+    # ---- 通用设备（复合词防误命中）----
+    - 螺杆空压机
+    - 离心压缩机
+    - 无油空压机
+    - 离心泵机组
+    - 磁力泵
+    - 屏蔽泵
+    - 计量泵
+    - 板式换热器
+    - 列管冷凝器
+    # ---- 环保水务 ----
+    - 布袋除尘器
+    - 滤筒除尘器
+    - 板框压滤机
+    - 污水处理成套
+    - MBR膜组件
+    - RTO蓄热焚烧
+    - 废气处理成套
+    - 污泥干化机
+    # ---- 仪器仪表/检测 ----
+    - 气相色谱仪
+    - 液相色谱仪
+    - 质谱仪
+    - 原子吸收光谱
+    - 万能试验机
+    - 三坐标测量机
+    - 恒温恒湿试验箱
+    - 高低温试验箱
+    # ---- 工业自动化 ----
+    - 工业机器人
+    - 六轴机器人
+    - AGV小车
+    - 自动化生产线
+    - 装配线成套
+    - 视觉检测系统
+    - 伺服系统
+    # ---- 暖通制冷 ----
+    - 中央空调机组
+    - 螺杆冷水机
+    - 模块化风冷热泵
+    - 冷却塔
+    - 净化空调机组
+    - 冷库成套
+    # ---- 矿冶建材 ----
+    - 颚式破碎机
+    - 球磨机
+    - 混凝土搅拌站
+    - 压滤机成套
+    # ---- 纺织 ----
+    - 剑杆织机
+    - 定型机
+    - 经编机
+  weak:  # 弱词：仅标题命中时给一半分，正文命中不计——克制，泛词污染打分
+    - 真空
+    - 镀膜
+    - 冻干
+    - 烧结
+    - 数控
+    - 生产线
+    - 成套设备
+
+downstream_industries:
+  # 买家行业类目（谁在采购）——first-match-wins：专精/存量类目在前，泛化类目在后
+  # 科研教育医疗：政采/公共资源成交数据中的设备采购绝对主力
+  - key: research_edu
+    name: 科研院所/高校
+    tier: 1
+    industry_codes: ["R73", "R88"]
+    keywords: [大学, 学院, 研究所, 研究院, 科学技术, 科学院, 实验室, 疾控, 疾病预防, 计量]
+  - key: medical_health
+    name: 医疗卫生
+    tier: 1
+    industry_codes: ["Q84"]
+    keywords: [医院, 卫生院, 体检, 康复, 疗养, 医疗集团, 卫生健康, 血站, 保健院]
+  - key: semiconductor
+    name: 半导体/集成电路
+    tier: 1
+    industry_codes: ["C39"]
+    keywords: [半导体, 集成电路, 晶圆, 封测, 芯片制造, 半导体器件, 微电子]
+  - key: coating
+    name: 真空镀膜加工
+    tier: 1
+    industry_codes: ["C34"]
+    keywords: [镀膜加工, 表面处理, 涂层加工, PVD加工, 光学镀膜, 真空镀膜厂, 电镀]
+  - key: photovoltaic
+    name: 光伏
+    tier: 2
+    industry_codes: ["C3825"]
+    keywords: [光伏, 太阳能电池, 电池片, 光伏组件, 钙钛矿, 太阳能]
+  - key: lithium
+    name: 锂电池
+    tier: 2
+    industry_codes: ["C3841"]
+    keywords: [锂电池, 锂电, 电芯, 电解液, 固态电池, 储能电池, 动力电池]
+  - key: freeze_dried
+    name: 食品饮料/冻干
+    tier: 2
+    industry_codes: ["C14"]
+    keywords: [冻干, 冷冻干燥, 食品, 食品加工, 食品科技, 乳业, 乳品, 烘焙, 肉制品, 调味品, 饮料]
+  - key: pharma_biotech
+    name: 制药/生物医药
+    tier: 1
+    industry_codes: ["C27"]
+    keywords: [制药, 生物医药, 药业, 药物, 生物科技, 中药, 原料药, 疫苗]
+  - key: machining
+    name: 机械加工/零部件
+    tier: 1
+    industry_codes: ["C34", "C36"]
+    keywords: [机械加工, 精密制造, 机械制造, 精密机械, 零部件, 五金制品, 模具制造, 模具科技, 紧固件, 铸造, 锻造]
+  - key: heat_treatment
+    name: 金属热处理
+    tier: 3
+    industry_codes: ["C31"]
+    keywords: [热处理, 退火, 淬火, 金属表面处理, 冶金]
+  - key: chemical_new_material
+    name: 化工/新材料
+    tier: 1
+    industry_codes: ["C26"]
+    keywords: [化工, 化学, 新材料, 化学试剂, 涂料, 油墨, 胶粘剂, 助剂, 树脂]
+  - key: plastic_rubber
+    name: 塑料橡胶制品
+    tier: 1
+    industry_codes: ["C29"]
+    keywords: [塑料, 橡胶, 塑胶, 橡塑, 注塑, 塑业, 高分子, 薄膜制品, 泡塑, 密封件]
+  - key: packaging_printing
+    name: 包装印刷
+    tier: 1
+    industry_codes: ["C22", "C23"]
+    keywords: [包装, 印刷, 印务, 纸业, 彩印, 标签, 纸箱, 印染]
+  - key: metal_fabrication
+    name: 金属制品/钢结构
+    tier: 2
+    industry_codes: ["C33"]
+    keywords: [金属制品, 钢结构, 不锈钢制品, 铝制品, 冲压, 弹簧, 网业]
+  - key: automation_electrical
+    name: 自动化/电气成套
+    tier: 1
+    industry_codes: ["C40", "C38"]
+    keywords: [自动化, 工控, 电气成套, 非标设备, 机器人, 智能装备, 机电科技, 输配电]
+  - key: lab_instrument
+    name: 检验检测/第三方实验室
+    tier: 1
+    industry_codes: ["M74"]
+    keywords: [检测公司, 检测技术, 检测科技, 检验检测, 检验认证, 第三方检测, 测试技术, 分析测试, 质量技术]
+  - key: environmental
+    name: 环保水务
+    tier: 1
+    industry_codes: ["N77"]
+    keywords: [环保, 水务, 污水处理, 水处理, 环境工程, 环境治理, 环境科技, 固废, 净水]
+  - key: hvac_building
+    name: 暖通/机电安装
+    tier: 2
+    industry_codes: ["E49", "C346"]
+    keywords: [机电安装, 暖通, 制冷科技, 空调工程, 净化工程, 建筑科技]
+  - key: mining_metallurgy
+    name: 矿冶建材
+    tier: 3
+    industry_codes: ["B", "C30", "C32"]
+    keywords: [矿业, 选矿, 建材, 水泥, 玻璃, 耐火材料, 陶瓷]
+  - key: textile_apparel
+    name: 纺织服装
+    tier: 3
+    industry_codes: ["C17", "C18"]
+    keywords: [纺织, 织造, 纺纱, 服饰, 无纺布, 产业用布]
+
+# 竞对（同行）判定：企业名称命中任一 device_terms.strong 词
+# 且经营范围含 manufacture_or_sale 中任一词 → is_competitor=1（打标保留、默认从推荐列表排除）
+manufacture_or_sale: [制造, 生产, 厂家, 销售, 产销, 装备, 设备有限]
+
+manufacturing_terms: [生产, 制造, 加工]
+qualification_terms: [专精特新, 高新技术企业, 高新技术]
+
+icp_weights:
+  industry_tier1: 40      # 名称/经营范围/行业代码命中一线行业
+  industry_tier2: 30      # 二线行业
+  industry_generic: 10    # 泛制造（仅命中 manufacturing_terms）
+  device_usage_terms: 20  # 经营范围含设备使用相关词但非竞对
+  capital_gte_1000w: 15
+  capital_100w_1000w: 8
+  manufacturing_terms: 10
+  qualification: 15
+  max_score: 100
+
+# ICP 分段评分（SPEC-F F2，吸收 opengtm qualify 四段模式）：
+# 每段独立打分带理由，情报页分组展示；各段上限之和=100
+icp_segments:
+  size:                    # 企业规模段（注册资本/信号活跃度）
+    capital_gte_1000w: 12
+    capital_100w_1000w: 7
+    signal_active_90d: 5   # 近90天有信号（活跃买家）
+    max: 20
+  industry:                # 行业适配段（下游行业词表命中）
+    tier1: 40
+    tier2: 30
+    generic: 10
+    research_edu_bonus: 5  # 科研教育/医疗（政采主力）加成
+    max: 45
+  digital:                 # 数字化/现代化痕迹（经营范围技术词）
+    tech_terms: 10         # 含 研发/技术/智能/自动化 等
+    online_trace: 5        # 有官网域名或 ICP 记录（P3 接入）
+    max: 15
+  pain:                    # 痛点/意图信号段
+    device_usage: 10       # 经营范围含设备使用词
+    tender_intent: 15      # 历史中标/采购信号强
+    max: 20
+
+signal_weights:
+  tender_title_hit: 70    # 招标标题命中 strong 词
+  tender_body_hit: 50     # 正文命中 strong 词 / 标题命中 weak 词减半
+  weak_discount: 0.5
+  intent_half_life_days: 30  # intent = Σ base_score × 0.5^(距今天数/30)
+
+lead_grading:
+  icp_weight: 0.4
+  intent_weight: 0.6
+  grade_s_min: 80
+  grade_a_min: 60
+  grade_b_min: 40
+
+poi_cities: [苏州, 无锡, 东莞, 佛山, 深圳, 宁波, 常州, 南通, 西安, 合肥]
+
+recycle_days: 30
+
+# ggzy 企业名检索宽词分级（SPEC-L：每词=一次请求成本，1.5s 限速）
+# core：每日增量（≤20 词，跨行业高价值品类 + 真空存量主力不断档）
+ggzy_name_terms_core:
+  - 真空
+  - 真空设备
+  - 真空泵
+  - 镀膜设备
+  - 医疗设备
+  - 中央空调
+  - 电梯
+  - 实验仪器
+  - 检测仪器
+  - 污水处理
+  - 除尘设备
+  - 锅炉
+  - 水泵
+  - 风机
+  - 变频器
+  - 自动化控制系统
+  - 数控机床
+  - 激光切割
+  - 注塑机
+  - 食品加工设备
+# extended：全量扫描/手动任务用（长尾品类 + 真空细分宽词）
+ggzy_name_terms_extended:
+  - 真空技术
+  - 真空科技
+  - 真空工程
+  - 真空仪器
+  - 真空装置
+  - 镀膜机
+  - 热处理设备
+  - 冻干设备
+  - 制药设备
+  - 包装机械
+  - 灌装设备
+  - 印刷设备
+  - 制冷设备
+  - 空气源热泵
+  - 试验机
+  - 分析仪器
+  - 色谱仪
+  - 工业机器人
+  - 焊接设备
+  - 反应釜
+  - 压滤机
+  - 净化工程
+  - 冷库设备
+  - 搅拌站
+  - 纺织机械
+
+# 预置客户画像模板（前端筛选页一键套用）
+profile_templates:
+  - name: 半导体扩产客户
+    filters: {industry_key: semiconductor, capital_min: 1000, score_min: 60}
+  - name: 镀膜加工厂
+    filters: {industry_key: coating, score_min: 50}
+  - name: 光伏电池制造商
+    filters: {industry_key: photovoltaic, score_min: 50}
+  - name: 锂电扩产客户
+    filters: {industry_key: lithium, capital_min: 500, score_min: 50}
+  - name: 食品饮料/冻干
+    filters: {industry_key: freeze_dried, score_min: 50}
+  - name: 有采购信号的高意向客户
+    filters: {signal_days: 30, score_min: 60}
+  - name: 医疗卫生买家
+    filters: {industry_key: medical_health, score_min: 40}
+  - name: 制药/生物科技
+    filters: {industry_key: pharma_biotech, capital_min: 500, score_min: 50}
+  - name: 机械加工零部件厂
+    filters: {industry_key: machining, capital_min: 200, score_min: 40}
+  - name: 环保水务项目方
+    filters: {industry_key: environmental, score_min: 40}
+  - name: 检验检测机构
+    filters: {industry_key: lab_instrument, score_min: 40}
+
+# 招聘信号词表（SPEC-F F3，吸收 Job-Signal-Scraper 思想：在招设备岗=采购/扩张前兆）
+hiring_keywords:
+  - 设备工程师
+  - 设备维护工程师
+  - 设备技术员
+  - 工艺工程师
+  - 真空设备工程师
+  - 真空工艺工程师
+  - 镀膜工程师
+  - 真空技术员
+  - 真空镀膜技师
+  - 半导体设备工程师
+  - 光伏工艺工程师
+  - 注塑工艺工程师
+  - 机修工程师
+  - 自动化工程师
+  - 实验室技术员

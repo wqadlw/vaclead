@@ -1,4 +1,8 @@
-"""vacuum.yaml 词表加载器 — 全平台行业配置的唯一入口。"""
+"""industrial.yaml 词表加载器 — 全平台行业配置的唯一入口（SPEC-L 工业领域垂直）。
+
+历史：v1 为 config/vacuum.yaml（真空设备单垂直）；2026-10-31 起 defaults 切到
+industrial.yaml（多行业词表，真空词全保留），VACLEAD_CONFIG 仍可覆盖指向任意配置。
+"""
 from __future__ import annotations
 
 import os
@@ -10,7 +14,7 @@ import yaml
 _CONFIG_PATH = os.environ.get(
     "VACLEAD_CONFIG",
     os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "config", "vacuum.yaml")
+        os.path.join(os.path.dirname(__file__), "..", "..", "config", "industrial.yaml")
     ),
 )
 
@@ -26,8 +30,7 @@ def device_strong_terms() -> list[str]:
     return list(load()["device_terms"]["strong"])
 
 
-# ggzy 名称检索专用宽词（该接口按企业名匹配，细分词如"罗茨泵"召回≈0；
-# 品类宽词覆盖名称含"真空"的主体，细粒度意图交给 ccgp 全文检索）
+# ggzy 名称检索宽词 v1 遗留常量（真空单垂直时代）；现以配置的 core/extended 为准
 GGZY_NAME_TERMS = [
     "真空", "真空设备", "真空泵", "真空技术", "真空科技", "真空工程",
     "镀膜设备", "镀膜机", "热处理设备", "冻干设备", "真空仪器", "真空装置",
@@ -35,7 +38,21 @@ GGZY_NAME_TERMS = [
 
 
 def ggzy_name_terms() -> list[str]:
-    return list(GGZY_NAME_TERMS)
+    """ggzy 企业名检索核心宽词（每日增量用，控制请求成本，SPEC-L 分级）。
+
+    该接口按企业名匹配，细分词（罗茨泵级）召回≈0，品类宽词才有效；
+    细粒度意图交给 ccgp 全文检索。
+    """
+    cfg = load()
+    core = cfg.get("ggzy_name_terms_core")
+    if core:
+        return list(core)
+    return list(cfg.get("ggzy_name_terms") or GGZY_NAME_TERMS)
+
+
+def ggzy_extended_terms() -> list[str]:
+    """ggzy 全量扫描扩展宽词（长尾品类；每日增量不使用，控制单日请求量）。"""
+    return list(load().get("ggzy_name_terms_extended", []))
 
 
 def icp_segments() -> dict:

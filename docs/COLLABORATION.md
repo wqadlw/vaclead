@@ -45,9 +45,10 @@
 3. `npx playwright test`（NO_PROXY=127.0.0.1,localhost，6 用例全绿）
 4. 真库操作后 PRAGMA integrity_check
 
-**互斥约定（实测教训）**：pytest/build/E2E 会争用 node_modules、.next、:8010 端口与
-CPU——两位 Agent **不要同时跑门禁**。跑门禁前若 WORKLOG 显示同事可能也在跑，先等
-或先做纯编码工作；E2E 出现"test() called here"/超时类瞬时错误，先排除并发再查代码
+**互斥约定（实测教训）**：pytest/build/E2E 会争用 node_modules、.next、CPU——两位 Agent
+**不要同时跑门禁**。E2E 端口用 `E2E_PORT` 环境变量错峰（如 Agent B 固定
+`E2E_PORT=8017`，Agent A 用默认 8010），消除抢端口竞态。E2E 出现
+"test() called here"/超时/端口占用类瞬时错误，先排除并发再查代码
 （干净复跑即过 = 并发竞争，不记为回归）。
 
 ## 6. 已知环境坑（新会话必读，详见 WORKLOG 各轮坑段）

@@ -49,7 +49,7 @@ export default function LoginPage() {
 
         <div className="relative max-w-[440px]">
           <h1 className="text-[32px] font-semibold leading-[1.3]">
-            真空设备的采购意图
+            工业设备的采购意图
             <br />
             藏在公开数据里
           </h1>

@@ -757,3 +757,36 @@ Agent B 认领互补线：**协作协议（docs/COLLABORATION.md）+ J3 漏斗�
 
 **Wave 2 遗留说明**：f6557fe（Agent A 代提交的 Wave 2）之后工作区尚有 quotes/page.tsx
 的 onRow 类型修复（build 必需）与 SPEC-J.md 的 J4 契约（Agent A WIP，本方不提交）。
+
+
+## 2026-10-31 · W35 认领 · SPEC-L 工业领域垂直扩展（Agent B）
+
+**用户拍板**："改成工业领域，不要局限于真空行业"。摸底确认词表/类目/评分全由
+config/*.yaml 配置驱动——本轮零核心代码重构。契约 docs/SPEC-L.md。
+
+**动文件范围**：config/industrial.yaml（新）、backend/app/vertical.py（默认路径+访问器）、
+frontend/lib/theme.ts（BRAND 区——Agent A 只改 PAGE_TITLES 区，零冲突）、login 页、
+README/SPEC.md 定位句、backend/tests/test_vertical_ext.py（新）。
+**不碰**：Agent A 的 J4 全部文件（models/main/jobs/tasks/outreach/emailengine/AppShell/SPEC-J.md）。
+
+### W35 实施结果（Agent B，接认领条目）
+
+**调研**：子 Agent 产出工业分类体系（探迹"行业版+细分标签"两层同构验证 /
+GB4754 骨架 / 无开源词表可复用、事实标准=政采品目分类目录 / 医疗设备 1371 亿年采购
+为最大品类）。关键辨析：**类目=买家行业**（调研表混入制造商视角已换算——医疗器械→
+医疗卫生买家，半导体设备厂=同行打标非客户）。
+
+**落地**：
+- `config/industrial.yaml`（默认配置，vacuum.yaml 归档可回滚）：强词 34→**145**
+  （真空 34 全保留，按 14 行业组组织，复合词防误命中）；类目 7→**20**（新增 13 个
+  买家侧类目：医疗卫生/制药/机械加工/化工新材料/塑料橡胶/包装印刷/金属制品/自动化电气/
+  检验检测/环保水务/暖通机电/矿冶建材/纺织，keywords 企业名组合词校准——"塑胶/
+  检测技术/精密机械"等实测补齐）；ggzy 宽词分 **core 20 / extended 25** 两级
+  （每日增量成本受控，真空宽词留 core 保存量池）；画像模板 6→11；hiring 词 8→15
+- `vertical.py`：默认路径切换 + ggzy_extended_terms() 访问器 + 兼容旧键
+- 品牌去真空化：BRAND tagline/subtitle、login 主句、README 标题与定位、SPEC.md 头部
+- 合约测试 test_vertical_ext.py 5 用例：规模/真空保留/类目互斥（全局 keywords 零交集）/
+  宽词分级（core 含真空）/新类目识别 + 信号引擎真空词回归
+
+**门禁**：**182 全绿**（含 Agent A 的 J4 WIP 测试——工作区共享同跑）+ build OK；
+E2E 因 :8010 被同事占用，轮询等端口释放后补跑（互斥约定首次实战）。

@@ -8,10 +8,12 @@ export const PAGE_TITLES: Record<string, string> = {
   "/products": "产品目录",
   "/quotes": "报价单",
   "/forms": "留资表单",
+  "/outreach": "序列触达",
+  "/outreach/inbox": "收件箱",
 };
 
 export const BRAND = {
   name: "vaclead",
-  tagline: "VACUUM SALES INTELLIGENCE",
-  subtitle: "真空设备智能拓客平台",
+  tagline: "INDUSTRIAL SALES INTELLIGENCE",
+  subtitle: "工业设备智能拓客平台",
 };

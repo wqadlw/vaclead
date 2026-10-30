@@ -1,10 +1,10 @@
-# vaclead 真空设备智能拓客平台 · 技术规格（SPEC v1.0）
+# vaclead 工业设备智能拓客平台 · 技术规格（SPEC v1.0）
 
 > 本文档是全部开发 Agent 的唯一契约。所有实现必须严格遵循本文；发现矛盾以本文为准并报告。
 
 ## 0. 项目总览
 
-- **定位**：真空设备行业自用智能拓客平台（筛选下游工厂 → 招投标意图信号 → 线索跟进闭环）
+- **定位**：工业设备行业自用智能拓客平台（多行业词表配置驱动，首批垂直=真空设备，2026-10-31 起扩展至工业全行业；筛选下游工厂 → 招投标意图信号 → 线索跟进闭环）
 - **技术栈**：FastAPI + SQLAlchemy 2 + SQLite(WAL+FTS5) ｜ Next.js 14 + Ant Design 5 + Tailwind ｜ LangGraph（编排）｜ v1 无 LLM（规则实现，双后端可切换）
 - **目录**：monorepo，`backend/`（Python 包名 `app`）+ `frontend/`（Next.js）+ `config/` + `docs/` + `scripts/` + `data/`
 - **启动**：`scripts/dev.bat` 一键起 uvicorn(:8000) + next dev(:3000)

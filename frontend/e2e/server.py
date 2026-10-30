@@ -10,7 +10,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 BACKEND = HERE.parent.parent / "backend"
-DB = HERE / "tmp" / "e2e.db"
+# 按 E2E_PORT 隔离临时库：双 Agent 并发跑门禁互不占库（COLLABORATION §5）
+DB = HERE / "tmp" / f"e2e_{os.environ.get('E2E_PORT', '8010')}.db"
 DB.parent.mkdir(parents=True, exist_ok=True)
 if DB.exists():
     DB.unlink()
@@ -86,4 +87,4 @@ with SessionLocal() as s:
     s.add(Todo(title="E2E 待办：联系苏州长晶", due_date="2026-01-01", source="manual"))
     s.commit()
 
-uvicorn.run(app, host="127.0.0.1", port=8010, log_level="warning")
+uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("E2E_PORT", "8010")), log_level="warning")
