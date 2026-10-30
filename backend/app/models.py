@@ -367,6 +367,11 @@ class Contact(Base):
     role: Mapped[str] = mapped_column(Text, nullable=False, default="legal_rep")
     # legal_rep 法定代表人 | buyer_unit 采购人单位 | tender_agency 代理机构
     title: Mapped[str | None] = mapped_column(Text)
+    # SPEC-J J2 联系人中心：公告法定公开邮箱 + 决策角色推断 + 验证态
+    # verify_state: verified=公告直接公开 | inferred=推断 | none=未知
+    email: Mapped[str | None] = mapped_column(Text)
+    decision_role: Mapped[str | None] = mapped_column(Text)  # decision_maker|handler
+    verify_state: Mapped[str] = mapped_column(Text, nullable=False, default="none")
     source: Mapped[str] = mapped_column(Text, nullable=False, default="ggzy")
     evidence_claim: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
@@ -393,6 +398,7 @@ class AutomationRule(Base):
     cond_min_score: Mapped[float | None] = mapped_column(REAL)
     cond_has_contact: Mapped[int | None] = mapped_column(Integer)  # 1=有联系人电话 0=无 None=不限
     cond_min_intent: Mapped[float | None] = mapped_column(REAL)   # 意图分下限
+    cond_has_email_decision: Mapped[int | None] = mapped_column(Integer)  # SPEC-J J2：1=有公告验证邮箱的决策联系人
     # 动作：action_type 保留单动作兼容（v1）；动作链存 action_params.actions
     # （JSON 数组，顺序执行）；else_actions 为条件不满足时的备选链
     action_type: Mapped[str] = mapped_column(Text, nullable=False, default="notify")
@@ -520,4 +526,96 @@ class SubscriptionRule(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False)  # keyword|region
     value: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class Product(Base):
+    """产品目录（SPEC-J J3，espocrm Quotes 思想）：报价单的行项目来源。"""
+
+    __tablename__ = "product"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str | None] = mapped_column(Text)  # 型号
+    spec: Mapped[str | None] = mapped_column(Text)  # 参数摘要
+    price: Mapped[float] = mapped_column(REAL, nullable=False, default=0.0)  # 万元
+    price_unit: Mapped[str] = mapped_column(Text, nullable=False, default="台")
+    active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class Quote(Base):
+    """报价单（SPEC-J J3）：商机 intent→won 之间的转化单据。
+
+    total_wan 由 items 汇总派生（服务端重算，不信前端传值）。
+    """
+
+    __tablename__ = "quote"
+    __table_args__ = (Index("ix_quote_lead", "lead_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lead_id: Mapped[int] = mapped_column(
+        ForeignKey("lead.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
+    # draft 草稿 | sent 已发送 | won 赢单 | lost 输单
+    valid_until: Mapped[str | None] = mapped_column(Text)  # YYYY-MM-DD
+    total_wan: Mapped[float] = mapped_column(REAL, nullable=False, default=0.0)
+    remark: Mapped[str | None] = mapped_column(Text)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class QuoteItem(Base):
+    """报价单行项：产品快照（价格下单时定格，防目录调价改历史）。"""
+
+    __tablename__ = "quote_item"
+    __table_args__ = (Index("ix_quote_item_quote", "quote_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    quote_id: Mapped[int] = mapped_column(
+        ForeignKey("quote.id", ondelete="CASCADE"), nullable=False
+    )
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("product.id"))
+    name: Mapped[str] = mapped_column(Text, nullable=False)  # 下单时产品名快照
+    spec: Mapped[str | None] = mapped_column(Text)
+    qty: Mapped[float] = mapped_column(REAL, nullable=False, default=1.0)
+    price: Mapped[float] = mapped_column(REAL, nullable=False, default=0.0)  # 万元/单位
+    price_unit: Mapped[str] = mapped_column(Text, nullable=False, default="台")
+
+
+class LeadForm(Base):
+    """留资表单（SPEC-J J5，espocrm Lead Capture 思想）：公开渠道捕获进线索。"""
+
+    __tablename__ = "lead_form"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    submissions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class LeadCaptureLog(Base):
+    """表单提交日志：原始载荷留档（防垃圾审计 + 丢数据可追溯）。"""
+
+    __tablename__ = "lead_capture_log"
+    __table_args__ = (Index("ix_capture_form", "form_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    form_id: Mapped[int] = mapped_column(
+        ForeignKey("lead_form.id", ondelete="CASCADE"), nullable=False
+    )
+    company: Mapped[str] = mapped_column(Text, nullable=False)
+    contact_name: Mapped[str | None] = mapped_column(Text)
+    phone: Mapped[str | None] = mapped_column(Text)
+    email: Mapped[str | None] = mapped_column(Text)
+    need: Mapped[str | None] = mapped_column(Text)
+    ip: Mapped[str | None] = mapped_column(Text)
+    enterprise_id: Mapped[int | None] = mapped_column(Integer)  # 归一匹配结果
+    lead_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)

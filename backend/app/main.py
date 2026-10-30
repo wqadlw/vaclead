@@ -378,6 +378,12 @@ app.include_router(analytics.router, prefix="/api")
 from .api import governance  # noqa: E402
 
 app.include_router(governance.router, prefix="/api")
+from .api import quotes  # noqa: E402
+
+app.include_router(quotes.router, prefix="/api")
+from .api import leadforms  # noqa: E402
+
+app.include_router(leadforms.router, prefix="/api")
 
 
 # ---- 单进程部署：托管前端静态导出（frontend/out），SPA 回退 ----

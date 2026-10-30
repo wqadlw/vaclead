@@ -18,6 +18,7 @@ interface RuleRow {
   cond_source: string | null;
   cond_min_score: number | null;
   cond_has_contact: number | null;
+  cond_has_email_decision: number | null;
   cond_min_intent: number | null;
   action_type: string;
   actions: string[];
@@ -44,6 +45,7 @@ const EMPTY_FORM = {
   cond_source: "",
   cond_min_score: "",
   cond_has_contact: "",
+  cond_has_email_decision: "",
   cond_min_intent: "",
   action_type: "notify",
   actions: ["notify"] as string[],
@@ -85,6 +87,7 @@ export default function AutomationPanel() {
       cond_source: form.cond_source || null,
       cond_min_score: form.cond_min_score === "" ? null : Number(form.cond_min_score),
       cond_has_contact: form.cond_has_contact === "" ? null : Number(form.cond_has_contact),
+      cond_has_email_decision: form.cond_has_email_decision === "" ? null : Number(form.cond_has_email_decision),
       cond_min_intent: form.cond_min_intent === "" ? null : Number(form.cond_min_intent),
       action_type: form.actions[0] ?? form.action_type,
       actions: form.actions,
@@ -162,6 +165,7 @@ export default function AutomationPanel() {
       cond_source: r.cond_source ?? "",
       cond_min_score: r.cond_min_score == null ? "" : String(r.cond_min_score),
       cond_has_contact: r.cond_has_contact == null ? "" : String(r.cond_has_contact),
+      cond_has_email_decision: r.cond_has_email_decision == null ? "" : String(r.cond_has_email_decision),
       cond_min_intent: r.cond_min_intent == null ? "" : String(r.cond_min_intent),
       action_type: r.action_type,
       actions: r.actions?.length ? r.actions : [r.action_type],
@@ -457,6 +461,17 @@ export default function AutomationPanel() {
                   { value: "0", label: "无联系人电话" },
                 ]}
                 onChange={(v) => setForm((f) => ({ ...f, cond_has_contact: (v as string) || "" }))}
+              />
+              <Select
+                style={{ width: "100%" }}
+                placeholder="公告验证邮箱（SPEC-J J2）"
+                showClear
+                value={form.cond_has_email_decision || undefined}
+                optionList={[
+                  { value: "1", label: "有公告验证邮箱的联系人" },
+                  { value: "0", label: "无验证邮箱" },
+                ]}
+                onChange={(v) => setForm((f) => ({ ...f, cond_has_email_decision: (v as string) || "" }))}
               />
               <InputNumber
                 style={{ width: "100%" }}

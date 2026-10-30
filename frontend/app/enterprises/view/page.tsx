@@ -25,6 +25,9 @@ interface ContactRow {
   name: string;
   role: string;
   title: string | null;
+  email: string | null;
+  decision_role: string | null;
+  verify_state: string;
   source: string;
   evidence_claim: string | null;
 }
@@ -331,11 +334,28 @@ function IntelInner() {
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {contacts.map((c) => (
                   <div key={c.id} className="rounded-lg border border-[var(--border)] px-4 py-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[14px] font-medium text-[var(--ink)]">{c.name}</span>
-                      <Tag color="cyan" type="light" size="small">{ROLE_CN[c.role] ?? c.role}</Tag>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="text-[14px] font-medium text-[var(--ink)]">{c.name}</span>
+                        {/* SPEC-J J2：决策角色标记 */}
+                        {c.decision_role === "decision_maker" && (
+                          <Tag color="orange" type="light" size="small">决策链</Tag>
+                        )}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1">
+                        {/* SPEC-J J2：验证态徽章（公告法定公开=verified） */}
+                        {c.verify_state === "verified" && (
+                          <Tag color="green" type="light" size="small">公告验证</Tag>
+                        )}
+                        <Tag color="cyan" type="light" size="small">{ROLE_CN[c.role] ?? c.role}</Tag>
+                      </span>
                     </div>
                     {c.title && <div className="mt-1 text-[13px] tabular-nums text-[var(--accent)]">{c.title}</div>}
+                    {c.email && (
+                      <div className="mt-1 text-[13px] text-[var(--ink)]">
+                        <a href={`mailto:${c.email}`} className="hover:text-[var(--accent)]">{c.email}</a>
+                      </div>
+                    )}
                     {c.evidence_claim && (
                       <div className="mt-1 border-l-2 border-[var(--accent)] pl-2 text-[11.5px] leading-4 text-[var(--muted)]">
                         {c.evidence_claim}

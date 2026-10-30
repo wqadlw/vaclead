@@ -5,6 +5,9 @@ export const PAGE_TITLES: Record<string, string> = {
   "/leads": "线索看板",
   "/tasks": "拓客任务",
   "/settings": "设置",
+  "/products": "产品目录",
+  "/quotes": "报价单",
+  "/forms": "留资表单",
 };
 
 export const BRAND = {

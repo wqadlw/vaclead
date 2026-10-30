@@ -134,6 +134,8 @@ def list_contacts(
     return {
         "items": [
             {"id": c.id, "name": c.name, "role": c.role, "title": c.title,
+             "email": c.email, "decision_role": c.decision_role,
+             "verify_state": c.verify_state,
              "source": c.source, "evidence_claim": c.evidence_claim}
             for c in rows
         ]

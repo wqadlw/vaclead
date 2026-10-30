@@ -888,17 +888,18 @@ def backfill_notice_contacts(
             ents_updated += 1
         pairs = []
         if detail.get("buyer_contact"):
+            # 采购单位联系方式通常是采购负责人——决策链关键人（SPEC-J J2）
             pairs.append(("采购联系人", detail["buyer_contact"], "ccgp_buyer",
-                          f"政采公告「{sig.title[:30]}」采购单位联系方式"))
+                          f"政采公告「{sig.title[:30]}」采购单位联系方式", "decision_maker"))
         if detail.get("project_contact"):
             pairs.append(("项目联系人", detail["project_contact"],
                           detail.get("project_phone") or "ccgp",
-                          f"政采公告「{sig.title[:30]}」项目联系方式"))
+                          f"政采公告「{sig.title[:30]}」项目联系方式", "handler"))
         if detail.get("agency_name"):
             pairs.append(("代理机构", detail["agency_name"],
                           detail.get("agency_contact") or "ccgp",
-                          f"政采公告「{sig.title[:30]}」代理机构"))
-        for role, name, contact_info, claim in pairs:
+                          f"政采公告「{sig.title[:30]}」代理机构", "handler"))
+        for role, name, contact_info, claim, drole in pairs:
             exists = (
                 session.query(Contact)
                 .filter(
@@ -908,13 +909,22 @@ def backfill_notice_contacts(
                 )
                 .first()
             )
+            # 公告正文的法定公开邮箱 → 回填到该企业联系人（verified：公告直接公开）
+            notice_email = (detail.get("email") or "").strip() or None
             if exists is None:
                 session.add(Contact(
                     enterprise_id=e.id, name=name, role=role,
                     title=contact_info[:80] if contact_info else None,
+                    email=notice_email,
+                    decision_role=drole,
+                    verify_state="verified",
                     source="ccgp", evidence_claim=claim,
                 ))
                 contacts_created += 1
+            elif notice_email and not exists.email:
+                exists.email = notice_email
+                exists.decision_role = exists.decision_role or drole
+                exists.verify_state = "verified"
         _time.sleep(1.0)  # 详情页额外礼貌间隔
     session.commit()
     return {

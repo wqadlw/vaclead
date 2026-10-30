@@ -715,3 +715,26 @@ TestClient lifespan 满足"有企业+无水位"→ 后台线程对真网络跑�
 
 **SPEC-J 余项**：J2 联系人中心 / J3 产品报价 / J5 web-to-lead（Wave 2）、
 J4 邮件触达闭环（L，契约已在 SPEC-J §J4，独立轮）。
+
+
+## 2026-10-30 · W33 SPEC-J Wave 2：联系人中心 + 产品报价 + 留资表单
+
+**落地**：
+- **J2 联系人中心深化**：contact 扩列 email/decision_role/verify_state（真库幂等 ALTER）+
+  公告正文邮箱正则抽取（_DETAIL_FIELDS 增 email 模式）+ 回填接线（新建与已存在联系人都
+  回填邮箱；verified=公告法定公开）+ decision_role 推断（采购单位联系方式=decision_maker，
+  项目/代理=handler）+ 规则引擎新条件 cond_has_email_decision + 情报页联系人卡
+  （决策链橙标/公告验证绿标/mailto 邮箱）
+- **J3 产品目录+报价单**：product/quote/quote_item 三表（行项存下单时价格快照，目录调价
+  不改历史）+ /api/products CRUD（软删）+ /api/quotes 生命周期（draft→sent→won|lost
+  状态机，服务端重算 total_wan 不信前端）+ 产品页/报价单页/打印视图
+  （纯 HTML window.print 免 PDF 依赖，签字栏 print 显示）
+- **J5 留资表单**：lead_form/lead_capture_log 两表 + 公开端点 /api/public/lead-capture/{token}
+  （无鉴权：token 鉴权 + honeypot 静默丢弃 + 每 IP 5 次/10 分钟限流 + 电话邮箱至少一项）+
+  入库走 resolve_enterprise 归一（source=webform，撞单复用已有线索不动销售资产）+
+  表单管理页（落地页链接/提交记录/启停）+ 公开落地页（无 AppShell，独立风格）
+
+**门禁**：test_spec_j2 6/6 + 全量 165 + build + E2E 6。
+**坑**：报价测试企业名含"真空+设备"触发同行打标→不能转线索（打标规则首次咬到自己）——
+测试改用科研机构名；Mimosa 把 Math.random() 的 React key 兜底判"弱随机数"（改 rowKey="id"）。
+**SPEC-J 余项**：J4 邮件触达闭环（L，契约 §J4）。

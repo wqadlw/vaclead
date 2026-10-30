@@ -457,6 +457,23 @@ def _rule_matches(rule, signal: Signal, ent: Enterprise, session: Session | None
         )
         if bool(rule.cond_has_contact) != has:
             return False
+    # SPEC-J J2：有公告验证邮箱的决策链联系人（可直接邮件触达）
+    if rule.cond_has_email_decision is not None and session is not None:
+        from .models import Contact
+
+        has_email = (
+            session.query(Contact.enterprise_id)
+            .filter(
+                Contact.enterprise_id == ent.id,
+                Contact.email.is_not(None),
+                Contact.email != "",
+                Contact.verify_state == "verified",
+            )
+            .first()
+            is not None
+        )
+        if bool(rule.cond_has_email_decision) != has_email:
+            return False
     return True
 
 

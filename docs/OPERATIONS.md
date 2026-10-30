@@ -89,6 +89,8 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 |---|---|---|
 | 2026-10-25 | 全部建表 | create_all（13 表 + FTS） |
 | 2026-10-29 | signal 唯一约束 (url,enterprise_id,type) → **(url,enterprise_id,type,title)** | 表重建（12 步手工，SPEC-I I1） |
+| 2026-10-30 | contact +email/decision_role/verify_state；automation_rule +cond_has_email_decision | 幂等 ALTER（PRAGMA table_info 检查后 ADD COLUMN，SPEC-J J2） |
+| 2026-10-30 | 新增表：audit_log/user_api_key/user_target/subscription_rule（J1/J6/J7）、product/quote/quote_item（J3）、lead_form/lead_capture_log（J5） | create_all 自动建（重启生效） |
 
 ## 9. 账号
 

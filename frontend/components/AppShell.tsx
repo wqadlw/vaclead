@@ -4,8 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Avatar, Dropdown, Input, Modal } from "@douyinfe/semi-ui";
 import {
+  ClipboardList,
+  FileText,
   Gauge,
   LogOut,
+  Package,
   Radar,
   Rocket,
   Search,
@@ -24,10 +27,13 @@ const NAV = [
   { href: "/", label: "工作台", icon: Gauge },
   { href: "/enterprises", label: "企业筛选", icon: Search },
   { href: "/leads", label: "线索看板", icon: Radar },
+  { href: "/quotes", label: "报价单", icon: FileText },
+  { href: "/products", label: "产品目录", icon: Package },
 ];
 
 const ADMIN_NAV = [
   { href: "/tasks", label: "拓客任务", icon: Rocket },
+  { href: "/forms", label: "留资表单", icon: ClipboardList },
   { href: "/settings", label: "设置", icon: Settings },
 ];
 
