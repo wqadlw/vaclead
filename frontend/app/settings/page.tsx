@@ -448,6 +448,111 @@ function MembersPanel() {
   );
 }
 
+/* ---------------- SPEC-S 团队动态（过程监管） ---------------- */
+
+interface ActivityItem {
+  id: number;
+  actor: string;
+  action: string;
+  entity: string;
+  entity_id: number;
+  changes: string;
+  created_at: string;
+}
+
+interface ActivityData {
+  items: ActivityItem[];
+  weekly: { user_id: number; name: string; followups: number; updates: number }[];
+}
+
+const ENTITY_CN: Record<string, string> = {
+  enterprise: "企业", lead: "线索", contact: "联系人",
+  signal: "信号", quote: "报价单",
+};
+const ACTION_CN: Record<string, string> = {
+  insert: "新建", update: "更新", delete: "删除",
+};
+
+function ActivityPanel() {
+  const [data, setData] = useState<ActivityData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api
+      .get<ActivityData>("/api/org/activity?days=7&limit=50")
+      .then((d) => setData(d))
+      .catch(() => Toast.error("加载团队动态失败"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <div className="p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="max-w-[640px] text-[13px] leading-6 text-[var(--muted)]">
+          近 7 天成员人工操作留痕（复用审计日志）+ 周度跟进/更新计数——管理环「过程监管」。
+        </p>
+        <Button theme="borderless" type="tertiary" loading={loading} onClick={load}>
+          刷新
+        </Button>
+      </div>
+      {data && data.weekly.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {data.weekly.map((w) => (
+            <span
+              key={w.user_id}
+              className="rounded-full border border-[var(--border)] bg-white px-3 py-1 text-[12px] text-[var(--ink)]"
+            >
+              {w.name} · 跟进 {w.followups} · 更新 {w.updates}
+            </span>
+          ))}
+        </div>
+      )}
+      <Table<ActivityItem>
+        rowKey="id"
+        size="small"
+        loading={loading}
+        dataSource={data?.items ?? []}
+        empty="近 7 天暂无成员操作留痕"
+        pagination={{ pageSize: 10 }}
+        columns={[
+          { title: "成员", dataIndex: "actor", width: 110 },
+          {
+            title: "操作", dataIndex: "action", width: 150,
+            render: (_: unknown, r: ActivityItem) => (
+              <span className="text-[13px] text-[var(--ink)]">
+                {ACTION_CN[r.action] ?? r.action} {ENTITY_CN[r.entity] ?? r.entity}
+              </span>
+            ),
+          },
+          {
+            title: "变更摘要", dataIndex: "changes",
+            render: (_: unknown, r: ActivityItem) => {
+              try {
+                const c = JSON.parse(r.changes || "{}") as Record<string, unknown>;
+                const keys = Object.keys(c);
+                return (
+                  <span className="text-[12px] text-[var(--muted)]">
+                    {keys.length ? keys.slice(0, 4).join("、") + (keys.length > 4 ? " 等" : "") : "—"}
+                  </span>
+                );
+              } catch {
+                return <span className="text-[12px] text-[var(--muted)]">—</span>;
+              }
+            },
+          },
+          { title: "时间", dataIndex: "created_at", width: 170,
+            render: (v: string) => <span className="text-[12px] text-[var(--muted)]">{(v || "").replace("T", " ").slice(0, 19)}</span> },
+        ]}
+      />
+    </div>
+  );
+}
+
 /* ---------------- N2 团队 ---------------- */
 
 function TeamsPanel() {
@@ -1290,6 +1395,7 @@ export default function SettingsPage() {
             { tab: "团队", itemKey: "teams" },
             { tab: "线索分配", itemKey: "assignment" },
             { tab: "数据复核", itemKey: "review" },
+            { tab: "团队动态", itemKey: "activity" },
             { tab: "自动化", itemKey: "automation" },
             { tab: "通知偏好", itemKey: "notify" },
             { tab: "订阅规则", itemKey: "subrules" },
@@ -1491,6 +1597,11 @@ export default function SettingsPage() {
               ]}
             />
           </div>
+          </TabPane>
+
+          {/* 团队动态（SPEC-S 过程监管） */}
+          <TabPane itemKey="activity">
+          <ActivityPanel />
           </TabPane>
 
           {/* 自动化规则 */}

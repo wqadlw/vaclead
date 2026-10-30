@@ -363,3 +363,58 @@ def leaderboard(month: str | None = None, session: Session = Depends(get_session
     for rank, it in enumerate(items, 1):
         it["rank"] = rank
     return {"month": m, "items": items}
+
+
+# ---------------- 团队动态（SPEC-S 过程监管，audit_log 复用） ----------------
+@router.get("/org/activity")
+def team_activity(days: int = 7, limit: int = 50,
+                  session: Session = Depends(get_session),
+                  user: User = Depends(admin_only)):
+    """管理员过程监管：成员最近的人工操作（audit_log）+ 周度跟进/更新计数。"""
+    from datetime import timedelta
+
+    from ..models import AuditLog, Followup
+
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(days=min(days, 90))).isoformat(timespec="seconds")
+    rows = (
+        session.query(AuditLog, User)
+        .outerjoin(User, AuditLog.user_id == User.id)
+        .filter(AuditLog.user_id != 0, AuditLog.created_at >= cutoff)
+        .order_by(AuditLog.id.desc())
+        .limit(min(limit, 200))
+        .all()
+    )
+    items = [
+        {
+            "id": a.id, "actor": (u.display_name or u.username) if u else f"user#{a.user_id}",
+            "action": a.action, "entity": a.entity, "entity_id": a.entity_id,
+            "changes": a.changes_json, "created_at": a.created_at,
+        }
+        for a, u in rows
+    ]
+    fu = (
+        session.query(Lead.owner_id, func.count())
+        .join(Followup, Followup.lead_id == Lead.id)
+        .filter(Followup.created_at >= cutoff, Lead.owner_id.is_not(None))
+        .group_by(Lead.owner_id)
+        .all()
+    )
+    fu_map = {int(uid): int(c) for uid, c in fu if uid is not None}
+    upd = (
+        session.query(AuditLog.user_id, func.count())
+        .filter(AuditLog.user_id != 0, AuditLog.action == "update",
+                AuditLog.created_at >= cutoff)
+        .group_by(AuditLog.user_id)
+        .all()
+    )
+    upd_map = {int(uid): int(c) for uid, c in upd if uid is not None}
+    weekly = []
+    for uid in sorted(set(fu_map) | set(upd_map),
+                      key=lambda k: -(fu_map.get(k, 0) + upd_map.get(k, 0))):
+        u = session.get(User, uid)
+        if u is None:
+            continue
+        weekly.append({"user_id": uid, "name": u.display_name or u.username,
+                       "followups": fu_map.get(uid, 0), "updates": upd_map.get(uid, 0)})
+    return {"items": items, "weekly": weekly, "days": days}

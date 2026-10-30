@@ -999,4 +999,14 @@ tests/test_spec_q.py（新）、tasks.py dup-scan 端点、main.py 周六 05:00 
   来源/分数渲染复核页签已通用兼容，零改动。发现→复核→merge 全链路 UI 闭环。
 - 门禁：build + E2E 6/6（后端零改动，211 基线沿用）。
 
+## W39 SPEC-S 团队过程监管落地（Agent A）
+
+- GET /api/org/activity（admin，org.py）：audit_log 复用（J1 就位的人力留痕）——
+  近 N 天成员人工操作流（actor join User，排除系统 actor=0）+ 周度跟进/更新计数
+  （followup join lead.owner 聚合）；设置页新「团队动态」页签：周度成员徽章行
+  （跟进 N · 更新 N）+ 操作留痕表（动作中文化/变更摘要 keys/时间）。
+  PRODUCT_GAP §一③「过程监管」项至此落地。
+- 门禁：**212 后端全绿**（+活动端点 1）+ build + E2E 6/6。
+
+
 

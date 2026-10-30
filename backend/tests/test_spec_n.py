@@ -284,3 +284,26 @@ def test_leaderboard_aggregation(client, admin_headers, db):
     assert row["won_amount"] == 120.5 and row["new_leads"] >= 1 and row["followups"] >= 1
     assert row["rank"] >= 1
     assert client.get("/api/teams", headers=h).status_code == 200
+
+
+# ---------------- SPEC-S 团队动态（过程监管） ----------------
+def test_team_activity_endpoint(client, admin_headers, db):
+    h = admin_headers
+    tag = uuid.uuid4().hex[:6]
+    u1, _u2 = _mk_two_users(db, tag)
+    ent = Enterprise(name=f"监管{tag}有限公司", source="manual")
+    db.add(ent)
+    db.flush()
+    lead = Lead(enterprise_id=ent.id, status="following", owner_id=u1.id)
+    db.add(lead)
+    db.flush()
+    db.add(Followup(lead_id=lead.id, content="电话沟通"))
+    db.commit()
+    r = client.get("/api/org/activity", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body["items"], list) and isinstance(body["weekly"], list)
+    wk = next((w for w in body["weekly"] if w["user_id"] == u1.id), None)
+    assert wk is not None and wk["followups"] >= 1
+    # 非 admin 不可见
+    assert client.get("/api/org/activity").status_code in (401, 403)
