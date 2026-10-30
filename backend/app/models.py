@@ -67,6 +67,7 @@ class Enterprise(Base):
     icp_reasons: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON
     intent_score: Mapped[float] = mapped_column(REAL, nullable=False, default=0.0)
     is_competitor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    established_at: Mapped[str | None] = mapped_column(Text)  # 成立日期 YYYY-MM-DD（SPEC-M M2a，ggzy estdate 补入库）
     poi_id: Mapped[str | None] = mapped_column(Text)
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
@@ -618,4 +619,126 @@ class LeadCaptureLog(Base):
     ip: Mapped[str | None] = mapped_column(Text)
     enterprise_id: Mapped[int | None] = mapped_column(Integer)  # 归一匹配结果
     lead_id: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+# ---------------------------------------------------------------------------
+# SPEC-J J4 邮件序列触达闭环
+# ---------------------------------------------------------------------------
+class EmailAccount(Base):
+    """发信邮箱账户：emailengine 托管或 SMTP 直连，预热状态内嵌（warmbly 模型）。"""
+
+    __tablename__ = "email_account"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    email: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    provider: Mapped[str] = mapped_column(Text, nullable=False, default="emailengine")
+    # emailengine 走全局 settings_kv 四键；smtp 直连用下列四列
+    smtp_host: Mapped[str | None] = mapped_column(Text)
+    smtp_port: Mapped[int | None] = mapped_column(Integer)
+    smtp_user: Mapped[str | None] = mapped_column(Text)
+    smtp_pass: Mapped[str | None] = mapped_column(Text)
+    warmup_started_at: Mapped[str | None] = mapped_column(Text)  # ISO；空=成熟账户不设限
+    daily_cap: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")  # active|paused
+    health: Mapped[str] = mapped_column(Text, nullable=False, default="healthy")
+    # warmbly 五态 healthy|watch|throttled|quarantined|blocked；后两态预算归零
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class Sequence(Base):
+    """触达序列：有序步骤模板（listmonk 式变量 {{lead.company}} 等在发送时渲染）。"""
+
+    __tablename__ = "sequence"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    steps: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # JSON [{delay_days,subject,body}]；delay_days=距上一步的天数，首步立即
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class Campaign(Base):
+    """触达活动：序列 × 发信账户 × 目标筛选（target_filter JSON）。"""
+
+    __tablename__ = "campaign"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    sequence_id: Mapped[int | None] = mapped_column(ForeignKey("sequence.id"))
+    email_account_id: Mapped[int | None] = mapped_column(ForeignKey("email_account.id"))
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
+    # draft|running|paused|done；只有 running 参与调度
+    daily_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    target_filter: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    # JSON {score_min,industry,source}：enqueue 时对在管线索过滤
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
+    started_at: Mapped[str | None] = mapped_column(Text)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class EmailMessage(Base):
+    """触达邮件：入队(queued)→发送(sent/failed)→回信(replied)全状态单行。
+
+    UNIQUE(campaign,lead,step) 防重发是硬约束：enqueue 幂等靠它兜底。
+    subject/body 入队存模板原文，发送时渲染并回写（留档客户实际收到的内容）。
+    """
+
+    __tablename__ = "email_message"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "lead_id", "step_idx", name="uq_outreach_dedup"),
+        Index("ix_outreach_status_sched", "status", "scheduled_at"),
+        Index("ix_outreach_campaign", "campaign_id"),
+        Index("ix_outreach_account_day", "account_email", "sent_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    campaign_id: Mapped[int] = mapped_column(
+        ForeignKey("campaign.id", ondelete="CASCADE"), nullable=False
+    )
+    lead_id: Mapped[int] = mapped_column(
+        ForeignKey("lead.id", ondelete="CASCADE"), nullable=False
+    )
+    step_idx: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    account_email: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    to_email: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    subject: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="queued")
+    # queued|sent|failed|bounced|replied
+    scheduled_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+    sent_at: Mapped[str | None] = mapped_column(Text)
+    message_id: Mapped[str | None] = mapped_column(Text)  # 发信通道返回的 Message-ID
+    thread_id: Mapped[str | None] = mapped_column(Text)  # 会话归组=首封 message_id
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class OutreachEvent(Base):
+    """触达事件流：sent|open|click|reply|bounced|unsubscribed|failed。"""
+
+    __tablename__ = "outreach_event"
+    __table_args__ = (Index("ix_oe_message", "message_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("email_message.id", ondelete="CASCADE"), nullable=False
+    )
+    type: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False, default="{}")  # JSON
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class Unsubscribe(Base):
+    """退订名单（合规红线：触达必带退订链接，退订后所有活动不再发送）。"""
+
+    __tablename__ = "unsubscribe"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    lead_id: Mapped[int | None] = mapped_column(Integer)
+    reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)

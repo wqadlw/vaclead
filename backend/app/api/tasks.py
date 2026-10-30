@@ -1054,6 +1054,31 @@ def start_enrich_pipeline(
     return {"task_id": task_id}
 
 
+@router.post("/tasks/outreach-dispatch")
+def start_outreach_dispatch(
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """触达调度任务（SPEC-J J4）：收件同步 + 预算内发送，SSE 可观测。"""
+    task_id = uuid.uuid4().hex[:12]
+    session.add(TaskCheckpoint(task_id=task_id, kind="outreach", status="running", progress=0))
+    session.commit()
+
+    def _worker() -> dict:
+        from ..outreach.dispatcher import run_outreach_dispatch
+
+        with SessionLocal() as s:
+            totals = run_outreach_dispatch(s)
+        _log(task_id, f"触达调度完成：发送 {totals['sent']}，回信 {totals['replies']}，"
+                      f"失败 {totals['failed']}，预算耗尽挂起 {totals['budget_exhausted']}")
+        return totals
+
+    from .task_runtime import spawn
+
+    spawn(task_id, _worker, label="outreach-dispatch")
+    return {"task_id": task_id}
+
+
 @router.post("/tasks/{task_id}/cancel")
 def cancel_task(
     task_id: str,

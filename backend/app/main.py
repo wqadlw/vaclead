@@ -163,6 +163,10 @@ async def lifespan(app: FastAPI):
     init_db()
     _inject_tools()
     _recover_interrupted_tasks()
+    # 日志按天滚动（I6 P2）：data/logs/vaclead.log，保留 14 天
+    from .logrotate import setup_logging
+
+    setup_logging()
     # 审计钩子（SPEC-J J1）：update/delete 落 audit_log
     from .audit import install as _install_audit
 
@@ -312,6 +316,17 @@ async def lifespan(app: FastAPI):
                 return audit_cleanup(s)
 
         _register_cron("audit_cleanup", _audit_cleanup_sweep, 4, 12)
+
+        # SPEC-J J4：触达调度——工作时段两次（收件同步 + 预算内发送）
+        def _outreach_dispatch_sweep() -> dict:
+            from .db import SessionLocal as _SL
+            from .outreach.dispatcher import run_outreach_dispatch
+
+            with _SL() as s:
+                return run_outreach_dispatch(s)
+
+        _register_cron("outreach_dispatch", _outreach_dispatch_sweep, 9, 30)
+        _register_cron("outreach_dispatch", _outreach_dispatch_sweep, 14, 30)
         scheduler.start()
     except Exception:  # noqa: BLE001 — APScheduler 不可用时跳过定时任务（不影响主功能）
         import logging
@@ -384,6 +399,12 @@ app.include_router(quotes.router, prefix="/api")
 from .api import leadforms  # noqa: E402
 
 app.include_router(leadforms.router, prefix="/api")
+from .api import outreach  # noqa: E402
+
+app.include_router(outreach.router, prefix="/api")
+from .api import signals  # noqa: E402
+
+app.include_router(signals.router, prefix="/api")
 
 
 # ---- 单进程部署：托管前端静态导出（frontend/out），SPA 回退 ----

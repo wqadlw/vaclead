@@ -41,12 +41,12 @@ def is_configured(session: Session) -> bool:
     return bool(c["url"] and c["token"] and c["account"] and c["from"])
 
 
-def submit(session: Session, *, to: str, subject: str, text: str,
-           html: str | None = None, track: bool = True) -> bool:
-    """发信（fire-and-forget 语义：失败记日志返回 False，不抛异常）。"""
+def submit_full(session: Session, *, to: str, subject: str, text: str,
+                html: str | None = None, track: bool = True) -> tuple[bool, str | None]:
+    """发信并取回远端 messageId（J4 触达回信归并依赖它）；返回 (ok, message_id)。"""
     if not is_configured(session):
         logger.info("emailengine 未配置，跳过发信")
-        return False
+        return False, None
     c = _conf(session)
     payload: dict = {
         "account": c["account"],
@@ -67,12 +67,20 @@ def submit(session: Session, *, to: str, subject: str, text: str,
                 headers={"Authorization": f"Bearer {c['token']}"},
             )
         if resp.status_code == 200 and resp.json().get("response") == "queued":
-            return True
+            return True, resp.json().get("messageId")
         logger.warning("emailengine 发信异常 %s: %s", resp.status_code, resp.text[:120])
-        return False
+        return False, None
     except httpx.HTTPError as exc:
         logger.warning("emailengine 请求失败: %s", exc)
-        return False
+        return False, None
+
+
+def submit(session: Session, *, to: str, subject: str, text: str,
+           html: str | None = None, track: bool = True) -> bool:
+    """发信（fire-and-forget 语义：失败记日志返回 False，不抛异常）。"""
+    ok, _ = submit_full(session, to=to, subject=subject, text=text,
+                        html=html, track=track)
+    return ok
 
 
 def list_messages(session: Session, *, limit: int = 20, folder: str = "INBOX") -> list[dict]:

@@ -7,11 +7,14 @@ import {
   ClipboardList,
   FileText,
   Gauge,
+  Inbox,
   LogOut,
+  Megaphone,
   Package,
   Radar,
   Rocket,
   Search,
+  Send,
   Settings,
   UserRound,
   Bell,
@@ -25,10 +28,17 @@ import { BRAND, PAGE_TITLES } from "@/lib/theme";
 
 const NAV = [
   { href: "/", label: "工作台", icon: Gauge },
+  { href: "/signals", label: "标讯中心", icon: Megaphone },
   { href: "/enterprises", label: "企业筛选", icon: Search },
   { href: "/leads", label: "线索看板", icon: Radar },
   { href: "/quotes", label: "报价单", icon: FileText },
   { href: "/products", label: "产品目录", icon: Package },
+];
+
+/** SPEC-J J4 触达组 */
+const OUTREACH_NAV = [
+  { href: "/outreach", label: "序列触达", icon: Send },
+  { href: "/outreach/inbox", label: "收件箱", icon: Inbox },
 ];
 
 const ADMIN_NAV = [
@@ -217,6 +227,8 @@ function CommandPalette() {
     { label: "工作台", path: "/" },
     { label: "企业筛选", path: "/enterprises" },
     { label: "线索看板", path: "/leads" },
+    { label: "序列触达", path: "/outreach" },
+    { label: "收件箱", path: "/outreach/inbox" },
     { label: "拓客任务", path: "/tasks" },
     { label: "设置", path: "/settings" },
   ].filter((p) => !q || p.label.includes(q.trim()));
@@ -306,7 +318,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const navItems = role === "admin" ? [...NAV, ...ADMIN_NAV] : NAV;
+  const navSections: { label: string | null; items: typeof NAV }[] = [
+    { label: null, items: NAV },
+    { label: "触达", items: OUTREACH_NAV },
+  ];
+  if (role === "admin") navSections.push({ label: null, items: ADMIN_NAV });
 
   return (
     <div className="min-h-screen bg-[var(--ground)]">
@@ -322,25 +338,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <nav className="mt-6 flex-1 space-y-0.5 px-3">
-          {navItems.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href;
-            return (
-              <button
-                key={href}
-                data-nav={href}
-                onClick={() => router.push(href)}
-                className={`nav-item flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-[7px] text-left text-[13.5px] ${
-                  active
-                    ? "nav-pill font-medium"
-                    : "text-[var(--muted)] hover:bg-[rgba(19,20,22,0.04)] hover:text-[var(--ink)]"
-                }`}
-              >
-                <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
-                {label}
-              </button>
-            );
-          })}
+        <nav className="mt-6 flex-1 space-y-0.5 overflow-y-auto px-3 pb-2">
+          {navSections.map((sec, si) => (
+            <div key={sec.label ?? `sec-${si}`}>
+              {sec.label && (
+                <div className="px-3 pb-1 pt-4 text-[11px] font-medium tracking-[0.08em] text-[#9ca0a3]">
+                  {sec.label}
+                </div>
+              )}
+              {sec.items.map(({ href, label, icon: Icon }) => {
+                const active = pathname === href;
+                return (
+                  <button
+                    key={href}
+                    data-nav={href}
+                    onClick={() => router.push(href)}
+                    className={`nav-item flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-[7px] text-left text-[13.5px] ${
+                      active
+                        ? "nav-pill font-medium"
+                        : "text-[var(--muted)] hover:bg-[rgba(19,20,22,0.04)] hover:text-[var(--ink)]"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         <div className="px-5 pb-4 text-[11px] text-[#9ca0a3]">

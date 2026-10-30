@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Checkbox, Dropdown, Input, InputNumber, Modal, Popover, Select, Table, Tag, Tabs, Toast } from "@douyinfe/semi-ui";
 import { Pencil, Save, Search, Settings2, RotateCcw, X } from "lucide-react";
@@ -110,6 +110,7 @@ export default function EnterprisesPage() {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<PageData<Enterprise> | null>(null);
   const [loading, setLoading] = useState(false);
+  const fetchSeq = useRef(0);
   const [convertingId, setConvertingId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [peekId, setPeekId] = useState<number | null>(null);
@@ -249,6 +250,9 @@ export default function EnterprisesPage() {
   };
 
   const fetchData = useCallback(async (f: Filters, p: number) => {
+    // 请求序号守卫：挂载请求与点击筛选请求几乎同时发出时，慢的旧响应
+    // 会覆盖新结果（E2E 旅程复现：筛选后仍显示未筛选计数）——只让最新请求落账
+    const seq = ++fetchSeq.current;
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -270,11 +274,12 @@ export default function EnterprisesPage() {
       if (f.has_contact) params.set("has_contact", "1");
       params.set("page", String(p));
       params.set("page_size", String(PAGE_SIZE));
-      setData(await api.get<PageData<Enterprise>>(`/api/enterprises?${params.toString()}`));
+      const next = await api.get<PageData<Enterprise>>(`/api/enterprises?${params.toString()}`);
+      if (seq === fetchSeq.current) setData(next);
     } catch (e) {
       Toast.error(`查询失败：${e instanceof Error ? e.message : "未知错误"}`);
     } finally {
-      setLoading(false);
+      if (seq === fetchSeq.current) setLoading(false);
     }
   }, []);
 

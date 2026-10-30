@@ -73,3 +73,80 @@
 **穿插**：J5 web-to-lead（随 Wave 2）
 
 门禁不变：pytest 全绿 + build + E2E + import smoke；每项带 tests；WORKLOG W32 记录。
+
+## J4 实施细化契约（W34 落地版，2026-10-31）
+
+> 摸底结论：emailengine_client（submit/list_messages/is_configured）与 warmup.py
+> （WarmupConfig/apply/classify_health）已是现成地基；J4 在其上建触达层。
+
+### 表（models.py 追加，全部含 tenant_id/utcnow 惯例）
+
+- `email_account`：id/name/email/provider("emailengine"|"smtp")/smtp_host/smtp_port/
+  smtp_user/smtp_pass/warmup_started_at(ISO)/daily_cap(int,默认20)/status(active|paused)/
+  health(healthy|watch|throttled|quarantined|blocked,默认 healthy)
+- `campaign`：id/name/sequence_id(FK)/email_account_id(FK)/status(draft|running|paused|done)/
+  daily_limit(int,默认50)/target_filter(JSON:{"score_min":?,"industry":?,"source":?})/
+  owner_id/started_at
+- `sequence`：id/name/steps(JSON 数组:[{"delay_days":0,"subject":"...","body":"..."},...])
+  （listmonk 式：body 支持 {{lead.company}}/{{contact.name}}/{{enterprise.city}}/
+  {{sender.name}}/{{unsubscribe_url}} 变量）
+- `email_message`：id/campaign_id/lead_id/step_idx/account_email/to_email/subject/body/
+  status(queued|sent|failed|bounced|replied)/scheduled_at(Index)/sent_at/message_id/
+  thread_id(=首封 message_id)/error + **UNIQUE(campaign_id,lead_id,step_idx) 防重发**
+  + Index(status,scheduled_at)
+- `outreach_event`：id/message_id/type(sent|open|click|reply|bounced|unsubscribed)/
+  payload(JSON)/created_at
+- `unsubscribe`：id/email UNIQUE/lead_id/reason/created_at —— 退订名单，dispatch 前必查
+
+### 发送链（app/outreach/ 新包）
+
+- `templates.py`：render(subject_tpl, body_tpl, lead, contact, sender) —— {{var}} 正则替换，
+  未知变量替换为 ""；unsubscribe_url 指向 GET /api/public/unsubscribe/{token}
+  （token=unsubscribe 表按 email 预生成或 sha256(email+secret)），命中后写名单+outreach_event
+- `budget.py`：纯函数 `available_budget(account, campaign, date_iso, session)` =
+  min(account.daily_cap, campaign.daily_limit, warmup.apply(...))，
+  当日已发数 = COUNT(email_message WHERE account_email=? AND sent_at 当日 AND status='sent')，
+  返回 max(0, 预算-已发)；warmup 起始天数由 account.warmup_started_at 推
+- `sender.py`：send_one(session, message) —— provider=emailengine 走 emailengine_client.submit；
+  provider=smtp 用 smtplib(STARTTLS, 登录, EmailMessage)；返回 (ok, message_id, error)
+- `dispatcher.py`：run_outreach_dispatch(session) worker ——
+  ①收件同步 sync_inbox：emailengine list_messages → In-Reply-To↔message_id 匹配 + 主题
+  "Re: {subject}" fallback → 命中则 message.status=replied + outreach_event(reply)
+  + Followup(content="[自动回信] ...") 落 lead 时间线；_is_auto_reply 过滤（主题/正文含
+  auto reply|自动回复|out of office|unsubscribe confirmation 等词表则只记事件不落跟进）
+  ②发送：campaign(status=running) × queued message（scheduled_at<=now，join lead/contact
+  取邮箱，contact 无邮箱用 enterprise 线索邮箱跳过）——按预算链逐条 send，
+  已退订跳过并标 failed(error=unsubscribed)；发送即 outreach_event(sent)
+- 复用 api/task_runtime.py spawn：POST /api/tasks/outreach-dispatch（SSE 可观测+取消）；
+  jobs.py 注册 CRON 每日 09:30/14:30 两次 dispatch（工作时段发送）
+- 入队：POST /api/outreach/campaigns/{id}/enqueue —— 按 target_filter 选 lead
+  （join enterprise：icp_score>=score_min/industry/source），逐 lead × sequence steps
+  生成 email_message（首步 scheduled_at=now，后续=前步+delay_days），UNIQUE 撞重跳过；
+  退订名单内 lead 直接排除
+
+### 端点（app/api/outreach.py，router prefix /api/outreach）
+
+- GET/POST /campaigns；PUT /campaigns/{id}（含 status 翻转 running|paused）；
+  POST /campaigns/{id}/enqueue（返回 {created,skipped_dup,skipped_unsub}）
+- GET/POST /sequences；PUT/DELETE /sequences/{id}（被 campaign 引用时 409）
+- GET /messages?campaign_id=&status=&page=（联 lead/enterprise 名）
+- GET /inbox（会话视图：message 按 thread_id 分组，status=replied 的在前，含回信正文
+  ——从 outreach_event(type=reply).payload 提取）
+- GET /unsubscribe-list；DELETE /unsubscribe-list/{email}
+- 公开：GET /api/public/unsubscribe/{token}（无鉴权，返回确认页文案 HTML）+ POST 同路径
+  （表单确认，写名单幂等）
+
+### 前端（frontend/app/outreach/）
+
+- /outreach 页：双区——序列编排器（sequence 列表+步骤编辑抽屉：delay_days/subject/body
+  文本域+变量提示 chips）+ 活动列表（名称/关联序列/账户/状态徽章/今日已发/预算/
+  启停按钮/enqueue 按钮+SSE 任务卡复用现有任务页模式）
+- /outreach/inbox 页：左会话列表（联系人/主题/最后时间/replied 徽章）右会话详情
+  （sent/replied 时间线+回信正文+「去跟进」跳线索页）；AppShell 导航加「触达」组两项
+- framed-sheet 约束：无渐变无阴影，青蓝 #1b6c80 强调，Semi 组件 + 现有 lib/api.ts
+
+### 门禁
+
+test_spec_j4.py（预算链纯函数/模板渲染/退订端点/UNIQUE 防重发/回信匹配+auto_reply 过滤/
+dispatch 用 stub sender 注入跑通 sent+reply 全链）≥8 用例；
+pytest 全量+build+E2E+import smoke 全绿；WORKLOG W34。
