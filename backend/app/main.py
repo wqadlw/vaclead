@@ -365,6 +365,16 @@ async def lifespan(app: FastAPI):
             logging.getLogger("vaclead.jobs").info(
                 "webhook 投递引擎已注册（interval 10min）"
             )
+
+        # SPEC-Q：每周六 05:00 全库查重扫描 → 喂复核队列
+        def _dup_scan_sweep() -> dict:
+            from .db import SessionLocal as _SLD
+            from .dedupe import scan_duplicates
+
+            with _SLD() as _sd:
+                return scan_duplicates(_sd)
+
+        _register_cron("dup_scan", _dup_scan_sweep, 5, 0, day_of_week="sat")
         scheduler.start()
     except Exception:  # noqa: BLE001 — APScheduler 不可用时跳过定时任务（不影响主功能）
         import logging

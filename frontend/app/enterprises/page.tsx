@@ -68,10 +68,32 @@ interface Filters {
   capital_max?: number | null;
   signal_days?: number | null;
   score_min?: number | null;
+  established_within_years?: number | null;
+  bid_min?: number | null;
+  bid_amount_min?: number | null;
   is_competitor: number;
   source?: string;
   has_contact?: number;
 }
+
+const ESTABLISHED_OPTIONS = [
+  { value: 1, label: "成立 1 年内" },
+  { value: 3, label: "成立 3 年内" },
+  { value: 5, label: "成立 5 年内" },
+  { value: 10, label: "成立 10 年内" },
+];
+const BID_MIN_OPTIONS = [
+  { value: 1, label: "中标 ≥ 1 次" },
+  { value: 3, label: "中标 ≥ 3 次" },
+  { value: 5, label: "中标 ≥ 5 次" },
+  { value: 10, label: "中标 ≥ 10 次" },
+];
+const BID_AMOUNT_OPTIONS = [
+  { value: 100, label: "中标额 ≥ 100 万" },
+  { value: 500, label: "中标额 ≥ 500 万" },
+  { value: 1000, label: "中标额 ≥ 1000 万" },
+  { value: 5000, label: "中标额 ≥ 5000 万" },
+];
 
 const TIER_TAG: Record<number, "indigo" | "cyan" | "grey"> = { 1: "indigo", 2: "cyan", 3: "grey" };
 const TIER_BY_KEY: Record<string, number> = {};
@@ -103,6 +125,12 @@ export default function EnterprisesPage() {
     if (hc) f.has_contact = Number(hc);
     const sm = sp.get("score_min");
     if (sm) f.score_min = Number(sm);
+    const ey = sp.get("established_within_years");
+    if (ey) f.established_within_years = Number(ey);
+    const bm = sp.get("bid_min");
+    if (bm) f.bid_min = Number(bm);
+    const ba = sp.get("bid_amount_min");
+    if (ba) f.bid_amount_min = Number(ba);
     return f;
   };
   const [filters, setFilters] = useState<Filters>(initFromUrl);
@@ -269,6 +297,9 @@ export default function EnterprisesPage() {
       if (typeof f.capital_max === "number") params.set("capital_max", String(f.capital_max));
       if (typeof f.signal_days === "number") params.set("signal_days", String(f.signal_days));
       if (typeof f.score_min === "number") params.set("score_min", String(f.score_min));
+      if (typeof f.established_within_years === "number") params.set("established_within_years", String(f.established_within_years));
+      if (typeof f.bid_min === "number") params.set("bid_min", String(f.bid_min));
+      if (typeof f.bid_amount_min === "number") params.set("bid_amount_min", String(f.bid_amount_min));
       params.set("is_competitor", String(f.is_competitor));
       if (f.source) params.set("source", f.source);
       if (f.has_contact) params.set("has_contact", "1");
@@ -297,6 +328,9 @@ export default function EnterprisesPage() {
     if (applied.source) sp.set("source", applied.source);
     if (applied.has_contact) sp.set("has_contact", String(applied.has_contact));
     if (typeof applied.score_min === "number") sp.set("score_min", String(applied.score_min));
+    if (typeof applied.established_within_years === "number") sp.set("established_within_years", String(applied.established_within_years));
+    if (typeof applied.bid_min === "number") sp.set("bid_min", String(applied.bid_min));
+    if (typeof applied.bid_amount_min === "number") sp.set("bid_amount_min", String(applied.bid_amount_min));
     if (applied.is_competitor !== -1) sp.set("is_competitor", String(applied.is_competitor));
     const qs = sp.toString();
     window.history.replaceState(null, "", qs ? `/enterprises?${qs}` : "/enterprises");
@@ -345,6 +379,9 @@ export default function EnterprisesPage() {
     const province = applied.province?.trim();
     if (province) params.set("province", province);
     if (applied.source) params.set("source", applied.source);
+    if (typeof applied.established_within_years === "number") params.set("established_within_years", String(applied.established_within_years));
+    if (typeof applied.bid_min === "number") params.set("bid_min", String(applied.bid_min));
+    if (typeof applied.bid_amount_min === "number") params.set("bid_amount_min", String(applied.bid_amount_min));
     params.set("is_competitor", String(applied.is_competitor));
     if (typeof window === "undefined") return "#";  // SSG 预渲染守卫
     return `${window.location.port === "3000" ? "http://127.0.0.1:8000" : ""}/api/enterprises/export?${params.toString()}`;
@@ -646,6 +683,9 @@ export default function EnterprisesPage() {
         </div>
         <Select style={ctl} optionList={SIGNAL_DAY_OPTIONS} placeholder="信号不限" showClear value={filters.signal_days ?? undefined} onChange={(v) => set({ signal_days: typeof v === "number" ? v : null })} />
         <Select style={ctl} optionList={SCORE_MIN_OPTIONS} placeholder="评分不限" showClear value={filters.score_min ?? undefined} onChange={(v) => set({ score_min: typeof v === "number" ? v : null })} />
+        <Select style={ctl} optionList={ESTABLISHED_OPTIONS} placeholder="成立年限不限" showClear value={filters.established_within_years ?? undefined} onChange={(v) => set({ established_within_years: typeof v === "number" ? v : null })} />
+        <Select style={ctl} optionList={BID_MIN_OPTIONS} placeholder="中标次数不限" showClear value={filters.bid_min ?? undefined} onChange={(v) => set({ bid_min: typeof v === "number" ? v : null })} />
+        <Select style={ctl} optionList={BID_AMOUNT_OPTIONS} placeholder="中标额不限" showClear value={filters.bid_amount_min ?? undefined} onChange={(v) => set({ bid_amount_min: typeof v === "number" ? v : null })} />
         <Select style={ctl} optionList={COMPETITOR_OPTIONS} value={filters.is_competitor} onChange={(v) => set({ is_competitor: (v as number) ?? -1 })} />
         <Select style={ctl} optionList={SOURCE_OPTIONS} placeholder="全部来源" showClear value={filters.source ?? undefined} onChange={(v) => set({ source: (v as string) || undefined })} />
         <Input

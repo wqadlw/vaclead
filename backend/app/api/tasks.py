@@ -1079,6 +1079,31 @@ def start_outreach_dispatch(
     return {"task_id": task_id}
 
 
+@router.post("/tasks/dup-scan")
+def start_dup_scan(
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """全库企业查重扫描任务（SPEC-Q）：rapidfuzz 两两比对喂复核队列，SSE 可观测。"""
+    task_id = uuid.uuid4().hex[:12]
+    session.add(TaskCheckpoint(task_id=task_id, kind="dup_scan", status="running", progress=0))
+    session.commit()
+
+    def _worker() -> dict:
+        from ..dedupe import scan_duplicates
+
+        with SessionLocal() as s:
+            totals = scan_duplicates(s)
+        _log(task_id, f"查重完成：比对 {totals['compared']} 对，"
+                      f"新入复核 {totals['queued']}（存量 {totals['enterprises']} 家）")
+        return totals
+
+    from .task_runtime import spawn
+
+    spawn(task_id, _worker, label="dup-scan")
+    return {"task_id": task_id}
+
+
 @router.post("/tasks/{task_id}/cancel")
 def cancel_task(
     task_id: str,

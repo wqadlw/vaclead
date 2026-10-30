@@ -971,3 +971,24 @@ lifespan）——分两次提交会造出"提交 A 的树引用未提交的 webh
 签名与数组 payload/410 停用/退避终态/CRUD 打码/ping/白名单）+ build 18/18 +
 E2E 6/6 + import smoke。主线程（Agent A）与 1 个前端子 Agent 分工，与 Agent B 的
 SPEC-M（已提交 3173e8a）/SPEC-O（WIP：reports.py/SPEC-O.md）零文件交集。
+
+
+## 2026-10-31 · W38 认领：SPEC-Q 数据质量·查重扫描（Agent A）
+
+摸底修正：看板拖拽/日历视图已存在（leads 页二十吸收时落地），SPEC-Q 转向数据质量。
+review_queue/merge/reject/设置页复核 tab 均已就位（SPEC-B W12），本 SPEC 只补
+"主动发现"一环：全库模糊查重扫描 → 喂复核队列。文件：backend/app/dedupe.py（新）、
+tests/test_spec_q.py（新）、tasks.py dup-scan 端点、main.py 周六 05:00 cron。
+避开 Agent B 的 SPEC-O（reports/governance/jobs）。
+
+## W38 SPEC-Q 落地 + SPEC-M 遗留补齐（Agent A）
+
+- **查重扫描**：app/dedupe.py——rapidfuzz 全库两两比对（norm_name 去括号标点+小写；
+  O(N²) 有 5000 家上限；小 id=target 幸存者/大 id=candidate），85 分入 review_queue
+  （reason=dup_scan，UNIQUE 幂等重扫安全）；POST /api/tasks/dup-scan（SSE）+
+  周六 05:00 cron（day_of_week 参数复用 SPEC-O 扩展）。resolve 实时归一只比
+  "同时到达"，跨渠道先后入库的近名企业首次被主动比对——发现→复核→merge 链路闭环。
+- **SPEC-M 遗留补齐**：企业列表新增「成立年限/中标次数/中标额」三个筛选 Select
+  （后端参数已就绪），接线 URL 同步+fetchData+导出 CSV 三处——导出=所见。
+- 门禁：**211 后端全绿**（207+Q4）+ build + E2E 6/6。
+
