@@ -102,6 +102,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | 2026-10-30 | contact +email/decision_role/verify_state；automation_rule +cond_has_email_decision | 幂等 ALTER（PRAGMA table_info 检查后 ADD COLUMN，SPEC-J J2） |
 | 2026-10-30 | 新增表：audit_log/user_api_key/user_target/subscription_rule（J1/J6/J7）、product/quote/quote_item（J3）、lead_form/lead_capture_log（J5） | create_all 自动建（重启生效） |
 | 2026-10-31 | enterprise +established_at（成立日期，SPEC-M M2a） | 幂等 ALTER + ggzy 池回填 160 家 |
+| 2026-11-01 | enterprise +legal_rep（法定代表人，SPEC-U U1） | 幂等 ALTER + ggzy 池回填 497 家（2645 主体扫描） |
 | 2026-10-31 | user +email/active/team_id（SPEC-N N1 组织化）+ 新增表 team/assignment_rule | **首次自动化**：db.init_db `_ensure_columns()` 启动幂等 ALTER（旧库免手工）+ create_all |
 | 2026-10-31 | 新增表 webhook/webhook_delivery（SPEC-P） | create_all 自动建；调度见 §3 webhook_flush（interval 10min） |
 

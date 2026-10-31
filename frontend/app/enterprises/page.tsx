@@ -71,6 +71,7 @@ interface Filters {
   established_within_years?: number | null;
   bid_min?: number | null;
   bid_amount_min?: number | null;
+  complete?: number;
   is_competitor: number;
   source?: string;
   has_contact?: number;
@@ -131,6 +132,8 @@ export default function EnterprisesPage() {
     if (bm) f.bid_min = Number(bm);
     const ba = sp.get("bid_amount_min");
     if (ba) f.bid_amount_min = Number(ba);
+    const cp = sp.get("complete");
+    if (cp) f.complete = Number(cp);
     return f;
   };
   const [filters, setFilters] = useState<Filters>(initFromUrl);
@@ -300,6 +303,7 @@ export default function EnterprisesPage() {
       if (typeof f.established_within_years === "number") params.set("established_within_years", String(f.established_within_years));
       if (typeof f.bid_min === "number") params.set("bid_min", String(f.bid_min));
       if (typeof f.bid_amount_min === "number") params.set("bid_amount_min", String(f.bid_amount_min));
+      if (typeof f.complete === "number") params.set("complete", String(f.complete));
       params.set("is_competitor", String(f.is_competitor));
       if (f.source) params.set("source", f.source);
       if (f.has_contact) params.set("has_contact", "1");
@@ -393,13 +397,24 @@ export default function EnterprisesPage() {
       dataIndex: "name",
       width: 260,
       render: (_: unknown, r: Enterprise) => (
-        <button
-          onClick={() => setPeekId(r.id)}
-          className="block max-w-[240px] cursor-pointer truncate border-0 bg-transparent p-0 text-left text-[13.5px] font-medium text-[var(--ink)] hover:text-[var(--accent)]"
-          title={`${r.name} · 打开情报页`}
-        >
-          {r.name}
-        </button>
+        <>
+          <button
+            onClick={() => setPeekId(r.id)}
+            className="block max-w-[240px] cursor-pointer truncate border-0 bg-transparent p-0 text-left text-[13.5px] font-medium text-[var(--ink)] hover:text-[var(--accent)]"
+            title={`${r.name} · 打开情报页`}
+          >
+            {r.name}
+          </button>
+          {/* SPEC-U U3：资料完整度徽标（法人/成立日期/注册资本/经营范围 四点） */}
+          <span className="mt-0.5 flex items-center gap-0.5" title="资料完整度：法人/成立日期/注册资本/经营范围">
+            {[0, 1, 2, 3].map((i) => (
+              <span
+                key={i}
+                className={`inline-block h-1.5 w-3 rounded-sm ${i < (r.completeness ?? 0) ? "bg-[var(--accent)]" : "bg-[var(--rule)]"}`}
+              />
+            ))}
+          </span>
+        </>
       ),
     },
     {

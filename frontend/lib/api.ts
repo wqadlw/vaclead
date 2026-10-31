@@ -128,6 +128,9 @@ export interface Enterprise {
   id: number;
   name: string;
   uscc?: string | null;
+  legal_rep?: string | null;
+  established_at?: string | null;
+  completeness?: number;
   status?: string;
   source?: string;
   province: string | null;

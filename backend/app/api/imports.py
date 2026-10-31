@@ -232,6 +232,8 @@ _HEADER_SYNONYMS: dict[str, str] = {
     "industry_key": "industry_key", "行业": "industry_key", "行业键": "industry_key",
     "established_at": "established_at", "成立日期": "established_at",
     "成立时间": "established_at", "成立年份": "established_at",
+    "legal_rep": "legal_rep", "法定代表人": "legal_rep", "法人": "legal_rep",
+    "法人代表": "legal_rep",
 }
 
 
@@ -292,6 +294,8 @@ async def import_paste(
                 setattr(ent, field, row[field])
         if row.get("established_at") and not ent.established_at:
             ent.established_at = row["established_at"][:10]  # YYYY-MM-DD 前缀容错
+        if row.get("legal_rep") and not ent.legal_rep:
+            ent.legal_rep = row["legal_rep"]
         if row.get("registered_capital_wan"):
             try:
                 ent.registered_capital_wan = float(row["registered_capital_wan"])
@@ -355,6 +359,8 @@ async def import_enterprises(
         ent.business_scope = row.get("business_scope") or ent.business_scope
         if row.get("established_at") and not ent.established_at:
             ent.established_at = row["established_at"][:10]
+        if row.get("legal_rep") and not ent.legal_rep:
+            ent.legal_rep = row["legal_rep"]
         if row.get("registered_capital_wan"):
             try:
                 ent.registered_capital_wan = float(row["registered_capital_wan"])

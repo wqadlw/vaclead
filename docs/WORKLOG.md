@@ -1044,3 +1044,36 @@ kdump 实际值（{'new_enterprises': (2, 56),...} 一眼定位）——**带实
 
 **门禁**：217 全绿 + build + E2E 6（8017）。
 **坑**：lucide-react 无 LeftCircle/RightCircle（ChevronLeft/ChevronRight）。
+
+
+## 2026-11-01 · W38 认领 · SPEC-U 企业信息深化（Agent B）
+
+用户拍板："企业信息是非常重要的"。摸底实锤数据漏损：ggzy 采集器自始抽取
+legal_rep（normalize_entity_record 返回）但 Enterprise 无列——法人数据全程被丢弃。
+契约 docs/SPEC-U.md（工商卡/完整度五要素/导出增列），复用 est_date 同款模式。
+**动文件**：models/normalize/jobs(ggzy 调用处)/imports/enterprises.py/intel.py/
+enterprises view page/signals?否——以及真库幂等 ALTER+回填。工作区当前干净（无同事 WIP）。
+
+
+## 2026-11-01 · W38 SPEC-U 企业信息深化（Agent B，用户"企业信息是非常重要的"）
+
+**数据漏损实锤修复**：ggzy 采集器自始抽取 legal_rep（normalize_entity_record 返回）但
+Enterprise 无列——**法定代表人从第一天起就在被丢弃**。复用 est_date 同款模式修复：
+- **U1**：enterprise +legal_rep（幂等 ALTER）；resolve 签名 +legal_rep（新建落库/
+  已有空值补填不覆盖）；ggzy 调用处传参；CSV 表头同义词+「法定代表人/法人/法人代表」
+  （双路径行处理落库）；**真库回填 497 家法人**（2645 主体扫描，extended 宽词全用），
+  est_date 顺带再补 3（累计 544）
+- **U2 工商信息卡**：情报页档案页签顶部重排——统一信用代码/法定代表人/成立日期/
+  注册资本/行业/区域/地址/经营范围，头部带**资料完整度 n/4** +「数据来源：官方公示」
+  标注（合规：调研确认完整度=内部数据质量管理，文案避开"评分/信用"字眼，
+  不触碰《征信业务管理办法》备案边界）
+- **U3 完整度**：Enterprise.completeness() 四要素计数（法人/成立日期/注册资本/经营范围
+  ——联系方式不计入避免列表每行查 contact；SPEC 原五要素，实施时修正并注明）；
+  列表行四点徽标 + Quick picks「资料齐全」(complete=1，SQLite 路径四字段非空)
+  + 详情/列表接口均返回
+- **U4 导出**：CSV 增列 法定代表人/成立日期/资料完整度(n/4)
+
+**门禁**：220 全绿（+3 SPEC-U）+ build + E2E 6（8017）+ 真库 integrity ok。
+**坑（两个老坑重踩）**：①直连 SessionLocal 的测试需 autouse init_db（test_spec_i 教训
+重犯）②dev 运行中 build 弄脏 .next（:3000 500 → 杀进程删 .next 重启修复）——
+建议用法：**看最新版直接用 :8000 单进程（build 后自动更新），:3000 dev 仅开发热载用**。

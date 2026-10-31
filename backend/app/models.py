@@ -108,12 +108,25 @@ class Enterprise(Base):
     intent_score: Mapped[float] = mapped_column(REAL, nullable=False, default=0.0)
     is_competitor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     established_at: Mapped[str | None] = mapped_column(Text)  # 成立日期 YYYY-MM-DD（SPEC-M M2a，ggzy estdate 补入库）
+    legal_rep: Mapped[str | None] = mapped_column(Text)  # 法定代表人（SPEC-U U1，ggzy legal_rep 补入库）
     poi_id: Mapped[str | None] = mapped_column(Text)
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
 
     # ---- helpers ----
+    def completeness(self) -> int:
+        """资料完整度 0-4（SPEC-U U3）：法人/成立日期/注册资本/经营范围四要素计数。
+
+        内部数据质量管理用途（帮销售知道缺什么），非信用评分。
+        """
+        return sum(
+            1
+            for v in (self.legal_rep, self.established_at,
+                      self.registered_capital_wan, self.business_scope)
+            if v
+        )
+
     def reasons_list(self) -> list[dict]:
         try:
             return json.loads(self.icp_reasons or "[]")

@@ -231,13 +231,40 @@ function IntelInner() {
       <div className="mt-4 rounded-lg border border-[var(--border)] bg-white">
         <Tabs type="line" className="!px-4">
           <TabPane tab="档案" itemKey="profile" className="p-5">
+            {/* SPEC-U U2：工商信息卡（企查查首屏字段集，数据来源=官方公示） */}
+            <div className="mb-4 rounded-lg border border-[var(--border)] px-4 py-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[12.5px] font-medium text-[var(--ink)]">工商信息</span>
+                <span className="flex items-center gap-2 text-[11.5px] text-[var(--muted)]">
+                  <span>
+                    资料完整度 {detail.completeness ?? 0}/4
+                    {detail.completeness != null && detail.completeness < 4 && "（缺项可经采集/导入补全）"}
+                  </span>
+                  <Tag color="grey" type="light" size="small">数据来源：官方公示</Tag>
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-x-10 gap-y-2 text-[13px] leading-7 md:grid-cols-2">
+                {[
+                  ["统一信用代码", detail.uscc || "—"],
+                  ["法定代表人", detail.legal_rep || "—"],
+                  ["成立日期", detail.established_at || "—"],
+                  ["注册资本", detail.registered_capital_wan == null ? "—" : `${detail.registered_capital_wan.toLocaleString("zh-CN")} 万`],
+                  ["行业", detail.industry_name || "未分类"],
+                  ["所在区域", [detail.province, detail.city, detail.district].filter(Boolean).join(" / ") || "—"],
+                  ["地址", detail.address || "—"],
+                  ["经营范围", detail.business_scope || "待工商补全"],
+                ].map(([k, v]) => (
+                  <div key={k as string} className="flex gap-2 border-b border-[var(--rule)] py-1">
+                    <span className="w-24 shrink-0 text-[var(--muted)]">{k}</span>
+                    <span className="min-w-0 flex-1 text-[var(--ink)]">{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="grid grid-cols-1 gap-x-10 gap-y-2 text-[13px] leading-7 md:grid-cols-2">
               {[
-                ["行业", detail.industry_name || "未分类"],
-                ["注册资本", detail.registered_capital_wan == null ? "—" : `${detail.registered_capital_wan.toLocaleString("zh-CN")} 万`],
                 ["最近中标", stat?.last_win_date || "—"],
                 ["头部采购人", stat?.top_buyer || "—"],
-                ["经营范围", detail.business_scope || "待工商补全"],
               ].map(([k, v]) => (
                 <div key={k as string} className="flex gap-2 border-b border-[var(--rule)] py-1">
                   <span className="w-20 shrink-0 text-[var(--muted)]">{k}</span>

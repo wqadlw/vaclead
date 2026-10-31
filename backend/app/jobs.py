@@ -305,6 +305,7 @@ def run_daily_incremental() -> dict:
                     ent, is_new = resolve_enterprise(
                         s, rec["name"], source="ggzy", uscc=rec["uscc"],
                         est_date=rec.get("est_date"),
+                        legal_rep=rec.get("legal_rep"),
                     )
                     if is_new:
                         stats["ggzy_new"] += 1

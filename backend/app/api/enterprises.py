@@ -74,6 +74,7 @@ def list_enterprises(
     established_within_years: int | None = None,
     bid_min: int | None = None,
     bid_amount_min: float | None = None,
+    complete: int = 0,
     page: int = 1,
     page_size: int = 20,
     facets: int = 0,
@@ -82,7 +83,7 @@ def list_enterprises(
 ):
     # SPEC-M M2：新维度（成立年限/中标力）只支持 SQLite 路径——带参时跳过 Meili，
     # 保证 total/分页语义正确（Meili 投影不含这两列）
-    sqlite_only = bool(established_within_years or bid_min or bid_amount_min)
+    sqlite_only = bool(established_within_years or bid_min or bid_amount_min or complete)
     # Quick picks（gmaps-scraper 模式）：has_contact=1 → 只看有可拨打联系人的企业。
     # SPEC-I I5：不再物化全量 id 列表（limit(5000) 会静默漏企业）——
     # SQLite 路径走 IN 子查询半连接；Meili 路径只对当前页 id 做存活过滤。
@@ -210,6 +211,14 @@ def list_enterprises(
                 select(EnterpriseStat.enterprise_id).where(*stat_cond)
             )
         )
+    # SPEC-U U3：资料齐全（四要素全非空）
+    if complete:
+        stmt = stmt.where(
+            Enterprise.legal_rep.is_not(None),
+            Enterprise.established_at.is_not(None),
+            Enterprise.registered_capital_wan.is_not(None),
+            Enterprise.business_scope.is_not(None),
+        )
 
     total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = session.scalars(
@@ -248,6 +257,9 @@ def list_enterprises(
                 "is_competitor": e.is_competitor,
                 "source": e.source,
                 "signal_count": signal_counts.get(e.id, 0),
+                "legal_rep": e.legal_rep,
+                "established_at": e.established_at,
+                "completeness": e.completeness(),
             }
         )
     return {"items": items, "total": total, "page": page, "page_size": page_size}
@@ -472,13 +484,16 @@ def export_enterprises(
 
     buf = io.StringIO()
     writer = _csv.writer(buf)
-    writer.writerow(["id", "名称", "统一信用代码", "省", "市", "区县", "行业",
-                     "注册资本(万)", "ICP分", "意图分", "疑似同行", "来源", "联系人"])
+    writer.writerow(["id", "名称", "统一信用代码", "法定代表人", "成立日期", "省", "市",
+                     "区县", "行业", "注册资本(万)", "ICP分", "意图分", "疑似同行", "来源",
+                     "资料完整度", "联系人"])
     for e in rows:
         writer.writerow([
-            e.id, e.name, e.uscc or "", e.province or "", e.city or "", e.district or "",
+            e.id, e.name, e.uscc or "", e.legal_rep or "", e.established_at or "",
+            e.province or "", e.city or "", e.district or "",
             e.industry_name or "", e.registered_capital_wan or "", e.icp_score,
             e.intent_score, "是" if e.is_competitor == 1 else "否", e.source,
+            f"{e.completeness()}/4",
             "；".join(by_ent.get(e.id, [])),
         ])
     buf.seek(0)
@@ -602,6 +617,9 @@ def enterprise_detail(
         "id": e.id,
         "name": e.name,
         "uscc": e.uscc,
+        "legal_rep": e.legal_rep,
+        "established_at": e.established_at,
+        "completeness": e.completeness(),
         "province": e.province,
         "city": e.city,
         "district": e.district,

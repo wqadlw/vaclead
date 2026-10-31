@@ -21,6 +21,10 @@ export interface QuickPickFilters {
   is_competitor: number;
   source?: string;
   has_contact?: number;
+  complete?: number;
+  established_within_years?: number | null;
+  bid_min?: number | null;
+  bid_amount_min?: number | null;
 }
 
 const QUICK_PICKS: { label: string; patch: Partial<QuickPickFilters> }[] = [
@@ -29,6 +33,7 @@ const QUICK_PICKS: { label: string; patch: Partial<QuickPickFilters> }[] = [
   { label: "高意图", patch: { score_min: 40, signal_days: 180 } },
   { label: "官方中标数据", patch: { source: "ggzy" } },
   { label: "政采买家", patch: { source: "ccgp" } },
+  { label: "资料齐全", patch: { complete: 1 } },
 ];
 
 export function QuickPicks({
