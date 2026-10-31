@@ -1018,3 +1018,29 @@ tests/test_spec_q.py（新）、tasks.py dup-scan 端点、main.py 周六 05:00 
   「批量领取所选」按钮（结果 Toast 带超限计数）。**leads 页 load 是 (t,p) 签名——
   空参调用会 build 失败**（第 2 次踩同款页面级签名差异）。
 - 门禁：213 后端全绿 + build + E2E 6/6。
+
+
+## 2026-10-31 · W37 SPEC-O 报表中心 + 筛选订阅（Agent B）
+
+**调研**：espocrm Reports/飞书漏斗/Salesloft 环比/Twenty targets——采纳 espocrm
+"报表=dashlet+邮件+导出**单一 payload**"模式（build_weekly() 一次生成三处复用）。
+
+**落地**：
+- **O1 报表中心**：`api/reports.py`——build_weekly() 固定 schema（period/kpis 环比/
+  funnel/top_signals/top_customers/highlights）+ GET /reports/weekly（页面）+
+  /reports/weekly/export（CSV 分节）+ reports_weekly_sweep（每周一 08:30 邮件摘要 →
+  admin，走 notify_dispatch email 渠道=J4 emailengine，user.email 未配置优雅 skip）；
+  _register_cron 扩 day_of_week 可选参数（周任务能力）；前端 /reports 页（周切换/
+  KPI 环比卡/漏斗条/两 Top 表/CSV 按钮），ADMIN_NAV「报表中心」
+- **O2 筛选订阅**：subscription_rule kind 扩 "filter"（value=筛选 JSON，字段白名单+
+  ≤200 字符校验，**零表结构变更**）；run_subscription_rules 加 Python 侧匹配分支
+  （增量信号 ≤500 拉回后逐条比对 type/industry/province/q/days，通知标题带条件摘要）；
+  标讯中心「订阅当前筛选」按钮 + SubRulesPanel 条件摘要展示
+
+**门禁逼出真 bug（prev 窗口变量笔误）**：build_weekly 把 next 周（真实"本周"）当
+prev 传参——单测空库全绿，全量共享库被其它模块当天数据撑爆 prev。修法=断言带
+kdump 实际值（{'new_enterprises': (2, 56),...} 一眼定位）——**带实际值的断言消息
+是共享库时代的必备素养**。修正后 217 全绿（含 Agent A 的 SPEC-N 测试同库）。
+
+**门禁**：217 全绿 + build + E2E 6（8017）。
+**坑**：lucide-react 无 LeftCircle/RightCircle（ChevronLeft/ChevronRight）。

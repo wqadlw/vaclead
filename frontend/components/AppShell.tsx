@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Avatar, Dropdown, Input, Modal } from "@douyinfe/semi-ui";
 import {
+  BarChart3,
   ClipboardList,
   FileText,
   Gauge,
@@ -44,6 +45,7 @@ const OUTREACH_NAV = [
 const ADMIN_NAV = [
   { href: "/tasks", label: "拓客任务", icon: Rocket },
   { href: "/forms", label: "留资表单", icon: ClipboardList },
+  { href: "/reports", label: "报表中心", icon: BarChart3 },
   { href: "/settings", label: "设置", icon: Settings },
 ];
 

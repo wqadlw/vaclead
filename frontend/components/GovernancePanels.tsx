@@ -179,8 +179,8 @@ export function SubRulesPanel() {
   return (
     <div className="p-6 max-w-[640px]">
       <div className="mb-4 text-[13px] text-slate-500 leading-6">
-        按关键词或地区订阅公共采购信号：每日增量采集后自动匹配并通知（走静默聚合，不怕打扰）。
-        关键词匹配公告标题与企业名；地区匹配省/市。
+        按关键词/地区订阅公共采购信号（每日增量后自动匹配并通知，走静默聚合）；「筛选订阅」在
+        标讯中心按当前筛选一键创建。关键词匹配公告标题与企业名；地区匹配省/市。
       </div>
       <div className="mb-4 flex items-center gap-2">
         <Select value={kind} onChange={(v) => setKind(String(v))} className="!w-28">
@@ -201,8 +201,22 @@ export function SubRulesPanel() {
         rowKey="id"
         pagination={false}
         columns={[
-          { title: "类型", dataIndex: "kind", width: 90, render: (v: string) => <Tag color={v === "keyword" ? "blue" : "cyan"} type="light">{v === "keyword" ? "关键词" : "地区"}</Tag> },
-          { title: "内容", dataIndex: "value" },
+          { title: "类型", dataIndex: "kind", width: 90, render: (v: string) => <Tag color={v === "keyword" ? "blue" : v === "filter" ? "orange" : "cyan"} type="light">{v === "keyword" ? "关键词" : v === "filter" ? "筛选订阅" : "地区"}</Tag> },
+          { title: "内容", dataIndex: "value", render: (v: string, r: SubRuleRow) => {
+              if (r.kind !== "filter") return v;
+              try {
+                const c = JSON.parse(v) as Record<string, string | number>;
+                const parts: string[] = [];
+                if (c.type) parts.push(`类型=${c.type}`);
+                if (c.industry_key) parts.push(`行业=${c.industry_key}`);
+                if (c.province) parts.push(`地区=${c.province}`);
+                if (c.q) parts.push(`关键词=${c.q}`);
+                if (c.days) parts.push(`近${c.days}天`);
+                return <span className="text-[12.5px]">{parts.join("，") || "全部标讯"}</span>;
+              } catch {
+                return v;
+              }
+            } },
           { title: "创建时间", dataIndex: "created_at", width: 170, render: (v: string) => (v || "").replace("T", " ").slice(0, 19) },
           {
             title: "", dataIndex: "id", width: 80,

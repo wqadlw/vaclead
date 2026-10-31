@@ -86,6 +86,21 @@ export default function SignalsPage() {
       Toast.error(e instanceof Error ? e.message : "转线索失败");
     }
   };
+  // SPEC-O O2：把当前筛选存为订阅规则（每日新信号命中即通知）
+  const subscribeFilter = async () => {
+    const cond: Record<string, unknown> = {};
+    if (type) cond.type = type;
+    if (province) cond.province = province;
+    if (industry) cond.industry_key = industry;
+    if (q.trim()) cond.q = q.trim();
+    if (days) cond.days = days;
+    try {
+      await api.post("/api/subscription-rules", { kind: "filter", value: JSON.stringify(cond) });
+      Toast.success("已订阅当前筛选，每日新信号命中后将通知你");
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "订阅失败");
+    }
+  };
 
   const typeCount = (t: string) => facets?.type?.[t] ?? 0;
 
@@ -125,6 +140,14 @@ export default function SignalsPage() {
           <Select.Option value="0">全部</Select.Option>
         </Select>
         <span className="ml-auto text-[12.5px] text-[var(--muted)]">共 {total} 条标讯</span>
+        <Button
+          size="small"
+          icon={<Bell size={13} />}
+          onClick={subscribeFilter}
+          disabled={!type && !province && !industry && !q.trim()}
+        >
+          订阅当前筛选
+        </Button>
       </div>
 
       {/* 信号流 */}

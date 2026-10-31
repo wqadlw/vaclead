@@ -48,6 +48,17 @@ def run_subscription_rules(session: Session) -> dict:
 
     matched = 0
     notified: set[tuple[int, int]] = set()  # (signal_id, user_id) 同轮防重（autoflush=False 下查询不可见 pending）
+    filter_rules: list[tuple[object, dict]] = []  # SPEC-O O2：filter 规则预解析
+    import json as _json
+
+    for rule in rules:
+        if rule.kind == "filter":
+            try:
+                cond = _json.loads(rule.value)
+                if isinstance(cond, dict):
+                    filter_rules.append((rule, cond))
+            except ValueError:
+                continue
     for sig in signals:
         ent = session.get(Enterprise, sig.enterprise_id)
         if ent is None:
@@ -55,8 +66,14 @@ def run_subscription_rules(session: Session) -> dict:
         for rule in rules:
             if rule.kind == "keyword":
                 hit = rule.value in (sig.title or "") or rule.value in (ent.name or "")
+                summary = rule.value
+            elif rule.kind == "filter":
+                cond = next((c for r, c in filter_rules if r.id == rule.id), {})
+                hit = _filter_rule_hits(sig, ent, cond)
+                summary = _filter_summary(cond)
             else:  # region
                 hit = rule.value in ((ent.province or "") + (ent.city or ""))
+                summary = rule.value
             if not hit or (sig.id, rule.user_id) in notified:
                 continue
             dup = (
@@ -74,13 +91,57 @@ def run_subscription_rules(session: Session) -> dict:
             notify_dispatch(
                 session, rule.user_id,
                 kind="signal",
-                title=f"订阅命中：{rule.value}",
+                title=f"订阅命中：{summary}",
                 body=f"「{ent.name}」新信号「{sig.title}」（{sig.pub_date or '日期未知'}）",
                 ref_type="sub_signal",
                 ref_id=sig.id,
             )
             matched += 1
     return {"matched": matched, "signals": len(signals), "rules": len(rules)}
+
+
+def _filter_rule_hits(sig: Signal, ent: Enterprise, cond: dict) -> bool:
+    """筛选快照订阅命中判断（SPEC-O O2）：增量信号在 Python 侧逐条比对。
+
+    字段语义与标讯中心 /api/signals 一致；days 用信号 created_at（秒级 ISO）比较。
+    """
+    from datetime import datetime, timedelta, timezone
+
+    if cond.get("type") and sig.type != cond["type"]:
+        return False
+    if cond.get("industry_key") and (ent.industry_key or "") != cond["industry_key"]:
+        return False
+    if cond.get("province") and (ent.province or "") != cond["province"]:
+        return False
+    if cond.get("q"):
+        q = str(cond["q"]).strip()
+        if q and q not in (sig.title or ""):
+            return False
+    if cond.get("days"):
+        try:
+            created = datetime.fromisoformat(str(sig.created_at))
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) - created > timedelta(days=int(cond["days"])):
+                return False
+        except ValueError:
+            pass
+    return True
+
+
+def _filter_summary(cond: dict) -> str:
+    parts = []
+    if cond.get("type"):
+        parts.append(f"类型={cond['type']}")
+    if cond.get("industry_key"):
+        parts.append(f"行业={cond['industry_key']}")
+    if cond.get("province"):
+        parts.append(f"地区={cond['province']}")
+    if cond.get("q"):
+        parts.append(f"关键词={cond['q']}")
+    if cond.get("days"):
+        parts.append(f"近{cond['days']}天")
+    return "筛选[" + "，".join(parts) + "]" if parts else "筛选[全部标讯]"
 
 
 def audit_cleanup(session: Session, keep: int = 50000) -> dict:
@@ -242,7 +303,8 @@ def run_daily_incremental() -> dict:
             try:
                 with SessionLocal() as s:
                     ent, is_new = resolve_enterprise(
-                        s, rec["name"], source="ggzy", uscc=rec["uscc"]
+                        s, rec["name"], source="ggzy", uscc=rec["uscc"],
+                        est_date=rec.get("est_date"),
                     )
                     if is_new:
                         stats["ggzy_new"] += 1

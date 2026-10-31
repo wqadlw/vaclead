@@ -11,6 +11,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/forms": "留资表单",
   "/outreach": "序列触达",
   "/outreach/inbox": "收件箱",
+  "/reports": "报表中心",
 };
 
 export const BRAND = {

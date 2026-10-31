@@ -172,10 +172,23 @@ def create_sub_rule(
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    if body.kind not in ("keyword", "region"):
-        raise HTTPException(422, "kind 取值 keyword|region")
+    if body.kind not in ("keyword", "region", "filter"):
+        raise HTTPException(422, "kind 取值 keyword|region|filter")
     value = body.value.strip()
-    if not 2 <= len(value) <= 30:
+    if body.kind == "filter":
+        # SPEC-O O2：筛选快照订阅——value 为筛选 JSON（字段白名单 + 长度限制）
+        import json as _json
+
+        try:
+            parsed = _json.loads(value)
+        except ValueError:
+            raise HTTPException(422, "filter 订阅 value 须为合法 JSON")
+        allowed = {"type", "industry_key", "province", "q", "days"}
+        if not isinstance(parsed, dict) or set(parsed) - allowed:
+            raise HTTPException(422, f"filter 字段白名单：{sorted(allowed)}")
+        if len(value) > 200:
+            raise HTTPException(422, "筛选条件过长（≤200 字符）")
+    elif not 2 <= len(value) <= 30:
         raise HTTPException(422, "value 长度 2-30")
     dup = (
         session.query(SubscriptionRule)
