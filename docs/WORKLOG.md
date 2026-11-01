@@ -1077,3 +1077,31 @@ Enterprise 无列——**法定代表人从第一天起就在被丢弃**。复�
 **坑（两个老坑重踩）**：①直连 SessionLocal 的测试需 autouse init_db（test_spec_i 教训
 重犯）②dev 运行中 build 弄脏 .next（:3000 500 → 杀进程删 .next 重启修复）——
 建议用法：**看最新版直接用 :8000 单进程（build 后自动更新），:3000 dev 仅开发热载用**。
+
+
+## 2026-11-01 · W39 认领 · SPEC-V 客户经营件：企业备注+标签系统（Agent B）
+
+CRM 日用刚需（twenty/espocrm/探迹全系标配）：此前"备注"只有绑定线索的 Followup——
+**企业主体的自由备注与自定义标签缺失**。契约 docs/SPEC-V.md（备注不并入信号时间线：
+时间线=客观事实流，备注=主观工作笔记，分区防混淆；标签 JSON 列+聚合补全防爆炸）。
+**动文件**：models（Note 表+tags 列）/enterprises.py（notes+tags 端点）/enterprises
+view page+page.tsx（备注区/标签编辑/筛选徽标）/导出增列；真库幂等 ALTER。
+
+
+## 2026-11-01 · W39 SPEC-V 结果（Agent B）+ 金子级路由坑
+
+**落地**：备注（enterprise_note 表+CRUD+权限本人/admin）+ 标签（tags JSON 列+PUT 全量
+替换 ≤8 个+GET /api/tags 聚合补全+tag 筛选参数化 LIKE+列表徽标+导出列）+ 情报页
+备注区（主观笔记与客观信号时间线分区）+ 标签编辑行。调研取舍：tags 保持 JSON 列
+（量级判断，独立 tag 表记 P2——需跨企业重命名/合并时再迁）；备注不并入时间线。
+
+**金子级坑（路由装饰器错挂）**：给 helper 加代码时 Edit 的 old_string 跨越了装饰器行，
+把 `@router.get("/enterprises/{eid}")` 从 enterprise_detail 挪到了新 helper
+`_tags_of(e)` 上——**helper 的必填参数 e 被 FastAPI 当成必填 query 参数**，
+GET /enterprises/{eid} 全部 422 missing query 'e'（detail 页面数据全空、
+journey E2E 超时）。三层递进诊断：①openapi 显示该路由无 query e → 排除签名问题
+②endpoint 是 _tags_of（ASGI spy 打 scope["route"].endpoint）→ 实锤错挂
+③参数名 e=必填 query 的机制闭环。**修法**：装饰器归位。
+**教训**：①在"普通函数"上方插入代码时，先确认它不是某端点的装饰器悬挂区——
+装饰器与 def 之间绝不允许插入内容；②路由误配的诊断神器=ASGI spy 打
+scope["route"].endpoint（比 openapi/路由枚举都直接，_IncludedRouter 包装下唯一可靠）。

@@ -7,8 +7,8 @@
  */
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Button, Skeleton, TabPane, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
-import { ArrowLeft, Bell, BellRing, UserCheck } from "lucide-react";
+import { Button, Input, Skeleton, TabPane, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
+import { ArrowLeft, Bell, BellRing, Trash2, UserCheck } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
 import type { Enterprise } from "@/lib/api";
@@ -30,6 +30,13 @@ interface ContactRow {
   verify_state: string;
   source: string;
   evidence_claim: string | null;
+}
+interface NoteRow {
+  id: number;
+  content: string;
+  author: string;
+  user_id: number;
+  created_at: string;
 }
 interface RelatedData {
   competitors: { id: number; name: string; via: string; is_competitor: number }[];
@@ -125,17 +132,66 @@ function IntelInner() {
   const [loading, setLoading] = useState(true);
   const [subscribed, setSubscribed] = useState(false);
   const [converting, setConverting] = useState(false);
+  // SPEC-V V2 标签编辑态
+  const [tagsEditing, setTagsEditing] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagDraft, setTagDraft] = useState("");
+  const [savingTags, setSavingTags] = useState(false);
+  // SPEC-V V1 备注态
+  const [notes, setNotes] = useState<NoteRow[]>([]);
+  const [noteDraft, setNoteDraft] = useState("");
 
   const load = useCallback(() => {
     if (!eid) return;
     setLoading(true);
-    api.get<Enterprise>(`/api/enterprises/${eid}`).then(setDetail).catch(() => undefined).finally(() => setLoading(false));
+    api.get<Enterprise>(`/api/enterprises/${eid}`).then((d) => {
+      setDetail(d);
+      setTags(d.tags ?? []);
+    }).catch(() => undefined).finally(() => setLoading(false));
     api.get<{ edges: GraphEdge[] }>(`/api/enterprises/${eid}/graph`).then((d) => setGraph(d.edges)).catch(() => undefined);
     api.get<RelatedData>(`/api/enterprises/${eid}/related`).then(setRelated).catch(() => undefined);
     api.get<{ items: ContactRow[] }>(`/api/enterprises/${eid}/contacts`).then((d) => setContacts(d.items)).catch(() => undefined);
+    api.get<{ items: NoteRow[] }>(`/api/enterprises/${eid}/notes`).then((d) => setNotes(d.items)).catch(() => undefined);
   }, [eid]);
 
   useEffect(() => load(), [load]);
+
+  const saveTags = async () => {
+    if (!detail) return;
+    setSavingTags(true);
+    try {
+      const d = await api.put<{ tags: string[] }>(`/api/enterprises/${detail.id}/tags`, { tags });
+      setDetail({ ...detail, tags: d.tags });
+      setTagsEditing(false);
+      Toast.success("标签已保存");
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setSavingTags(false);
+    }
+  };
+
+  const addNote = async () => {
+    if (!detail || !noteDraft.trim()) return;
+    try {
+      await api.post(`/api/enterprises/${detail.id}/notes`, { content: noteDraft.trim() });
+      setNoteDraft("");
+      const d = await api.get<{ items: NoteRow[] }>(`/api/enterprises/${detail.id}/notes`);
+      setNotes(d.items);
+      Toast.success("备注已添加");
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "添加失败");
+    }
+  };
+
+  const delNote = async (nid: number) => {
+    try {
+      await api.delete(`/api/enterprises/notes/${nid}`);
+      setNotes(notes.filter((n) => n.id !== nid));
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "删除失败");
+    }
+  };
 
   const toggleSubscribe = async () => {
     if (!detail) return;
@@ -198,6 +254,44 @@ function IntelInner() {
             </div>
             <div className="mt-1.5 text-[13px] text-[var(--muted)]">
               统一信用代码 {detail.uscc || "—"} · {[detail.province, detail.city, detail.district].filter(Boolean).join(" ") || "地区待回填"} · {detail.address || "地址待回填"}
+            </div>
+            {/* SPEC-V V2：标签行（编辑态增删，自动补全） */}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {(detail.tags ?? []).map((t) => (
+                <Tag
+                  key={t}
+                  color="cyan"
+                  type="light"
+                  size="small"
+                  closable={tagsEditing}
+                  onClose={() => setTags((detail.tags ?? []).filter((x) => x !== t))}
+                >
+                  {t}
+                </Tag>
+              ))}
+              {tagsEditing ? (
+                <>
+                  <Input
+                    size="small"
+                    placeholder="新标签，回车添加"
+                    value={tagDraft}
+                    onChange={setTagDraft}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && tagDraft.trim()) {
+                        setTags([...(detail.tags ?? []), tagDraft.trim()]);
+                        setTagDraft("");
+                      }
+                    }}
+                    style={{ width: 150 }}
+                  />
+                  <Button size="small" theme="solid" loading={savingTags} onClick={saveTags}>保存</Button>
+                  <Button size="small" type="tertiary" onClick={() => { setTagsEditing(false); setTags(detail.tags ?? []); }}>取消</Button>
+                </>
+              ) : (
+                <Button size="small" type="tertiary" theme="borderless" onClick={() => setTagsEditing(true)}>
+                  编辑标签
+                </Button>
+              )}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -326,6 +420,49 @@ function IntelInner() {
                 </div>
               </div>
             )}
+
+            {/* SPEC-V V1：企业备注（主观工作笔记，区别于客观信号时间线） */}
+            <div className="mt-6">
+              <div className="mb-2 text-[12.5px] text-[var(--muted)]">
+                备注（团队共享可见；仅本人或管理员可删除）
+              </div>
+              <div className="mb-3 flex items-start gap-2">
+                <Input
+                  placeholder="记录与该客户的沟通上下文，如「展会认识，关注蚀刻机产能」"
+                  value={noteDraft}
+                  onChange={setNoteDraft}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && noteDraft.trim()) addNote();
+                  }}
+                  showClear
+                />
+                <Button theme="solid" disabled={!noteDraft.trim()} onClick={addNote}>添加</Button>
+              </div>
+              <div className="space-y-2">
+                {notes.map((n) => (
+                  <div key={n.id} className="rounded-lg border border-[var(--border)] px-3.5 py-2.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13.5px] leading-5 text-[var(--ink)]">{n.content}</div>
+                        <div className="mt-1 text-[11.5px] text-[var(--muted)]">
+                          {n.author} · {(n.created_at || "").replace("T", " ").slice(0, 16)}
+                        </div>
+                      </div>
+                      <Button
+                        size="small"
+                        type="danger"
+                        theme="borderless"
+                        icon={<Trash2 size={13} />}
+                        onClick={() => delNote(n.id)}
+                      />
+                    </div>
+                  </div>
+                ))}
+                {notes.length === 0 && (
+                  <div className="py-3 text-center text-[12.5px] text-[var(--muted)]">暂无备注</div>
+                )}
+              </div>
+            </div>
           </TabPane>
 
           <TabPane tab="采购关系图谱" itemKey="graph" className="p-5">

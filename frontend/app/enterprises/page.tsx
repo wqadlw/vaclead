@@ -72,6 +72,7 @@ interface Filters {
   bid_min?: number | null;
   bid_amount_min?: number | null;
   complete?: number;
+  tag?: string;
   is_competitor: number;
   source?: string;
   has_contact?: number;
@@ -134,6 +135,8 @@ export default function EnterprisesPage() {
     if (ba) f.bid_amount_min = Number(ba);
     const cp = sp.get("complete");
     if (cp) f.complete = Number(cp);
+    const tg = sp.get("tag");
+    if (tg) f.tag = tg;
     return f;
   };
   const [filters, setFilters] = useState<Filters>(initFromUrl);
@@ -304,6 +307,7 @@ export default function EnterprisesPage() {
       if (typeof f.bid_min === "number") params.set("bid_min", String(f.bid_min));
       if (typeof f.bid_amount_min === "number") params.set("bid_amount_min", String(f.bid_amount_min));
       if (typeof f.complete === "number") params.set("complete", String(f.complete));
+      if (f.tag) params.set("tag", f.tag);
       params.set("is_competitor", String(f.is_competitor));
       if (f.source) params.set("source", f.source);
       if (f.has_contact) params.set("has_contact", "1");
@@ -322,6 +326,14 @@ export default function EnterprisesPage() {
     void fetchData(applied, page);
   }, [fetchData, applied, page]);
 
+  // SPEC-V V2：标签聚合（筛选下拉选项）
+  const [tagOptions, setTagOptions] = useState<{ tag: string; count: number }[]>([]);
+  useEffect(() => {
+    api.get<{ items: { tag: string; count: number }[] }>("/api/tags")
+      .then((d) => setTagOptions(d.items))
+      .catch(() => undefined);
+  }, []);
+
   // URL 状态同步（吸收 twenty useSetViewInUrl）：筛选变化写入 query，可分享/刷新恢复
   useEffect(() => {
     const sp = new URLSearchParams();
@@ -335,6 +347,7 @@ export default function EnterprisesPage() {
     if (typeof applied.established_within_years === "number") sp.set("established_within_years", String(applied.established_within_years));
     if (typeof applied.bid_min === "number") sp.set("bid_min", String(applied.bid_min));
     if (typeof applied.bid_amount_min === "number") sp.set("bid_amount_min", String(applied.bid_amount_min));
+    if (applied.tag) sp.set("tag", applied.tag);
     if (applied.is_competitor !== -1) sp.set("is_competitor", String(applied.is_competitor));
     const qs = sp.toString();
     window.history.replaceState(null, "", qs ? `/enterprises?${qs}` : "/enterprises");
@@ -386,6 +399,7 @@ export default function EnterprisesPage() {
     if (typeof applied.established_within_years === "number") params.set("established_within_years", String(applied.established_within_years));
     if (typeof applied.bid_min === "number") params.set("bid_min", String(applied.bid_min));
     if (typeof applied.bid_amount_min === "number") params.set("bid_amount_min", String(applied.bid_amount_min));
+    if (applied.tag) params.set("tag", applied.tag);
     params.set("is_competitor", String(applied.is_competitor));
     if (typeof window === "undefined") return "#";  // SSG 预渲染守卫
     return `${window.location.port === "3000" ? "http://127.0.0.1:8000" : ""}/api/enterprises/export?${params.toString()}`;
@@ -414,6 +428,21 @@ export default function EnterprisesPage() {
               />
             ))}
           </span>
+          {/* SPEC-V V2：标签徽标（最多 2 个 + n） */}
+          {(() => {
+            const parsed = r.tags ?? [];
+            if (parsed.length === 0) return null;
+            return (
+              <span className="mt-0.5 flex flex-wrap items-center gap-1">
+                {parsed.slice(0, 2).map((t) => (
+                  <Tag key={t} color="light-blue" type="light" size="small">{t}</Tag>
+                ))}
+                {parsed.length > 2 && (
+                  <span className="text-[11px] text-[var(--muted)]">+{parsed.length - 2}</span>
+                )}
+              </span>
+            );
+          })()}
         </>
       ),
     },
@@ -701,6 +730,13 @@ export default function EnterprisesPage() {
         <Select style={ctl} optionList={ESTABLISHED_OPTIONS} placeholder="成立年限不限" showClear value={filters.established_within_years ?? undefined} onChange={(v) => set({ established_within_years: typeof v === "number" ? v : null })} />
         <Select style={ctl} optionList={BID_MIN_OPTIONS} placeholder="中标次数不限" showClear value={filters.bid_min ?? undefined} onChange={(v) => set({ bid_min: typeof v === "number" ? v : null })} />
         <Select style={ctl} optionList={BID_AMOUNT_OPTIONS} placeholder="中标额不限" showClear value={filters.bid_amount_min ?? undefined} onChange={(v) => set({ bid_amount_min: typeof v === "number" ? v : null })} />
+        <Select style={ctl} placeholder="标签不限" showClear filter value={filters.tag ?? undefined} onChange={(v) => set({ tag: (v as string) || undefined })}>
+          {tagOptions.map((t) => (
+            <Select.Option key={t.tag} value={t.tag}>
+              {t.tag} ({t.count})
+            </Select.Option>
+          ))}
+        </Select>
         <Select style={ctl} optionList={COMPETITOR_OPTIONS} value={filters.is_competitor} onChange={(v) => set({ is_competitor: (v as number) ?? -1 })} />
         <Select style={ctl} optionList={SOURCE_OPTIONS} placeholder="全部来源" showClear value={filters.source ?? undefined} onChange={(v) => set({ source: (v as string) || undefined })} />
         <Input

@@ -131,6 +131,7 @@ export interface Enterprise {
   legal_rep?: string | null;
   established_at?: string | null;
   completeness?: number;
+  tags?: string[];
   status?: string;
   source?: string;
   province: string | null;

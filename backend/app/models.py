@@ -109,6 +109,7 @@ class Enterprise(Base):
     is_competitor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     established_at: Mapped[str | None] = mapped_column(Text)  # 成立日期 YYYY-MM-DD（SPEC-M M2a，ggzy estdate 补入库）
     legal_rep: Mapped[str | None] = mapped_column(Text)  # 法定代表人（SPEC-U U1，ggzy legal_rep 补入库）
+    tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON 数组（SPEC-V V2 销售自定义标签）
     poi_id: Mapped[str | None] = mapped_column(Text)
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
@@ -833,4 +834,22 @@ class WebhookDelivery(Base):
     last_error: Mapped[str | None] = mapped_column(Text)
     next_attempt_at: Mapped[str | None] = mapped_column(Text)
     delivered_at: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class EnterpriseNote(Base):
+    """企业备注（SPEC-V V1）：销售自由文本工作笔记，区别于客观事实流（信号时间线）。
+
+    可见性跟随企业（情报页可达即可见，同 contacts 语义）；删除限本人或 admin。
+    """
+
+    __tablename__ = "enterprise_note"
+    __table_args__ = (Index("ix_note_enterprise", "enterprise_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    enterprise_id: Mapped[int] = mapped_column(
+        ForeignKey("enterprise.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)

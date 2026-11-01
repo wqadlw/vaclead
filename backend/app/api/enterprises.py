@@ -75,6 +75,7 @@ def list_enterprises(
     bid_min: int | None = None,
     bid_amount_min: float | None = None,
     complete: int = 0,
+    tag: str | None = None,
     page: int = 1,
     page_size: int = 20,
     facets: int = 0,
@@ -83,7 +84,7 @@ def list_enterprises(
 ):
     # SPEC-M M2：新维度（成立年限/中标力）只支持 SQLite 路径——带参时跳过 Meili，
     # 保证 total/分页语义正确（Meili 投影不含这两列）
-    sqlite_only = bool(established_within_years or bid_min or bid_amount_min or complete)
+    sqlite_only = bool(established_within_years or bid_min or bid_amount_min or complete or tag)
     # Quick picks（gmaps-scraper 模式）：has_contact=1 → 只看有可拨打联系人的企业。
     # SPEC-I I5：不再物化全量 id 列表（limit(5000) 会静默漏企业）——
     # SQLite 路径走 IN 子查询半连接；Meili 路径只对当前页 id 做存活过滤。
@@ -219,6 +220,15 @@ def list_enterprises(
             Enterprise.registered_capital_wan.is_not(None),
             Enterprise.business_scope.is_not(None),
         )
+    # SPEC-V V2：标签筛选（JSON 列参数化 LIKE，引号包裹防子串误命中）
+    if tag:
+        from sqlalchemy import bindparam
+
+        stmt = stmt.where(
+            Enterprise.tags.like(
+                bindparam("tagpat", f'%"{tag.strip()}"%')
+            )
+        )
 
     total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = session.scalars(
@@ -260,6 +270,7 @@ def list_enterprises(
                 "legal_rep": e.legal_rep,
                 "established_at": e.established_at,
                 "completeness": e.completeness(),
+                "tags": _tags_of(e),
             }
         )
     return {"items": items, "total": total, "page": page, "page_size": page_size}
@@ -486,14 +497,20 @@ def export_enterprises(
     writer = _csv.writer(buf)
     writer.writerow(["id", "名称", "统一信用代码", "法定代表人", "成立日期", "省", "市",
                      "区县", "行业", "注册资本(万)", "ICP分", "意图分", "疑似同行", "来源",
-                     "资料完整度", "联系人"])
+                     "资料完整度", "标签", "联系人"])
+    import json as _json
+
     for e in rows:
+        try:
+            tags = "；".join(_json.loads(e.tags or "[]"))
+        except ValueError:
+            tags = ""
         writer.writerow([
             e.id, e.name, e.uscc or "", e.legal_rep or "", e.established_at or "",
             e.province or "", e.city or "", e.district or "",
             e.industry_name or "", e.registered_capital_wan or "", e.icp_score,
             e.intent_score, "是" if e.is_competitor == 1 else "否", e.source,
-            f"{e.completeness()}/4",
+            f"{e.completeness()}/4", tags,
             "；".join(by_ent.get(e.id, [])),
         ])
     buf.seek(0)
@@ -595,6 +612,17 @@ def _segments_of(e, session) -> dict | None:
         return None
 
 
+def _tags_of(e) -> list[str]:
+    """Enterprise.tags JSON 列 → 数组（损坏容错）。"""
+    import json as _json
+
+    try:
+        arr = _json.loads(e.tags or "[]")
+        return arr if isinstance(arr, list) else []
+    except ValueError:
+        return []
+
+
 @router.get("/enterprises/{eid}")
 def enterprise_detail(
     eid: int,
@@ -620,6 +648,7 @@ def enterprise_detail(
         "legal_rep": e.legal_rep,
         "established_at": e.established_at,
         "completeness": e.completeness(),
+        "tags": _tags_of(e),
         "province": e.province,
         "city": e.city,
         "district": e.district,
@@ -660,6 +689,128 @@ def enterprise_detail(
             for s in signals
         ],
     }
+
+
+# ---------------- SPEC-V V1 企业备注 ----------------
+
+@router.get("/enterprises/{eid}/notes")
+def list_enterprise_notes(
+    eid: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """企业备注（主观工作笔记，区别于信号时间线），倒序。"""
+    from ..models import EnterpriseNote
+
+    rows = (
+        session.query(EnterpriseNote)
+        .filter(EnterpriseNote.enterprise_id == eid)
+        .order_by(EnterpriseNote.id.desc())
+        .limit(100)
+        .all()
+    )
+    users = {u.id: (u.display_name or u.username) for u in session.query(User).all()}
+    return {
+        "items": [
+            {"id": n.id, "content": n.content, "author": users.get(n.user_id, str(n.user_id)),
+             "user_id": n.user_id, "created_at": n.created_at}
+            for n in rows
+        ]
+    }
+
+
+class NoteIn(BaseModel):
+    content: str
+
+
+@router.post("/enterprises/{eid}/notes", status_code=201)
+def create_enterprise_note(
+    eid: int,
+    body: NoteIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    content = (body.content or "").strip()
+    if not 1 <= len(content) <= 2000:
+        raise HTTPException(422, "备注 1-2000 字")
+    from ..models import EnterpriseNote
+
+    e = session.get(Enterprise, eid)
+    if e is None:
+        raise HTTPException(404, "企业不存在")
+    n = EnterpriseNote(enterprise_id=eid, user_id=user.id, content=content)
+    session.add(n)
+    session.commit()
+    return {"id": n.id}
+
+
+@router.delete("/enterprises/notes/{nid}")
+def delete_enterprise_note(
+    nid: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    from ..models import EnterpriseNote
+
+    n = session.get(EnterpriseNote, nid)
+    if n is None:
+        raise HTTPException(404, "备注不存在")
+    if n.user_id != user.id and user.role != "admin":
+        raise HTTPException(403, "仅本人或管理员可删除")
+    session.delete(n)
+    session.commit()
+    return {"ok": True}
+
+
+# ---------------- SPEC-V V2 企业标签 ----------------
+
+class TagsIn(BaseModel):
+    tags: list[str]
+
+
+@router.put("/enterprises/{eid}/tags")
+def set_enterprise_tags(
+    eid: int,
+    body: TagsIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """全量替换标签：单标签 ≤20 字、去重 trim、≤8 个（防标签爆炸）。"""
+    e = session.get(Enterprise, eid)
+    if e is None:
+        raise HTTPException(404, "企业不存在")
+    cleaned: list[str] = []
+    for t in body.tags:
+        t = t.strip()
+        if t and t not in cleaned:
+            cleaned.append(t)
+    if len(cleaned) > 8:
+        raise HTTPException(422, "标签最多 8 个")
+    if any(len(t) > 20 for t in cleaned):
+        raise HTTPException(422, "单个标签 ≤20 字")
+    import json as _json
+
+    e.tags = _json.dumps(cleaned, ensure_ascii=False)
+    session.commit()
+    return {"tags": cleaned}
+
+
+@router.get("/tags")
+def all_tags(
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """全库标签聚合（标签云/自动补全建议）。"""
+    import json as _json
+    from collections import Counter
+
+    counter: Counter = Counter()
+    for (raw,) in session.query(Enterprise.tags).all():
+        try:
+            counter.update(_json.loads(raw or "[]"))
+        except ValueError:
+            continue
+    return {"items": [{"tag": t, "count": c} for t, c in counter.most_common(50)]}
 
 
 @router.post("/enterprises/{eid}/refresh-stat")
