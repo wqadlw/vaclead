@@ -1038,6 +1038,60 @@ def similar_enterprises(
     }
 
 
+# ---------------- SPEC-Y Y1：批量打标签（append 合并语义） ----------------
+
+class BatchTagsIn(BaseModel):
+    ids: list[int]
+    tags: list[str]
+    mode: str = "append"  # append=合并已有 | replace=全量替换
+
+
+@router.post("/enterprises/batch-tags")
+def batch_set_tags(
+    body: BatchTagsIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """批量打标签：append 合并去重（不覆盖销售已有标签）/ replace 全量替换。
+
+    部分成功明细：不存在/超上限的企业进 skipped。单批 ≤200 家。
+    """
+    import json as _json
+
+    if not body.ids or len(body.ids) > 200:
+        raise HTTPException(422, "ids 1-200")
+    if body.mode not in ("append", "replace"):
+        raise HTTPException(422, "mode 取值 append|replace")
+    cleaned: list[str] = []
+    for t in body.tags:
+        t = t.strip()
+        if t and t not in cleaned:
+            cleaned.append(t)
+    if not cleaned:
+        raise HTTPException(422, "标签不能为空")
+    if any(len(t) > 20 for t in cleaned):
+        raise HTTPException(422, "单个标签 ≤20 字")
+
+    updated = 0
+    skipped: list[dict] = []
+    rows = session.query(Enterprise).filter(Enterprise.id.in_(body.ids)).all()
+    for e in rows:
+        current: list[str] = []
+        try:
+            parsed = _json.loads(e.tags or "[]")
+            current = parsed if isinstance(parsed, list) else []
+        except ValueError:
+            current = []
+        merged = cleaned if body.mode == "replace" else list(dict.fromkeys(current + cleaned))
+        if len(merged) > 8:
+            skipped.append({"id": e.id, "name": e.name, "reason": "合并后超 8 个标签"})
+            continue
+        e.tags = _json.dumps(merged, ensure_ascii=False)
+        updated += 1
+    session.commit()
+    return {"updated": updated, "skipped": skipped}
+
+
 @router.post("/enterprises/{eid}/subscribe", status_code=201)
 def subscribe_enterprise(
     eid: int,

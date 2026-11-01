@@ -152,6 +152,10 @@ export default function EnterprisesPage() {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<string>("");
   const [batching, setBatching] = useState(false);
+  // SPEC-Y：批量打标签 Modal + 批量退公海确认
+  const [tagModal, setTagModal] = useState(false);
+  const [tagDraft, setTagDraft] = useState("");
+  const [poolConfirm, setPoolConfirm] = useState(false);
   // Pro 表格（ant-design-pro 模式）：列显隐 / 密度 / 保存视图
   const [hiddenCols, setHiddenCols] = useState<string[]>([]);
   const [dense, setDense] = useState(false);
@@ -383,6 +387,52 @@ export default function EnterprisesPage() {
       void fetchData(applied, page);
     } catch (e) {
       Toast.error(e instanceof Error ? e.message : "批量失败");
+    } finally {
+      setBatching(false);
+    }
+  };
+
+  // SPEC-Y Y1：批量打标签（append 合并，不覆盖已有）
+  const batchTags = async () => {
+    if (selectedIds.length === 0 || !tagDraft.trim()) return;
+    setBatching(true);
+    try {
+      const tags = tagDraft.split(/[,，;；\s]+/).map((t) => t.trim()).filter(Boolean);
+      const r = await api.post<{ updated: number; skipped: { id: number; reason: string }[] }>(
+        "/api/enterprises/batch-tags",
+        { ids: selectedIds, tags, mode: "append" },
+      );
+      const skippedMsg = r.skipped.length
+        ? `，跳过 ${r.skipped.length}（${r.skipped[0].reason}）`
+        : "";
+      Toast.success(`已为 ${r.updated} 家打上标签${skippedMsg}`);
+      setTagModal(false);
+      setTagDraft("");
+      setSelectedIds([]);
+      void fetchData(applied, page);
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "打标签失败");
+    } finally {
+      setBatching(false);
+    }
+  };
+
+  // SPEC-Y Y2：批量退公海（确认后执行）
+  const batchPool = async () => {
+    if (selectedIds.length === 0) return;
+    setBatching(true);
+    try {
+      const r = await api.post<{ moved: number; skipped: { id: number; reason: string }[] }>(
+        "/api/leads/batch-pool",
+        { ids: selectedIds },
+      );
+      const skippedMsg = r.skipped.length ? `，跳过 ${r.skipped.length}` : "";
+      Toast.success(`已退回公海 ${r.moved} 家${skippedMsg}`);
+      setPoolConfirm(false);
+      setSelectedIds([]);
+      void fetchData(applied, page);
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "批量退公海失败");
     } finally {
       setBatching(false);
     }
@@ -708,11 +758,52 @@ export default function EnterprisesPage() {
           <Button theme="solid" size="small" loading={batching} onClick={batchConvert}>
             批量转线索
           </Button>
+          <Button size="small" onClick={() => setTagModal(true)}>打标签</Button>
+          <Button size="small" type="warning" theme="light" onClick={() => setPoolConfirm(true)}>
+            批量退公海
+          </Button>
           <Button size="small" theme="borderless" type="tertiary" onClick={() => setSelectedIds([])}>
             清除选择
           </Button>
         </div>
       )}
+
+      {/* SPEC-Y Y1：批量打标签 Modal */}
+      <Modal
+        title={`为 ${selectedIds.length} 家企业打标签（append 合并，不覆盖已有）`}
+        visible={tagModal}
+        onOk={batchTags}
+        onCancel={() => setTagModal(false)}
+        okText="打标签"
+        width={420}
+      >
+        <Input
+          placeholder="多个标签用逗号/空格分隔，如：重点客户, 圈层A"
+          value={tagDraft}
+          onChange={setTagDraft}
+        />
+        <div className="mt-2 text-[12px] text-[var(--muted)]">
+          合并后每家总数 ≤8 个，超限的企业会被跳过并列出。
+        </div>
+      </Modal>
+
+      {/* SPEC-Y Y2：批量退公海确认 */}
+      <Modal
+        title="批量退公海"
+        visible={poolConfirm}
+        onOk={batchPool}
+        onCancel={() => setPoolConfirm(false)}
+        okText="确认退回"
+        okButtonProps={{ type: "danger" }}
+        width={420}
+      >
+        <div className="text-[13.5px] leading-6 text-[var(--ink)]">
+          将选中的 {selectedIds.length} 家企业的线索退回公海（释放归属）。
+          <div className="mt-1.5 text-[12px] text-[var(--muted)]">
+            仅跟进中/意向状态可退；已赢单/输单/公海的会被跳过并列出。
+          </div>
+        </div>
+      </Modal>
 
       {/* 工具行：左侧筛选+搜索，右侧重置 */}
       <div className="mt-4 flex flex-wrap items-center gap-2">

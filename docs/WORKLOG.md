@@ -1193,3 +1193,29 @@ audit_log 重放法正确；②来源 ROI=first-touch 快照（source 字段终�
 三段修正为 following→intent→won 口径。
 
 **门禁**：226 全绿（+2 SPEC-X）+ build + E2E 6（8017）。
+
+
+## 2026-11-01 · W43 认领 · SPEC-Y 批量操作轮（Agent B）
+
+企业列表已有行多选+批量转线索——补销售日常高频的**批量打标签**（append 合并语义）
+与**批量退公海**（状态守卫+owner 释放）。契约 docs/SPEC-Y.md。
+**动文件**：enterprises.py（两端点）/leads.py（batch-pool 归属线索域）/
+enterprises page.tsx（操作条扩展）。零表结构变更。
+
+
+## 2026-11-01 · W43 SPEC-Y 结果（Agent B）
+
+**落地**：
+- **Y1 批量打标签**：POST /api/enterprises/batch-tags（append 合并去重不覆盖已有/
+  replace 全量；单批 ≤200；超 8 个标签的企业跳过进明细——调研确认 EspoCRM
+  "multi-enum add/remove" 同语义）
+- **Y2 批量退公海**：POST /api/leads/batch-pool（仅 following/intent 可退；
+  admin 全部/sales 仅本人——他人线索进 skipped 明细；清 owner/claimed_at）
+- **Y3 操作条扩展**：打标签 Modal（逗号/空格分隔输入）+ 退公海确认弹窗（复述数量+
+  状态守则提示）+ 部分成功 Toast 汇总（"成功 N，跳过 M（原因）"——Salesforce 模式）
+
+**测试逼出的业务规则**：转 lost 需合法放弃原因（LEAD_LOST_REASONS 枚举：no_need/
+competitor/unreachable/budget/other）——产品规则合理，测试补 lost_reason="no_need"。
+following→won 不是合法迁移（必须过 intent）——批量测试的状态构造要沿状态机走。
+
+**门禁**：229 全绿（+4 SPEC-Y）+ build + E2E 6（8017）。

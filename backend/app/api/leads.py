@@ -347,3 +347,42 @@ def list_followups(
         }
         for f in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# SPEC-Y Y2：批量退公海（状态守卫 + owner 释放 + 部分成功明细）
+# ---------------------------------------------------------------------------
+class BatchPoolIn(BaseModel):
+    ids: list[int]
+
+
+@router.post("/leads/batch-pool")
+def batch_move_to_pool(
+    body: BatchPoolIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """批量退公海：仅 following/intent 可退（won/lost/pool 跳过进明细）。
+
+    权限：admin 全部；sales 只能退自己的线索（他人线索计入 skipped 明细）。
+    语义与单条退公海一致：status→pool、清 owner/claimed_at。
+    """
+    if not body.ids or len(body.ids) > 200:
+        raise HTTPException(422, "ids 1-200")
+    moved = 0
+    skipped: list[dict] = []
+    rows = session.query(Lead).filter(Lead.id.in_(body.ids)).all()
+    for lead in rows:
+        if lead.status not in ("following", "intent"):
+            skipped.append({"id": lead.id, "reason": f"状态 {lead.status} 不可退"})
+            continue
+        if user.role != "admin" and lead.owner_id != user.id:
+            skipped.append({"id": lead.id, "reason": "非本人线索"})
+            continue
+        lead.status = "pool"
+        lead.owner_id = None
+        lead.claimed_at = None
+        lead.updated_at = utcnow()
+        moved += 1
+    session.commit()
+    return {"moved": moved, "skipped": skipped}
