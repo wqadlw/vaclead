@@ -40,6 +40,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | 08:30 周一 | reports_weekly | 经营周报生成+通知（SPEC-O，day_of_week 参数已扩展 _register_cron） |
 | 09:30 / 14:30 | outreach_dispatch | 邮件触达：收件同步+预算内发送（SPEC-J J4） |
 | 每 10 分钟 | webhook_flush (interval) | SPEC-P 出站 webhook 投递引擎（指数退避，唯一 interval 任务） |
+| 按需 | backfill-icp | 存量未分类企业补 ICP 分类（POST /api/tasks/backfill-icp，幂等，采集打标不被覆盖；SPEC-W） |
 
 **调度治理（SPEC-I I0）**：全部任务统一经 `_register_cron` 注册——
 ①注册前 `inspect.signature().bind()` 防呆，参数不匹配的任务跳过注册并打 error 日志

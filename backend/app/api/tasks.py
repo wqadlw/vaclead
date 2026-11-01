@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..auth import admin_only, current_user
@@ -1171,3 +1172,72 @@ async def task_events(
                 pass
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
+# SPEC-W W2：存量企业 ICP 分类补全（幂等：只处理 industry_key 为空的企业）
+# ---------------------------------------------------------------------------
+class BackfillIcpIn(BaseModel):
+    limit: int = 3000  # 单轮处理上限
+
+
+@router.post("/tasks/backfill-icp")
+def start_backfill_icp(
+    body: BackfillIcpIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """对未分类存量企业补跑 ICP 分类 + 意图重算。
+
+    语义：分类与同行打标正交——apply_icp 前保存/后恢复 is_competitor
+    （采集端基于中标事实的打标不被命名规则覆盖）。无行业词企业保持未分类（不发明）。
+    """
+    from ..db import SessionLocal
+    from .imports import apply_icp, recompute_intent
+
+    task_id = uuid.uuid4().hex
+    limit = max(1, min(body.limit, 5000))
+
+    def _worker() -> dict:
+        stats = {"processed": 0, "classified": 0, "restored_competitor": 0}
+        with SessionLocal() as s:
+            ents = (
+                s.query(Enterprise)
+                .filter(Enterprise.industry_key.is_(None))
+                .limit(limit)
+                .all()
+            )
+            touched: list[int] = []
+            for i, ent in enumerate(ents):
+                was_competitor = ent.is_competitor
+                apply_icp(ent)
+                ent.is_competitor = was_competitor  # 采集端事实打标优先
+                if was_competitor and ent.is_competitor != was_competitor:
+                    stats["restored_competitor"] += 1
+                if ent.industry_key:
+                    stats["classified"] += 1
+                stats["processed"] += 1
+                touched.append(ent.id)
+                if (i + 1) % 100 == 0 or i == len(ents) - 1:
+                    _checkpoint(
+                        task_id,
+                        progress=int((i + 1) / max(len(ents), 1) * 90),
+                        state_json=json.dumps(stats, ensure_ascii=False),
+                    )
+            s.commit()
+            for eid in touched:
+                recompute_intent(s, eid)
+            s.commit()
+        stats["remaining_unclassified"] = (
+            session.query(func.count())
+            .select_from(Enterprise)
+            .filter(Enterprise.industry_key.is_(None))
+            .scalar()
+            or 0
+        )
+        return stats
+
+    from .task_runtime import spawn
+
+    spawn(task_id, _worker, label="backfill-icp")
+    return {"task_id": task_id}

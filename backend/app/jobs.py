@@ -309,6 +309,11 @@ def run_daily_incremental() -> dict:
                     )
                     if is_new:
                         stats["ggzy_new"] += 1
+                    # SPEC-W W1：增量建档同导入链路语义——ICP 分类（含同行打标）
+                    if ent.industry_key is None:
+                        from .api.imports import apply_icp
+
+                        apply_icp(ent)
                     s.commit()
             except IntegrityError:
                 logger.warning(
@@ -386,6 +391,11 @@ def run_daily_incremental() -> dict:
                 continue
             with SessionLocal() as s:
                 ent, _ = resolve_enterprise(s, buyer, source="ccgp_buyer")
+                # SPEC-W W1：采购人建档同语义补 ICP 分类
+                if ent.industry_key is None:
+                    from .api.imports import apply_icp
+
+                    apply_icp(ent)
                 exists = (
                     s.query(Signal)
                     .filter(

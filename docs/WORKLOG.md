@@ -1105,3 +1105,33 @@ journey E2E 超时）。三层递进诊断：①openapi 显示该路由无 query
 **教训**：①在"普通函数"上方插入代码时，先确认它不是某端点的装饰器悬挂区——
 装饰器与 def 之间绝不允许插入内容；②路由误配的诊断神器=ASGI spy 打
 scope["route"].endpoint（比 openapi/路由枚举都直接，_IncludedRouter 包装下唯一可靠）。
+
+
+## 2026-11-01 · W40 认领 · SPEC-W 数据质量轮：采集建档 ICP 分类补全（Agent B）
+
+摸底：企业池 346→**1122**（新工业词表下每日增量自动扩池生效）、信号 753→**3423**；
+但 **991 家"未分类"**——run_daily_incremental 建档后从未调 apply_icp（只在导入/
+enrich 链路），行业筛选/ICP 评分/research_edu 加成全失效。契约 docs/SPEC-W.md。
+**动文件**：jobs.py（增量段补 apply_icp——该文件我持有 subscription_rules 函数区）、
+api/tasks.py（backfill-icp 端点，我的 notice_contacts 同区）。SPEC-V 已提交本地
+（v1.0.8 待推：Clash 未开，轮询中）。
+
+
+## 2026-11-01 · W40 SPEC-W 结果（Agent B）+ 数据池倍增观察
+
+**数据观察**：新工业词表下每日增量自动扩池——企业 346→**1122**、信号 753→**3423**。
+暴露真问题：**991 家"未分类"**（run_daily_incremental 建档后从未调 apply_icp——
+该函数只在导入/enrich 链路），行业筛选/ICP 评分/research_edu 加成全失效。
+
+**落地**：
+- **W1 根治**：增量两段（ggzy 中标方/ccgp 采购人）建档后补 apply_icp
+  （industry_key 空才调，幂等）
+- **W2 存量补全**：POST /api/tasks/backfill-icp（SSE 任务，幂等：只扫 industry_key
+  为空；**分类与同行打标正交**——apply_icp 前存/后恢复 is_competitor，采集端事实
+  打标不被命名规则覆盖）；真库执行 991 家→**98 家归类**（environmental 68 最大——
+  环保水务为政采设备大户，合理）、有评分 127→**222**
+- **语义澄清（测试逼出）**：设备制造商（中标方）没有"买家行业"→ industry_key=None
+  是**正确行为**（不发明数据）；893 家剩余未分类=泛名企业+同行，保持未分类
+- 任务语义：幂等=**分类数不再增**（无词企业每轮仍被扫描但不产生新分类）
+
+**门禁**：224 全绿（+2 SPEC-W）+ build + E2E 6。
