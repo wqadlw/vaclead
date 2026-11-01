@@ -12,6 +12,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/outreach": "序列触达",
   "/outreach/inbox": "收件箱",
   "/reports": "报表中心",
+  "/compare": "企业对比",
 };
 
 export const BRAND = {

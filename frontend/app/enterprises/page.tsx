@@ -7,6 +7,7 @@ import { Pencil, Save, Search, Settings2, RotateCcw, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import EnterprisePeek from "@/components/EnterprisePeek";
 import { AGG_OPS, AdvancedFilterModal, QuickPicks, SummaryBar } from "@/components/EnterprisesWidgets";
+import { addToCompare, readCompare } from "@/lib/compare";
 import { api } from "@/lib/api";
 import type { Enterprise, PageData } from "@/lib/api";
 import { INDUSTRY_OPTIONS } from "@/lib/constants";
@@ -759,6 +760,18 @@ export default function EnterprisesPage() {
             批量转线索
           </Button>
           <Button size="small" onClick={() => setTagModal(true)}>打标签</Button>
+          <Button
+            size="small"
+            onClick={() => {
+              const results = selectedIds.map((id) => addToCompare(id));
+              const ok = results.filter((r) => r.ok).length;
+              const firstFail = results.find((r) => !r.ok);
+              if (ok) Toast.success(`已加入对比 ${ok} 家（${readCompare().length}/4）`);
+              if (firstFail?.reason) Toast.warning(firstFail.reason);
+            }}
+          >
+            加入对比
+          </Button>
           <Button size="small" type="warning" theme="light" onClick={() => setPoolConfirm(true)}>
             批量退公海
           </Button>

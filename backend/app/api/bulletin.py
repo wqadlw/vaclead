@@ -82,6 +82,7 @@ def list_signals(
             "type": sig.type,
             "type_cn": _TYPE_CN.get(sig.type, sig.type),
             "title": sig.title,
+            "url": sig.url,
             "ent_id": ent.id,
             "ent_name": ent.name,
             "ent_industry": ent.industry_key,

@@ -18,6 +18,7 @@ interface SignalRow {
   type: string;
   type_cn: string;
   title: string;
+  url: string | null;
   ent_id: number;
   ent_name: string;
   ent_industry: string | null;
@@ -168,8 +169,21 @@ export default function SignalsPage() {
                     {s.pub_date && <span className="text-[12px] text-[var(--muted)]">{s.pub_date}</span>}
                     {s.province && <span className="text-[12px] text-[var(--muted)]">· {s.province}</span>}
                   </div>
-                  <div className="mt-1 truncate text-[14px] font-medium text-[var(--ink)]" title={s.title}>
-                    {s.title}
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <span className="truncate text-[14px] font-medium text-[var(--ink)]" title={s.title}>
+                      {s.title}
+                    </span>
+                    {s.url && (
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0 text-[11.5px] text-[var(--accent)] hover:underline"
+                        title="查看官方公示原文"
+                      >
+                        原文 ↗
+                      </a>
+                    )}
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-[13px]">
                     <a href={`/enterprises/view?id=${s.ent_id}`} className="text-[var(--accent)] hover:underline">

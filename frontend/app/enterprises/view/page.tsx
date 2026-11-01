@@ -10,6 +10,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Button, Input, Skeleton, TabPane, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
 import { ArrowLeft, Bell, BellRing, Trash2, UserCheck } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import { addToCompare, readCompare } from "@/lib/compare";
 import { api } from "@/lib/api";
 import type { Enterprise } from "@/lib/api";
 
@@ -295,6 +296,16 @@ function IntelInner() {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <Button
+              theme="light"
+              onClick={() => {
+                const r = addToCompare(detail.id);
+                if (r.ok) Toast.success(`已加入对比（${readCompare().length}/4），去「企业对比」页查看`);
+                else Toast.warning(r.reason ?? "无法加入");
+              }}
+            >
+              加入对比
+            </Button>
             <Button theme="light" icon={subscribed ? <BellRing size={14} /> : <Bell size={14} />} onClick={toggleSubscribe}>
               {subscribed ? "已关注" : "关注"}
             </Button>

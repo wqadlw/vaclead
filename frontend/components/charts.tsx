@@ -86,16 +86,29 @@ export function SparkBars({ values, width = 96, height = 28 }: { values: number[
 }
 
 /** 漏斗条（ant-design-pro 漏斗模式的扁平化）：按值宽度递减 */
-export function FunnelBars({ items }: { items: { label: string; value: number }[] }) {
+export function FunnelBars({
+  items,
+  onPick,
+}: {
+  items: { label: string; value: number }[];
+  onPick?: (label: string) => void;
+}) {
   const max = Math.max(...items.map((i) => i.value), 1);
   return (
     <div className="space-y-2">
       {items.map((it) => (
-        <div key={it.label} className="flex items-center gap-3">
+        <div
+          key={it.label}
+          className={`flex items-center gap-3 ${onPick ? "cursor-pointer" : ""}`}
+          onClick={onPick ? () => onPick(it.label) : undefined}
+          title={onPick ? `查看${it.label}` : undefined}
+        >
           <span className="w-14 shrink-0 text-right text-[12px] text-[var(--muted)]">{it.label}</span>
           <div className="h-6 flex-1 rounded-sm bg-[var(--raised)]">
             <div
-              className="flex h-full items-center justify-end rounded-sm bg-[var(--accent)] px-2"
+              className={`flex h-full items-center justify-end rounded-sm px-2 ${
+                onPick ? "hover:opacity-100" : ""
+              } bg-[var(--accent)]`}
               style={{ width: `${Math.max((it.value / max) * 100, 2)}%`, opacity: 0.85 }}
             >
               <span className="text-[11px] font-medium tabular-nums text-white">{it.value}</span>
@@ -107,14 +120,25 @@ export function FunnelBars({ items }: { items: { label: string; value: number }[
   );
 }
 
-/** BarList（tremor 模式）：横条 + 名称 + 值，行尾色块 */
-export function BarList({ items }: { items: { name: string; value: number }[] }) {
+/** BarList（tremor 模式）：横条 + 名称 + 值，行尾色块；onPick=下钻（SPEC-Z） */
+export function BarList({
+  items,
+  onPick,
+}: {
+  items: { name: string; value: number }[];
+  onPick?: (name: string) => void;
+}) {
   const max = Math.max(...items.map((i) => i.value), 1);
   const palette = ["var(--accent)", "#5a8fa3", "#89aab6", "#b8c9d1", "#d8e1e5", "#e8edef"];
   return (
     <div className="space-y-1.5">
       {items.map((it, i) => (
-        <div key={it.name} className="flex items-center gap-2.5">
+        <div
+          key={it.name}
+          className={`flex items-center gap-2.5 ${onPick ? "cursor-pointer" : ""}`}
+          onClick={onPick ? () => onPick(it.name) : undefined}
+          title={onPick ? `查看${it.name}` : undefined}
+        >
           <span className="w-20 shrink-0 truncate text-[12px] text-[var(--ink)]" title={it.name}>
             {it.name}
           </span>
@@ -137,13 +161,24 @@ export function BarList({ items }: { items: { name: string; value: number }[] })
 }
 
 /** 省份分布条（SPEC-F F4 地图的数据可得版：SVG 中国地图需省界路径，
-    先以横向量条呈现，色深=数量；P3 配高德后换真地图） */
-export function ProvinceBars({ items }: { items: { province: string; count: number }[] }) {
+    先以横向量条呈现，色深=数量；P3 配高德后换真地图）；onPick=下钻（SPEC-Z） */
+export function ProvinceBars({
+  items,
+  onPick,
+}: {
+  items: { province: string; count: number }[];
+  onPick?: (province: string) => void;
+}) {
   const max = Math.max(...items.map((i) => i.count), 1);
   return (
     <div className="space-y-1">
       {items.slice(0, 10).map((it) => (
-        <div key={it.province} className="flex items-center gap-2.5">
+        <div
+          key={it.province}
+          className={`flex items-center gap-2.5 ${onPick ? "cursor-pointer" : ""}`}
+          onClick={onPick ? () => onPick(it.province) : undefined}
+          title={onPick ? `查看${it.province}的客户` : undefined}
+        >
           <span className="w-14 shrink-0 truncate text-right text-[12px] text-[var(--ink)]">
             {it.province}
           </span>

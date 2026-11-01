@@ -1219,3 +1219,33 @@ competitor/unreachable/budget/other）——产品规则合理，测试补 lost_
 following→won 不是合法迁移（必须过 intent）——批量测试的状态构造要沿状态机走。
 
 **门禁**：229 全绿（+4 SPEC-Y）+ build + E2E 6（8017）。
+
+
+## 2026-11-01 · W44 认领 · SPEC-Z 分析下钻联动+企业对比（Agent B）
+
+"分析到行动"最后一公里：图表点击即筛选（BI drill-down 标配）+ 企业横向对比。
+契约 docs/SPEC-Z.md（纯前端轮：零后端改动、零表结构变更）。
+**动文件**：charts.tsx（三组件 onPick）/page.tsx（三处接线）/
+signals page.tsx（原文外链）/compare page.tsx（新页）/enterprises view+page（选入按钮）。
+
+
+## 2026-11-01 · W44 SPEC-Z 结果（Agent B）+ 分析到行动闭环收官
+
+**落地**：
+- **Z1 图表下钻能力**：charts.tsx 的 BarList/ProvinceBars/FunnelBars 加可选
+  `onPick` 回调（不传=纯展示向后兼容；命中行 cursor+title 提示）
+- **Z2 工作台三处接线**：省份条→/enterprises?province=X；来源条→/enterprises?source=X
+  （SOURCE_BY_CN 反查）；漏斗阶段→/leads?status=X（已报价→/quotes）——
+  **"分析到行动"一击直达**（BI drill-down 标配，QuickBI 调研提醒的"携带筛选"坑
+  在本平台天然规避：工作台图表是全局分布无上下文筛选）
+- **Z3 标讯原文外链**：标讯中心行 title 加「原文 ↗」（url 非空时）——
+  合规溯源最后一环（bulletin.py items 补 url 字段）
+- **Z4 企业对比页 /compare**：属性为行、企业为列（ICP/意图/完整度/注册资本/
+  成立日期/法人/中标次数/累计额/最近中标/地区/来源/标签），**最优值 accent 高亮**；
+  选入=列表操作条/情报页「加入对比」（localStorage ≤4 家）；URL ?ids= 可分享；
+  移除单列。零后端改动（聚合既有 detail/stat）
+- **lib/compare.ts**：选入清单工具（页面文件不作工具库——view 页从 lib 导入）
+
+**门禁**：230 全绿（+0 后端新增——纯前端轮 + bulletin 补 url 字段）+ build + E2E 6。
+**坑**：①Semi TagColor 是 "light-blue"（非 lightBlue）②从页面文件导出工具函数
+会引发打包耦合——工具一律放 lib/。

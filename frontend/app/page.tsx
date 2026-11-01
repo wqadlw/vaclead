@@ -69,6 +69,20 @@ const SOURCE_CN: Record<string, string> = {
   manual: "手工",
 };
 
+// SPEC-Z Z2 下钻：中文标签 → 跳转目标（图表点击即筛选，BI drill-down 标配）
+const FUNNEL_TARGET: Record<string, string> = {
+  新线索: "/leads?status=new",
+  跟进中: "/leads?status=following",
+  意向: "/leads?status=intent",
+  已报价: "/quotes",
+  成交: "/leads?status=won",
+  公海: "/leads?status=pool",
+  放弃: "/leads?status=lost",
+};
+const SOURCE_BY_CN: Record<string, string> = Object.fromEntries(
+  Object.entries(SOURCE_CN).map(([k, v]) => [v, k]),
+);
+
 /* ---------------- SPEC-N N4 本月业绩榜（工作台卡） ---------------- */
 
 interface LeaderboardItem {
@@ -512,11 +526,20 @@ export default function DashboardPage() {
           <LeaderboardCard />
           <section className="rounded-lg border border-[var(--border)] bg-white p-5">
             <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">线索漏斗</h2>
-            <FunnelBars items={sum?.funnel ?? []} />
+            <FunnelBars
+              items={sum?.funnel ?? []}
+              onPick={(label) => {
+                const target = FUNNEL_TARGET[label];
+                if (target) router.push(target);
+              }}
+            />
           </section>
           <section className="rounded-lg border border-[var(--border)] bg-white p-5">
             <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">客户省份分布</h2>
-            <ProvinceBars items={sum?.geo ?? []} />
+            <ProvinceBars
+              items={sum?.geo ?? []}
+              onPick={(province) => router.push(`/enterprises?province=${encodeURIComponent(province)}`)}
+            />
           </section>
           <section className="rounded-lg border border-[var(--border)] bg-white p-5">
             <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">企业来源分布</h2>
@@ -525,6 +548,10 @@ export default function DashboardPage() {
                 name: SOURCE_CN[s.name] ?? s.name,
                 value: s.value,
               }))}
+              onPick={(name) => {
+                const key = SOURCE_BY_CN[name];
+                if (key) router.push(`/enterprises?source=${key}`);
+              }}
             />
           </section>
         </div>
