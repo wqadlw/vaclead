@@ -621,6 +621,9 @@ def start_ccgp_scan(
                             buyer_ent, _ = resolve_enterprise(
                                 s, f"待归属·{item['title'][:18].strip()}", source="ccgp_buyer"
                             )
+                        # SPEC-W W1 同语义：买家建档后补 ICP 分类（幂等，分类过则跳过）
+                        if buyer_ent.industry_key is None:
+                            apply_icp(buyer_ent)
                         exists = (
                             s.query(Signal)
                             .filter(
