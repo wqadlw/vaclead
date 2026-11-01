@@ -1161,3 +1161,35 @@ api/tasks.py（backfill-icp 端点，我的 notice_contacts 同区）。SPEC-V �
 **数据规模终态（本轮）**：企业 **1271** / 信号 **3700** / 有评分 **330**（26%）/
 分类分布合理（research_edu 176 领跑=政采结构真实反映）。
 **门禁**：224 全绿（词表变化零回归）。
+
+
+## 2026-11-01 · W42 认领 · SPEC-X 分析环深化（Agent B）
+
+PRODUCT_GAP §三 P0-3 遗留半项（转化率/来源 ROI——当时只做了来源分布计数）+
+跟进健康度。数据可行性：audit_log（W38 起）可重放 lead status 流转边。
+契约 docs/SPEC-X.md。**动文件**：analytics.py（conversion 端点+summary 健康度）/
+reports.py（周报转化段）/page.tsx（健康度卡）/app/reports/page.tsx（对比表）。
+口径待调研校准后锁定。
+
+
+## 2026-11-01 · W42 SPEC-X 结果（Agent B）+ 分析环收官
+
+**调研校准**（Pipedrive/HubSpot 口径）：①转化率以**流转事件**为准（非快照）——
+audit_log 重放法正确；②来源 ROI=first-touch 快照（source 字段终身不变）；③健康度
+阈值 7/14/30 分级（monday CRM 默认 14 天）且**有未来待办的停滞线索不算停滞**
+（有人在管）。
+
+**落地**：
+- **X1 阶段转化率**：GET /api/analytics/conversion——audit_log 重放 status
+  [before→after] 边计数，分母=曾从 S 转出 + 当前停留 S（快照补底 insert 无审计缺口）；
+  边数 <10 返回 accumulating（前端"数据积累中"）
+- **X2 来源 ROI**：按企业来源分组的线索数/赢单数/赢单金额/赢单率（first-touch
+  快照法），报表中心「来源转化对比」表
+- **X3 跟进健康度**：并入 dashboard/summary——活跃线索超 7/14 天未跟进计数
+  （**有未来待办的排除**——有人在管不算停滞），工作台健康度卡（红黄分级）
+
+**语义澄清（测试逼出）**：转线索即 following 态（企业转线索跳过 new）——
+**new→following 边在主业务流中不存在**（new 只在公海/批量导入场景），转化率
+三段修正为 following→intent→won 口径。
+
+**门禁**：226 全绿（+2 SPEC-X）+ build + E2E 6（8017）。

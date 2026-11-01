@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import current_user
 from ..db import get_session
-from ..models import Contact, Enterprise, Lead, Signal, User
+from ..models import Contact, Enterprise, Lead, Signal, Todo, User
 
 router = APIRouter(tags=["dashboard"])
 
@@ -166,7 +166,155 @@ def dashboard_summary(
     return {
         "kpis": kpis, "trend": trend, "sources": sources,
         "geo": geo, "funnel": funnel, "forecast": forecast,
+        "health": _followup_health(session),
     }
+
+
+def _followup_health(session: Session) -> dict:
+    """跟进健康度（SPEC-X X3）：活跃线索中超期未跟进的计数与占比。
+
+    口径（调研校准）：status ∈ {following, intent} 且 last_followed_at 距今 > 阈值
+    且**无未来到期待办**（有 Todo 在身=有人在管，不算停滞）；
+    两级阈值（7 天警示 / 14 天严重，monday CRM 默认 14 天口径的分级版）；
+    从未跟进的按 created_at 起算。
+    """
+    now = datetime.now(timezone.utc)
+    from ..models import Todo
+
+    todo_leads = {
+        row[0]
+        for row in session.query(Todo.lead_id).filter(
+            Todo.done == 0, Todo.due_date.is_not(None)
+        )
+    }
+
+    def _stale(days: int) -> int:
+        cutoff = (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+        rows = (
+            session.query(Lead.id)
+            .filter(
+                Lead.status.in_(["following", "intent"]),
+                func.coalesce(Lead.last_followed_at, Lead.created_at) < cutoff,
+            )
+            .all()
+        )
+        return sum(1 for (lid,) in rows if lid not in todo_leads)
+
+    active_rows = (
+        session.query(Lead.id)
+        .filter(Lead.status.in_(["following", "intent"]))
+        .all()
+    )
+    active = len(active_rows)
+    stale7 = _stale(7)
+    stale14 = _stale(14)
+    return {
+        "active_leads": active,
+        "stale_7d": stale7,
+        "stale_14d": stale14,
+        "ratio": round(stale7 / active, 3) if active else 0.0,
+    }
+
+
+@router.get("/analytics/conversion")
+def conversion_analytics(
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """分析环深化（SPEC-X）：阶段转化率（audit_log 重放）+ 来源 ROI（first-touch 快照）。
+
+    - 阶段转化率：重放 lead update 的 status [before→after] 边计数，
+      X1 转化率 = 该边发生数 / 前 from 态的 update 事件数；audit 自 W38 起才有数据，
+      边数过少时返回 accumulating 状态（前端显示"数据积累中"）
+    - 来源 ROI：按企业来源分组的线索数/赢单数/赢单金额/赢单率（won/(won+lost)）
+    """
+    import json as _json
+
+    from ..models import AuditLog, Quote
+
+    # ---- X1 阶段转化率（重放 status 边）----
+    edges: dict[tuple[str, str], int] = {}
+    enter_counts: dict[str, int] = {}
+    rows = session.execute(
+        select(AuditLog.changes_json)
+        .where(AuditLog.entity == "lead", AuditLog.action == "update")
+        .order_by(AuditLog.id.asc())
+        .limit(5000)
+    ).all()
+    for (changes_json,) in rows:
+        try:
+            changes = _json_loads(changes_json)
+        except ValueError:
+            continue
+        if "status" in changes:
+            before, after = changes["status"][0], changes["status"][1]
+            if before and after and before != after:
+                edges[(before, after)] = edges.get((before, after), 0) + 1
+                enter_counts[after] = enter_counts.get(after, 0) + 1
+
+    stages = [("new", "following"), ("following", "intent"), ("intent", "won")]
+    transitions = []
+    total_edges = sum(edges.values())
+    # 分母口径：曾经到达 frm ≈ 当前停留在 frm（快照补底）+ 曾从 frm 转出（enter_counts）
+    snapshot = {
+        str(r[0]): int(r[1])
+        for r in session.query(Lead.status, func.count()).group_by(Lead.status).all()
+    }
+    for frm, to in stages:
+        edge_n = edges.get((frm, to), 0)
+        from_n = enter_counts.get(frm, 0) + snapshot.get(frm, 0)
+        rate = round(edge_n / from_n, 3) if from_n else None
+        transitions.append({"from": frm, "to": to, "edges": edge_n, "rate": rate})
+
+    conversion = {
+        "status": "ok" if total_edges >= 10 else "accumulating",
+        "total_edges": total_edges,
+        "transitions": transitions,
+    }
+
+    # ---- X2 来源 ROI（first-touch：线索按企业来源归属）----
+    roi_rows = (
+        session.query(Enterprise.source, func.count())
+        .join(Lead, Lead.enterprise_id == Enterprise.id)
+        .group_by(Enterprise.source)
+        .all()
+    )
+    won_rows = (
+        session.query(Enterprise.source, func.count(), func.sum(Lead.amount_wan))
+        .join(Lead, Lead.enterprise_id == Enterprise.id)
+        .filter(Lead.status == "won")
+        .group_by(Enterprise.source)
+        .all()
+    )
+    lost_rows = (
+        session.query(Enterprise.source, func.count())
+        .join(Lead, Lead.enterprise_id == Enterprise.id)
+        .filter(Lead.status == "lost")
+        .group_by(Enterprise.source)
+        .all()
+    )
+    lost_map = {str(r[0]): int(r[1]) for r in lost_rows}
+    won_map = {str(r[0]): (int(r[1]), float(r[2] or 0)) for r in won_rows}
+    roi = []
+    for src, leads in roi_rows:
+        won_n, won_amount = won_map.get(str(src), (0, 0.0))
+        closed = won_n + lost_map.get(str(src), 0)
+        roi.append({
+            "source": str(src),
+            "leads": int(leads),
+            "won": won_n,
+            "won_amount_wan": round(won_amount, 1),
+            "win_rate": round(won_n / closed, 3) if closed else None,
+        })
+    roi.sort(key=lambda x: (-x["won_amount_wan"], -x["leads"]))
+
+    return {"conversion": conversion, "source_roi": roi}
+
+
+def _json_loads(raw: str) -> dict:
+    import json as _json
+
+    return _json.loads(raw or "{}")
 
 
 @router.get("/dashboard/my-day")

@@ -14,6 +14,39 @@ interface Kpi { key: string; label: string; value: number; prev: number; delta: 
 interface FunnelRow { status: string; label: string; value: number }
 interface TopSignal { title: string; ent_name: string; type: string; amount_wan: number | null; pub_date: string | null; base_score: number }
 interface TopCustomer { ent_name: string; industry: string | null; grade: string | null; composite: number }
+interface RoiRow { source: string; leads: number; won: number; won_amount_wan: number; win_rate: number | null }
+
+const SOURCE_CN_ROI: Record<string, string> = {
+  ggzy: "官方中标数据", ccgp: "政采网公告", ccgp_buyer: "政采买家",
+  ggzy_buyer: "官方买家", csv: "CSV 导入", poi: "POI 采集",
+  tender: "招标导入", manual: "手工", webform: "留资表单",
+};
+
+/** SPEC-X X2：来源转化对比（first-touch 快照） */
+function SourceRoiTable() {
+  const [items, setItems] = useState<RoiRow[]>([]);
+  useEffect(() => {
+    api.get<{ source_roi: RoiRow[] }>("/api/analytics/conversion")
+      .then((d) => setItems(d.source_roi ?? []))
+      .catch(() => undefined);
+  }, []);
+  return (
+    <Table
+      size="small"
+      dataSource={items}
+      rowKey="source"
+      pagination={false}
+      columns={[
+        { title: "来源", dataIndex: "source", render: (v: string) => SOURCE_CN_ROI[v] ?? v },
+        { title: "线索数", dataIndex: "leads", width: 90, render: (v: number) => <span className="tabular-nums">{v}</span> },
+        { title: "赢单数", dataIndex: "won", width: 90, render: (v: number) => <span className="tabular-nums">{v}</span> },
+        { title: "赢单金额(万)", dataIndex: "won_amount_wan", width: 110, render: (v: number) => <span className="tabular-nums">{v.toLocaleString()}</span> },
+        { title: "赢单率", dataIndex: "win_rate", width: 90, render: (v: number | null) => (v != null ? <span className="tabular-nums">{Math.round(v * 100)}%</span> : "—") },
+      ]}
+      empty="暂无线索数据"
+    />
+  );
+}
 interface WeeklyReport {
   period: { start: string; end: string; label: string };
   kpis: Kpi[];
@@ -135,6 +168,11 @@ export default function ReportsPage() {
                 ]}
                 empty="本周无标讯"
               />
+            </section>
+            {/* SPEC-X X2：来源转化对比（first-touch 快照） */}
+            <section className="rounded-lg border border-[var(--border)] bg-white p-5 xl:col-span-2">
+              <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">来源转化对比</h2>
+              <SourceRoiTable />
             </section>
             <section className="rounded-lg border border-[var(--border)] bg-white p-5">
               <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">Top 新客户（综合分）</h2>

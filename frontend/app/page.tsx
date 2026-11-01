@@ -46,6 +46,12 @@ interface SummaryData {
   sources: { name: string; value: number }[];
   geo: { province: string; count: number }[];
   funnel: { status: string; label: string; value: number }[];
+  health?: {
+    active_leads: number;
+    stale_7d: number;
+    stale_14d: number;
+    ratio: number;
+  };
   forecast?: {
     months: { month: string; weighted: number }[];
     current_month_weighted: number;
@@ -419,6 +425,43 @@ export default function DashboardPage() {
         </section>
 
         <div className="space-y-5">
+          {/* SPEC-X X3：跟进健康度 */}
+          <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+            <div className="mb-3 flex items-baseline justify-between">
+              <h2 className="text-[15px] font-medium text-[var(--ink)]">跟进健康度</h2>
+              <span className="text-[12px] text-[var(--muted)]">活跃线索超期未跟进</span>
+            </div>
+            {sum?.health ? (
+              <div>
+                <div className="flex items-baseline gap-2">
+                  <span
+                    className={`text-[26px] font-semibold leading-none tabular-nums ${
+                      sum.health.stale_14d > 0 ? "text-[#c0392b]" : sum.health.stale_7d > 0 ? "text-[#c2801b]" : "text-[var(--ink)]"
+                    }`}
+                  >
+                    {sum.health.stale_7d}
+                  </span>
+                  <span className="text-[12px] text-[var(--muted)]">
+                    条超 7 天（其中 {sum.health.stale_14d} 条超 14 天）
+                  </span>
+                </div>
+                <div className="mt-3 h-1.5 w-full rounded-full bg-[var(--border)]">
+                  <div
+                    className={`h-1.5 rounded-full ${sum.health.stale_14d > 0 ? "bg-[#c0392b]" : "bg-[var(--accent)]"}`}
+                    style={{
+                      width: `${Math.min(100, Math.round(sum.health.ratio * 100))}%`,
+                    }}
+                  />
+                </div>
+                <div className="mt-2 text-[12px] text-[var(--muted)]">
+                  活跃线索 {sum.health.active_leads} 条 · 超期占比{" "}
+                  {Math.round(sum.health.ratio * 100)}%
+                </div>
+              </div>
+            ) : (
+              <div className="text-[13px] text-[var(--muted)]">—</div>
+            )}
+          </section>
           {/* SPEC-J J6：加权管道预测（espocrm Forecasts 思想） */}
           <section className="rounded-lg border border-[var(--border)] bg-white p-5">
             <div className="mb-3 flex items-baseline justify-between">
