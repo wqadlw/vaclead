@@ -337,6 +337,16 @@ async def lifespan(app: FastAPI):
         # SPEC-AB：广东拟建/备案公示（比招标早 1-3 个月的采购前兆）
         _register_cron("proposal_gd", _proposal_gd_sweep, 5, 0)
 
+        def _contract_renewals_sweep() -> dict:
+            from .api.contracts import check_contract_renewals
+            from .db import SessionLocal as _SL
+
+            with _SL() as s:
+                return check_contract_renewals(s)
+
+        # SPEC-AD：每日 06:10 扫描即将到期合同 → 自动创建续约 Todo
+        _register_cron("contract_renewals", _contract_renewals_sweep, 6, 10)
+
         def _audit_cleanup_sweep() -> dict:
             from .db import SessionLocal as _SL
             from .jobs import audit_cleanup
@@ -450,6 +460,9 @@ app.include_router(analytics.router, prefix="/api")
 from .api import reports  # noqa: E402
 
 app.include_router(reports.router, prefix="/api")
+from .api import views  # noqa: E402
+
+app.include_router(views.router, prefix="/api")
 from .api import governance  # noqa: E402
 
 app.include_router(governance.router, prefix="/api")
@@ -459,6 +472,9 @@ app.include_router(quotes.router, prefix="/api")
 from .api import leadforms  # noqa: E402
 
 app.include_router(leadforms.router, prefix="/api")
+from .api import contracts  # noqa: E402
+
+app.include_router(contracts.router, prefix="/api")
 from .api import outreach  # noqa: E402
 
 app.include_router(outreach.router, prefix="/api")

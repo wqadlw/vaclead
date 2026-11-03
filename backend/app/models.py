@@ -879,3 +879,60 @@ class SavedView(Base):
     dense: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     col_aggs: Mapped[str] = mapped_column(Text, nullable=False, default="{}")  # JSON
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class Contract(Base):
+    """合同（SPEC-AD）：赢单→签约→回款→续约的后销售链路。
+
+    状态机：draft→active→completed|terminated
+    从 won Quote 一键生成（复制金额与行项目）。
+    """
+
+    __tablename__ = "contract"
+    __table_args__ = (Index("ix_contract_lead", "lead_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lead_id: Mapped[int] = mapped_column(
+        ForeignKey("lead.id", ondelete="CASCADE"), nullable=False
+    )
+    quote_id: Mapped[int | None] = mapped_column(ForeignKey("quote.id"))
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    amount_wan: Mapped[float] = mapped_column(REAL, nullable=False, default=0.0)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
+    # draft→active→completed|terminated
+    sign_date: Mapped[str | None] = mapped_column(Text)
+    start_date: Mapped[str | None] = mapped_column(Text)
+    end_date: Mapped[str | None] = mapped_column(Text)
+    renewal_date: Mapped[str | None] = mapped_column(Text)  # 自动= end_date - 30d
+    payment_terms: Mapped[str | None] = mapped_column(Text)
+    remark: Mapped[str | None] = mapped_column(Text)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"))
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class PaymentMilestone(Base):
+    """回款分期（SPEC-AD AD2）：合同额按比例分期，逐笔跟踪回款。
+
+    典型分期：预付款 30% → 发货款 40% → 验收款 20% → 质保金 10%（中国设备业惯例）。
+    """
+
+    __tablename__ = "payment_milestone"
+    __table_args__ = (Index("ix_pm_contract", "contract_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    contract_id: Mapped[int] = mapped_column(
+        ForeignKey("contract.id", ondelete="CASCADE"), nullable=False
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    label: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    stage: Mapped[str] = mapped_column(Text, nullable=False, default="payment")
+    # prepayment|delivery|acceptance|warranty|payment
+    ratio: Mapped[float] = mapped_column(REAL, nullable=False, default=0.0)  # 百分比
+    amount_wan: Mapped[float] = mapped_column(REAL, nullable=False, default=0.0)
+    due_date: Mapped[str | None] = mapped_column(Text)
+    trigger_desc: Mapped[str | None] = mapped_column(Text)  # 触发条件（如"验收合格后 7 日"）
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    # pending→paid|overdue
+    paid_date: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)

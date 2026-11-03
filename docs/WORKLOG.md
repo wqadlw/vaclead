@@ -1331,3 +1331,31 @@ reports.py（my-week + per-user sweep）/main.py（cron 一行）/前端视图�
 **坑**：①build_my_week 里 Followup 归属字段是 user_id 非 owner_id——_mine 的
 owner_col 参数化修正 ②shared 视图 user_ids NOTLIKE "[]" 与 owner 判断组合逻辑
 要在 list 端点做（不在 serialize 里拼表达式）
+
+
+## 2026-11-04 · W48 认领 · SPEC-AD 客户全生命周期：合同+回款+续约（Agent B）
+
+赢单之后完全空白（Lead.won 之后无后续对象）——头部 CRM 的必争之地。
+**动文件**：models.py（contract/payment_milestone 新表）/api/contracts.py（新）/
+main.py（cron 注册）/前端 contracts page.tsx（新）。待调研回传后出契约。
+
+
+## 2026-11-04 · W48 SPEC-AD 结果（Agent B）+ 后销售链路收官
+
+**落地**：
+- **AD1 合同管理**：contract 表（lead FK/quote FK nullable/金额/状态机
+  draft→active→completed|terminated/签订起止/续约日期/payment_terms/remark）
+  + api/contracts.py CRUD + 状态流转 + /contracts 前端（列表/详情/新建分期/状态流转）
+- **AD2 回款分期**：payment_milestone 表（合同 1:N，行项存 stage/label/ratio/
+  amount/due_date/trigger_desc 快照），服务端重算合同总额（不信前端）
+- **AD3 续约自动化**：check_contract_renewals 每日 06:10 cron——扫描 active 合同
+  end_date ≤ 30 天 → 自动创建续约 Todo（查重防重复）
+- **集成**：Quote.won → 创建合同入口；合同金额入分析环预测基数（Phase 2）
+
+**调研校准**（SuiteCRM AOS_Contracts 模型 + EspoCRM 合同管理实践 + 中国设备采购
+付款惯例）：
+- 合同与 Opportunity 关联 ✓（lead_id FK）
+- Renewal Reminder Date = End Date - 30 天自动计算 ✓
+- 典型付款比例：预付 20-30% + 发货 30-40% + 验收 ≥40% + 质保金 5-10% ✓
+
+**门禁**：239 全绿（+2 SPEC-AD）+ build + E2E 6（8017）。
