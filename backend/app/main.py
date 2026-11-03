@@ -497,6 +497,9 @@ app.include_router(bulletin.router, prefix="/api")
 from .api import webhooks  # noqa: E402
 
 app.include_router(webhooks.router, prefix="/api")
+from .api import prefs  # noqa: E402
+
+app.include_router(prefs.router, prefix="/api")
 
 
 # ---- 单进程部署：托管前端静态导出（frontend/out），SPA 回退 ----

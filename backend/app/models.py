@@ -730,6 +730,8 @@ class Campaign(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
     # draft|running|paused|done；只有 running 参与调度
     daily_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    track_enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # SPEC-AF：打开/点击跟踪开关（1=开；listmonk 隐私实践=按活动可关）
     target_filter: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     # JSON {score_min,industry,source}：enqueue 时对在管线索过滤
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"))

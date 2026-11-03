@@ -1408,3 +1408,47 @@ api/leads.py（露出+at_risk 视图）/api/analytics.py（KPI）/main.py（06:1
   真实 XHR 观测（下轮用浏览器自动化观测真实请求后再定契约）
 **结论**：广东逆向模板（壳→common.js→AJAX）在湖北"形似"但网关+鉴权形态不同，
 不能盲复制；浙江走 JSP 老路。SPEC-AF 立项前需完成浏览器级观测。
+
+
+## 2026-11-04 · W50 认领 · SPEC-AF 营销闭环与执行个性化（Agent B）
+
+PRODUCT_GAP 第四轮 P2 三件 + SPEC-AD 欠账合并一轮：邮件营销跟踪（AF1）/
+跟进时机建议（AF2）/工作台个性化（AF3）/合同余款入预测（AF4）。
+**动文件**：outreach/track.py（新）/outreach/dispatcher.py+sender.py（HTML 注入）/
+api/outreach.py（跟踪+stats 端点）/advice.py（新）/api/prefs.py（新）/
+api/leads.py+analytics.py/main.py（路由）/db.py（演进列）/前端 4 页。
+
+
+## 2026-11-04 · W50 SPEC-AF 结果（Agent B）+ 营销可度量收官
+
+**落地**：
+- **AF1 邮件跟踪**：无状态 token（复用退订盐）→ GET /api/public/track/open/{t}
+  1×1 GIF（每消息唯一 open，MPP 预取只记事件不重复计）+ /track/click/{t}?u=
+  302 跳转（非法 scheme 落 / 且不落事件）；dispatcher 发送时 campaign.track_enabled=1
+  则纯文本→带像素+点击改写 HTML；emailengine 通道 track=False 防双计；
+  SMTP 走 add_alternative multipart；GET /outreach/campaigns/{id}/stats 唯一口径
+  +率（open 虚高、click 可靠度优先口径注记）；活动列表「打开/点击」列
+- **AF2 行动建议**：app/advice.py 五规则（first_touch 48h 未首联/hot_signal 24h
+  新信号/opened_no_reply 7天打开未回→16-17点外呼/switch_channel 5+ touches/
+  at_risk_save）；GET /leads/{id}/advice；线索记录侧板 amber 建议条
+- **AF3 工作台个性化**：GET/PUT /api/prefs/dashboard（settings_kv pref:dashboard:u{id}），
+  7 区块显隐齿轮（KPI/趋势/分析列/作战/待办/待跟进/信号）；**边界调整：排序 P2**
+  （右列 order 化需区块组件化，显隐已覆盖主要价值）
+- **AF4 合同余款**：forecast.contract_backlog = active 合同额 − paid 分期；
+  预测卡显示（赢单后金额不再从管线消失）
+
+**调研吸收**：listmonk 跟踪实践（像素+点击改写+按活动开关+root URL 可配；
+点击比打开可靠——Apple MPP 预取虚高）；销售时机研究（InsideSales 5 分钟
+×21/Cirrus 周四 16-17 点/5+ touches）；twenty 偏好服务端存。
+
+**坑**：
+1. 转义顺序——先整体 HTML 转义会把 URL 的 & 变 &amp; 污染跳转目标；必须先
+   按 URL 切分、URL 原文进 href、非 URL 文本才转义
+2. JSX `{cond && (` 后直接跟 {/* 注释 */} 语法错误——注释在括号内被当对象字面量，
+   用 `<>` fragment 包住
+3. 共享测试库：本模块时间戳行落进 test_spec_o 周报窗口（new_signals 2≠1）——
+   加模块级 id 快照 autouse 清理（子表先删防 FK）；**新测试模块建议默认带此模式**
+4. Mimosa 拦 f-string 表名 SQL（静态常量也拦）——ORM 参数化绕行
+
+**门禁**：252 全绿（+9 SPEC-AF）+ build + E2E 6（8047）；真库迁移
+campaign.track_enabled 幂等 ALTER，integrity ok。

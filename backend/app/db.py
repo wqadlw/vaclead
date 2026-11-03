@@ -66,6 +66,13 @@ _EVOLUTION_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("active", "INTEGER NOT NULL DEFAULT 1"),
         ("team_id", "INTEGER"),
     ],
+    "lead": [
+        ("lifecycle_stage", "TEXT NOT NULL DEFAULT 'lead'"),
+        ("health_score", "INTEGER NOT NULL DEFAULT 50"),
+    ],
+    "campaign": [
+        ("track_enabled", "INTEGER NOT NULL DEFAULT 1"),
+    ],
 }
 
 

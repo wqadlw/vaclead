@@ -19,8 +19,12 @@ _SMTP_TIMEOUT = 20
 
 
 def _smtp_send(account, *, to_email: str, subject: str, body: str,
-               unsubscribe_link: str | None = None) -> tuple[str | None, str | None]:
-    """SMTP 直连一封（STARTTLS）。返回 (message_id, error)。"""
+               unsubscribe_link: str | None = None,
+               html: str | None = None) -> tuple[str | None, str | None]:
+    """SMTP 直连一封（STARTTLS）。返回 (message_id, error)。
+
+    html 给定时发 multipart/alternative（text 保底 + HTML 带跟踪，SPEC-AF AF1）。
+    """
     msg = MimeMessage()
     msg["From"] = account.email
     msg["To"] = to_email
@@ -32,6 +36,8 @@ def _smtp_send(account, *, to_email: str, subject: str, body: str,
         msg["List-Unsubscribe"] = f"<{unsubscribe_link}>"
         msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
     try:
         with smtplib.SMTP(account.smtp_host, account.smtp_port or 587,
                           timeout=_SMTP_TIMEOUT) as srv:
@@ -46,19 +52,26 @@ def _smtp_send(account, *, to_email: str, subject: str, body: str,
 
 
 def send_one(session: Session, message, account, *, send_fn=None,
-             unsubscribe_link: str | None = None) -> tuple[bool, str | None, str | None]:
-    """发送单封，返回 (ok, message_id, error)。"""
+             unsubscribe_link: str | None = None,
+             html: str | None = None) -> tuple[bool, str | None, str | None]:
+    """发送单封，返回 (ok, message_id, error)。
+
+    html=跟踪 HTML（AF1）。emailengine 通道 track=False——事件由本系统自采
+    （像素/跳转端点写 outreach_event），避免双计。
+    """
     if send_fn is None:
         if account.provider == "emailengine":
             from ..notify.emailengine_client import submit_full
 
             def send_fn(acc, *, to_email, subject, body, **_kw):
-                ok, mid = submit_full(session, to=to_email, subject=subject, text=body)
+                ok, mid = submit_full(session, to=to_email, subject=subject, text=body,
+                                      html=_kw.get("html"), track=False)
                 return ok, mid, None if ok else "emailengine-submit-failed"
         else:
             def send_fn(acc, *, to_email, subject, body, **kw):
                 mid, err = _smtp_send(acc, to_email=to_email, subject=subject,
-                                      body=body, unsubscribe_link=kw.get("unsubscribe_link"))
+                                      body=body, unsubscribe_link=kw.get("unsubscribe_link"),
+                                      html=kw.get("html"))
                 return mid is not None, mid, err
     return send_fn(account, to_email=message.to_email, subject=message.subject,
-                   body=message.body, unsubscribe_link=unsubscribe_link)
+                   body=message.body, unsubscribe_link=unsubscribe_link, html=html)

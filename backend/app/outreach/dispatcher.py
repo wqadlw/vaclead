@@ -289,9 +289,17 @@ def run_outreach_dispatch(session: Session, *, send_fn=None, list_fn=None) -> di
                 session.commit()
                 continue
             msg.subject, msg.body = subject, body  # 回写渲染结果留档
+            # SPEC-AF AF1：活动开启跟踪时生成 HTML 部分（像素+链接改写）；
+            # text/plain 保底不变，收件客户端不支持 HTML 也能读
+            html_part = None
+            if getattr(camp, "track_enabled", 1):
+                from .track import to_tracked_html
+
+                html_part = to_tracked_html(body, session, msg.id)
             ok, mid, err = send_one(
                 session, msg, account, send_fn=send_fn,
                 unsubscribe_link=unsubscribe_url(session, msg.to_email),
+                html=html_part,
             )
             if ok:
                 msg.status = "sent"

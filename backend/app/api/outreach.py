@@ -1,9 +1,11 @@
 """触达端点（SPEC-J J4）：活动/序列/账户/消息/收件箱/退订名单 + 公开退订页。"""
 from __future__ import annotations
 
+import base64
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -387,3 +389,96 @@ def unsubscribe_confirm(token: str, session: Session = Depends(get_session)):
             session.add(OutreachEvent(message_id=m.id, type="unsubscribed", payload="{}"))
         session.commit()
     return _page("退订成功", f"<p><b>{email}</b> 已加入退订名单，不会再收到营销邮件。</p>")
+
+
+# ---------------- 打开/点击跟踪（SPEC-AF AF1） ----------------
+# 标准 1×1 透明 GIF（base64 常量，防手写 hex 出错）
+_GIF_BYTES = base64.b64decode(
+    "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+)
+
+
+def _log_event(session: Session, mid: int, etype: str, payload: dict) -> None:
+    session.add(OutreachEvent(message_id=mid, type=etype, payload=json.dumps(payload)))
+    session.commit()
+
+
+@router.get("/public/track/open/{token}")
+def track_open(token: str, session: Session = Depends(get_session)):
+    """打开像素：1×1 GIF。每消息首次写 open 事件（MPP 预取重复只记事件不计唯一）。"""
+    from ..outreach.track import track_message_id
+
+    mid = track_message_id(session, token)
+    if mid is not None:
+        first = (
+            session.query(OutreachEvent)
+            .filter(OutreachEvent.message_id == mid, OutreachEvent.type == "open")
+            .first()
+            is None
+        )
+        if first:
+            _log_event(session, mid, "open", {})
+    return Response(content=_GIF_BYTES, media_type="image/gif")
+
+
+@router.get("/public/track/click/{token}")
+def track_click(token: str, u: str = "", session: Session = Depends(get_session)):
+    """点击跳转：写 click 事件后 302 到真实目标（点击比打开可靠——MPP 免疫）。"""
+    from ..outreach.track import track_message_id
+
+    mid = track_message_id(session, token)
+    target = u if u.startswith(("http://", "https://")) else "/"
+    if mid is not None and target != "/":
+        _log_event(session, mid, "click", {"u": target})
+    return RedirectResponse(target, status_code=302)
+
+
+@router.get("/outreach/campaigns/{cid}/stats")
+def campaign_stats(cid: int, session: Session = Depends(get_session),
+                   user: User = Depends(current_user)):
+    """活动报表：唯一口径（每 message 去重）+ 率 + 最近事件流。
+
+    口径注记：open 受 Apple MPP 预取虚高影响，click_rate 可靠度优先。
+    """
+    camp = session.get(Campaign, cid)
+    if camp is None:
+        raise HTTPException(404, "活动不存在")
+    msgs = session.query(EmailMessage).filter(EmailMessage.campaign_id == cid).all()
+    msg_ids = [m.id for m in msgs]
+    sent_ids = [m.id for m in msgs if m.status in ("sent", "replied", "bounced")]
+    total_sent = len(sent_ids)
+
+    uniq: dict[str, set[int]] = {"open": set(), "click": set(), "reply": set(),
+                                 "bounced": set(), "unsubscribed": set()}
+    events: list[OutreachEvent] = []
+    if msg_ids:
+        events = (
+            session.query(OutreachEvent)
+            .filter(OutreachEvent.message_id.in_(msg_ids))
+            .order_by(OutreachEvent.id.desc())
+            .all()
+        )
+        for ev in events:
+            if ev.type in uniq:
+                uniq[ev.type].add(ev.message_id)
+
+    def _rate(n: int) -> float:
+        return round(n / total_sent, 3) if total_sent else 0.0
+
+    return {
+        "campaign_id": cid,
+        "total": len(msgs),
+        "sent": total_sent,
+        "unique_open": len(uniq["open"]),
+        "unique_click": len(uniq["click"]),
+        "replied": len(uniq["reply"]),
+        "bounced": len(uniq["bounced"]),
+        "unsubscribed": len(uniq["unsubscribed"]),
+        "open_rate": _rate(len(uniq["open"])),
+        "click_rate": _rate(len(uniq["click"])),
+        "reply_rate": _rate(len(uniq["reply"])),
+        "recent_events": [
+            {"type": ev.type, "created_at": ev.created_at, "message_id": ev.message_id}
+            for ev in events[:10]
+        ],
+    }

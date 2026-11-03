@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Table } from "@douyinfe/semi-ui";
-import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { Button, Modal, Table } from "@douyinfe/semi-ui";
+import { ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { AreaTrend, BarList, DeltaBadge, FunnelBars, ProvinceBars, SparkBars } from "@/components/charts";
 import { api } from "@/lib/api";
@@ -57,6 +57,7 @@ interface SummaryData {
     current_month_weighted: number;
     target: number | null;
     attain: number | null;
+    contract_backlog?: number;
   };
 }
 
@@ -310,6 +311,31 @@ export default function DashboardPage() {
   const overdue = openTodos.filter((t) => t.due_date && t.due_date < todayStr);
   const upcoming = openTodos.filter((t) => !t.due_date || t.due_date > todayStr);
 
+  // AF3 工作台布局偏好：区块显隐（服务端存 settings_kv，跨设备一致）
+  const DASH_SECTIONS: { key: string; label: string }[] = [
+    { key: "kpi", label: "KPI 环比条" },
+    { key: "trend", label: "信号趋势" },
+    { key: "analytics", label: "分析列（健康度/预测/漏斗/分布）" },
+    { key: "battle", label: "今日作战" },
+    { key: "todos", label: "我的待办" },
+    { key: "followups", label: "待跟进事项" },
+    { key: "signals", label: "最新信号" },
+  ];
+  const [dashHidden, setDashHidden] = useState<string[]>([]);
+  const [prefOpen, setPrefOpen] = useState(false);
+  useEffect(() => {
+    api
+      .get<{ hidden: string[] }>("/api/prefs/dashboard")
+      .then((p) => setDashHidden(p.hidden ?? []))
+      .catch(() => {});
+  }, []);
+  const toggleSection = (k: string) => {
+    const next = dashHidden.includes(k) ? dashHidden.filter((x) => x !== k) : [...dashHidden, k];
+    setDashHidden(next);
+    api.put("/api/prefs/dashboard", { order: [], hidden: next }).catch(() => {});
+  };
+  const vis = (k: string) => !dashHidden.includes(k);
+
   const kpis = [
     {
       label: "企业库",
@@ -358,10 +384,47 @@ export default function DashboardPage() {
             {health?.next_action?.hint ?? "近 7 天新增采购信号 —— 优先跟进有新信号的高分客户"}
           </p>
         </div>
-        <Button theme="solid" onClick={() => router.push("/enterprises")} className="!h-9">
-          筛选客户
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button theme="borderless" icon={<SlidersHorizontal size={14} />} onClick={() => setPrefOpen(true)}>
+            布局
+          </Button>
+          <Button theme="solid" onClick={() => router.push("/enterprises")} className="!h-9">
+            筛选客户
+          </Button>
+        </div>
       </div>
+
+      {/* AF3 布局偏好 */}
+      <Modal
+        title="工作台布局"
+        visible={prefOpen}
+        onCancel={() => setPrefOpen(false)}
+        footer={null}
+        width={380}
+      >
+        <div className="space-y-1">
+          {DASH_SECTIONS.map((s) => (
+            <label
+              key={s.key}
+              className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-[var(--raised)]"
+            >
+              <input
+                type="checkbox"
+                checked={vis(s.key)}
+                onChange={() => toggleSection(s.key)}
+                className="h-4 w-4 accent-[var(--accent)]"
+              />
+              <span className="text-[13.5px] text-[var(--ink)]">{s.label}</span>
+              <span className="ml-auto text-[11.5px] text-[var(--muted)]">
+                {vis(s.key) ? "显示中" : "已隐藏"}
+              </span>
+            </label>
+          ))}
+        </div>
+        <p className="mt-3 text-[12px] leading-5 text-[var(--muted)]">
+          偏好保存到账号，换设备登录同样生效。隐藏的区块随时可以在这里恢复。
+        </p>
+      </Modal>
 
       {/* 空库 Onboarding（SPEC-G G3：新环境三步引导直达首批数据） */}
       {(sum?.kpis.enterprises.total ?? data?.total_enterprises ?? 0) < 20 && (
@@ -408,6 +471,7 @@ export default function DashboardPage() {
       )}
 
       {/* KPI 环比条（tremor 模式：值 + Delta 徽标 + 迷你趋势） */}
+      {vis("kpi") && (
       <div className="mt-5 grid grid-cols-2 overflow-hidden rounded-lg border border-[var(--border)] lg:grid-cols-5">
         {kpis.map((k, i) => (
           <div
@@ -432,9 +496,11 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+      )}
 
       {/* 主趋势 + 右列（漏斗/来源） */}
       <div className="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
+        {vis("trend") && (
         <section className="rounded-lg border border-[var(--border)] bg-white p-5">
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="text-[15px] font-medium text-[var(--ink)]">信号趋势 · 近 30 天</h2>
@@ -444,8 +510,10 @@ export default function DashboardPage() {
           </div>
           <AreaTrend data={sum?.trend ?? []} />
         </section>
+        )}
 
-        <div className="space-y-5">
+        <div className={`space-y-5 ${vis("trend") ? "" : "xl:col-start-2"}`}>
+        {vis("analytics") && (<>
           {/* SPEC-X X3：跟进健康度 */}
           <section className="rounded-lg border border-[var(--border)] bg-white p-5">
             <div className="mb-3 flex items-baseline justify-between">
@@ -522,6 +590,16 @@ export default function DashboardPage() {
                     </span>
                   ))}
                 </div>
+                {/* AF4 在手合同余款：赢单后金额留在预测视野 */}
+                {(sum.forecast.contract_backlog ?? 0) > 0 && (
+                  <div className="mt-2 text-[12.5px] text-[var(--muted)]">
+                    在手合同余款{" "}
+                    <span className="font-medium text-[var(--ink)]">
+                      {(sum.forecast.contract_backlog ?? 0).toLocaleString()} 万
+                    </span>
+                    （active 合同 − 已回款）
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-[13px] text-[var(--muted)]">
@@ -561,6 +639,7 @@ export default function DashboardPage() {
               }}
             />
           </section>
+        </>)}
         </div>
       </div>
 
@@ -568,6 +647,7 @@ export default function DashboardPage() {
       <div className="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
         <div>
           {/* 今日作战清单（SPEC-G G5：四源合并——逾期/到期/久未跟/高分新线索/规则命中） */}
+          {vis("battle") && (<>
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-[15px] font-medium text-[var(--ink)]">今日作战</h2>
             <span className="text-[12px] text-[var(--muted)]">
@@ -600,7 +680,9 @@ export default function DashboardPage() {
               ))}
             </div>
           )}
+          </>)}
 
+          {vis("todos") && (<>
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-[15px] font-medium text-[var(--ink)]">我的待办</h2>
             <span className="text-[12px] text-[var(--muted)]">
@@ -662,7 +744,9 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+          </>)}
 
+          {vis("followups") && (<>
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-[15px] font-medium text-[var(--ink)]">待跟进事项</h2>
             <button
@@ -698,8 +782,10 @@ export default function DashboardPage() {
               },
             ]}
           />
+          </>)}
         </div>
 
+        {vis("signals") && (
         <aside>
           <div className="mb-2 flex items-baseline justify-between">
             <h2 className="text-[15px] font-medium text-[var(--ink)]">最新信号</h2>
@@ -733,6 +819,7 @@ export default function DashboardPage() {
             )}
           </div>
         </aside>
+        )}
       </div>
     </AppShell>
   );

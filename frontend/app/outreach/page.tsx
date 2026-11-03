@@ -187,6 +187,27 @@ export default function OutreachPage() {
     return m;
   }, [messages]);
 
+  // AF1 活动报表：打开/点击唯一口径（活动数量为个位数，逐个拉取可接受）
+  const [campStats, setCampStats] = useState<
+    Record<number, { sent: number; unique_open: number; unique_click: number; open_rate: number; click_rate: number }>
+  >({});
+  useEffect(() => {
+    let alive = true;
+    for (const c of campaigns) {
+      api
+        .get<{ sent: number; unique_open: number; unique_click: number; open_rate: number; click_rate: number }>(
+          `/api/outreach/campaigns/${c.id}/stats`,
+        )
+        .then((s) => {
+          if (alive) setCampStats((m) => ({ ...m, [c.id]: s }));
+        })
+        .catch(() => {});
+    }
+    return () => {
+      alive = false;
+    };
+  }, [campaigns]);
+
   const sentOf = (c: CampaignRow): number => {
     if (typeof c.today_sent === "number") return c.today_sent;
     return todaySentByCampaign.get(c.id) ?? 0;
@@ -682,6 +703,22 @@ export default function OutreachPage() {
                     <Tag color={s.color} type="light">
                       {s.label}
                     </Tag>
+                  );
+                },
+              },
+              {
+                title: "打开/点击",
+                width: 110,
+                render: (_: unknown, c: CampaignRow) => {
+                  const s = campStats[c.id];
+                  // 口径：open 受 MPP 预取虚高，click 可靠度优先（AF1）
+                  if (!s || !s.sent) return <span className="text-[var(--muted)]">—</span>;
+                  return (
+                    <span className="tabular-nums text-[12.5px]" title={`唯一打开 ${s.unique_open}/${s.sent} · 唯一点击 ${s.unique_click}`}>
+                      {(s.open_rate * 100).toFixed(0)}%{" "}
+                      <span className="text-slate-300">·</span>{" "}
+                      {(s.click_rate * 100).toFixed(0)}%
+                    </span>
                   );
                 },
               },

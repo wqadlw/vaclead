@@ -58,6 +58,8 @@ export default function LeadsPage() {
   const [events, setEvents] = useState<
     { type: string; at: string; title: string; body: string; next_action?: string | null; next_time?: string | null }[]
   >([]);
+  // AF2 跟进时机行动建议
+  const [advice, setAdvice] = useState<{ code: string; title: string; why: string }[]>([]);
   // 商机编辑表单
   const [oppForm, setOppForm] = useState({ amount_wan: "", probability: "", expected_close: "", next_action: "" });
 
@@ -129,6 +131,7 @@ export default function LeadsPage() {
     setCurrent(lead);
     setHistoryOpen(true);
     setFollowups([]);
+    setAdvice([]);
     try {
       const d = await api.get<{
         items: { type: string; at: string; title: string; body: string; next_action?: string | null }[];
@@ -137,6 +140,11 @@ export default function LeadsPage() {
     } catch {
       setEvents([]);
     }
+    // AF2 跟进时机建议（可空=暂时不需要动）
+    api
+      .get<{ items: { code: string; title: string; why: string }[] }>(`/api/leads/${lead.id}/advice`)
+      .then((d) => setAdvice(d.items))
+      .catch(() => setAdvice([]));
   };
 
   const openOpp = (lead: Lead) => {
@@ -621,6 +629,20 @@ export default function LeadsPage() {
         onCancel={() => setHistoryOpen(false)}
         width={480}
       >
+        {/* AF2 跟进时机行动建议（amber 高亮，why 可解释） */}
+        {advice.length > 0 && (
+          <div className="mb-3 space-y-2">
+            {advice.map((a) => (
+              <div
+                key={a.code}
+                className="rounded-lg border border-[#e8c987] bg-[#fdf6e7] px-3 py-2"
+              >
+                <div className="text-[13px] font-medium text-[#8a6116]">⚡ {a.title}</div>
+                <div className="mt-0.5 text-[12.5px] leading-5 text-[#a07f38]">{a.why}</div>
+              </div>
+            ))}
+          </div>
+        )}
         {events.length === 0 ? (
           <div className="text-[13px] text-slate-400">暂无记录 —— 跟进动作与系统捕获的信号会合流到这条时间线</div>
         ) : (

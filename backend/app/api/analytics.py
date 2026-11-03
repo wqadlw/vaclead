@@ -163,6 +163,32 @@ def dashboard_summary(
     forecast["months"] = [
         {"month": m, "weighted": round(v, 1)} for m, v in sorted(by_month.items())
     ][:6]
+    # SPEC-AF AF4：在手合同余款（active 合同额 − 已收回款分期）——
+    # 赢单后金额从管线消失是盲区，backlog 让它留在预测视野
+    from ..models import Contract, PaymentMilestone
+
+    active_ids = [
+        cid
+        for (cid,) in session.query(Contract.id)
+        .filter(Contract.status == "active")
+        .all()
+    ]
+    amount = (
+        session.query(func.coalesce(func.sum(Contract.amount_wan), 0.0))
+        .filter(Contract.status == "active")
+        .scalar()
+        or 0.0
+    )
+    paid = (
+        session.query(func.coalesce(func.sum(PaymentMilestone.amount_wan), 0.0))
+        .filter(
+            PaymentMilestone.contract_id.in_(active_ids or [0]),
+            PaymentMilestone.status == "paid",
+        )
+        .scalar()
+        or 0.0
+    )
+    forecast["contract_backlog"] = round(float(amount) - float(paid), 1)
     target = (
         session.query(UserTarget)
         .filter(UserTarget.user_id == user.id, UserTarget.month == this_month)

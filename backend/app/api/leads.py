@@ -116,6 +116,23 @@ def _claim_guard(session: Session, user: User) -> None:
         )
 
 
+@router.get("/leads/{lead_id}/advice")
+def lead_advice(
+    lead_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """SPEC-AF AF2：跟进时机行动建议（规则可解释，无 LLM）。"""
+    lead = session.get(Lead, lead_id)
+    if lead is None:
+        raise HTTPException(404, "线索不存在")
+    if lead.owner_id != user.id and user.role != "admin":
+        raise HTTPException(403, "只能查看自己的线索")
+    from ..advice import build_lead_advice
+
+    return {"items": build_lead_advice(session, lead)}
+
+
 @router.patch("/leads/{lead_id}")
 def patch_lead(
     lead_id: int,

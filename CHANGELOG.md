@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.0.21（2026-11-04）
+
+营销闭环与执行个性化（SPEC-AF）。252 项后端测试 + 6 项 E2E 全绿。
+
+### 邮件跟踪与活动报表（AF1，listmonk 实践吸收）
+- **打开/点击跟踪**：1×1 像素（唯一 open 去重）+ 链接点击 302 跳转（非法 scheme 拒绝）；无状态签名 token
+- 发送链自动注入：campaign.track_enabled 开关，text/plain 保底 + multipart HTML；emailengine 通道自采事件防双计
+- **GET /api/outreach/campaigns/{id}/stats**：唯一口径 sent/open/click/reply/bounce/unsub + 率 + 最近事件流；活动列表新增「打开/点击」列
+
+### 跟进时机行动建议（AF2，销售时机研究吸收）
+- **GET /api/leads/{id}/advice**：五条可解释规则——48h 未首联（5 分钟响应研究 ×21）/ 24h 新信号趁热 / 打开未回→16-17 点外呼窗 / 5+ touches 换渠道 / 流失挽回
+- 线索「记录」侧板顶部 amber 建议条
+
+### 工作台布局偏好（AF3，twenty 模式）
+- **GET/PUT /api/prefs/dashboard**：7 区块显隐（KPI/趋势/分析列/今日作战/待办/待跟进/最新信号），偏好存服务端跨设备一致；标题栏「布局」齿轮
+
+### 合同余款入预测（AF4，SPEC-AD 欠账收官）
+- forecast.contract_backlog = active 合同额 − 已回款分期；预测卡显示「在手合同余款」
+
 ## v1.0.20（2026-11-04）
 
 客户健康分与生命周期自动升降级（SPEC-AE）。243 项后端测试 + 6 项 E2E 全绿。
