@@ -209,6 +209,10 @@ class Lead(Base):
     amount_wan: Mapped[float | None] = mapped_column(REAL)  # 商机金额（万元）
     probability: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 赢率 0-100
     expected_close: Mapped[str | None] = mapped_column(Text)  # 预计成交日 YYYY-MM-DD
+    lifecycle_stage: Mapped[str] = mapped_column(
+        Text, nullable=False, default="lead"
+    )  # SPEC-AE: lead→following→intent→won→customer_success|at_risk|churned
+    health_score: Mapped[int] = mapped_column(Integer, nullable=False, default=50)  # SPEC-AE: 0-100
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)

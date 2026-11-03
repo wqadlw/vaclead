@@ -44,6 +44,17 @@ def dashboard_summary(
         )
 
     today, d7, d14 = _day(0), _day(7), _day(14)
+    # SPEC-AE：流失预警数（生命周期已降级 或 健康分<40 的活跃线索）
+    at_risk_total = (
+        session.query(func.count())
+        .select_from(Lead)
+        .filter(
+            Lead.status.in_(["following", "intent", "won"]),
+            (Lead.lifecycle_stage == "at_risk") | (Lead.health_score < 40),
+        )
+        .scalar()
+        or 0
+    )
     kpis = {
         "enterprises": {
             "total": ent_total,
@@ -56,6 +67,7 @@ def dashboard_summary(
             - _count(Signal, Signal.created_at, d14, d7),
         },
         "leads": {"total": lead_total, "delta": 0},
+        "at_risk": {"total": at_risk_total, "delta": 0},
         "contacts": {
             "total": contact_total,
             "delta": _count(Contact, Contact.created_at, d7, today)

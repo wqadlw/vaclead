@@ -339,6 +339,13 @@ export default function DashboardPage() {
       spark: [],
       caption: "政采公告法定公开联系方式",
     },
+    {
+      label: "流失预警",
+      value: sum?.kpis.at_risk?.total ?? 0,
+      delta: 0,
+      spark: [],
+      caption: "健康分<40 或已降级 · 每日 06:15 刷新",
+    },
   ];
 
   return (
@@ -401,14 +408,14 @@ export default function DashboardPage() {
       )}
 
       {/* KPI 环比条（tremor 模式：值 + Delta 徽标 + 迷你趋势） */}
-      <div className="mt-5 grid grid-cols-2 overflow-hidden rounded-lg border border-[var(--border)] lg:grid-cols-4">
+      <div className="mt-5 grid grid-cols-2 overflow-hidden rounded-lg border border-[var(--border)] lg:grid-cols-5">
         {kpis.map((k, i) => (
           <div
             key={k.label}
             className={`flex items-center justify-between bg-white px-5 py-4 ${
               i > 0 ? "border-l border-[var(--rule)]" : ""
             } ${i >= 2 ? "max-lg:border-t max-lg:border-[var(--rule)]" : ""} ${
-              i === 2 ? "max-lg:border-l-0" : ""
+              i === 2 || i === 4 ? "max-lg:border-l-0" : ""
             }`}
           >
             <div className="min-w-0">

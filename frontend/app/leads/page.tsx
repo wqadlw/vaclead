@@ -14,7 +14,7 @@ import AppShell from "@/components/AppShell";
 import LeadCard from "@/components/LeadCard";
 import { api } from "@/lib/api";
 import type { FollowupItem, Lead, PageData } from "@/lib/api";
-import { GRADE_COLOR, LEAD_STATUS, LOST_REASONS } from "@/lib/constants";
+import { GRADE_COLOR, LEAD_STATUS, LIFECYCLE, LOST_REASONS } from "@/lib/constants";
 
 const MY_TABS = ["following", "new", "intent", "won", "lost", "pool"] as const;
 const GRADE_TAG: Record<string, "red" | "orange" | "blue"> = { S: "red", A: "orange", B: "blue" };
@@ -64,8 +64,10 @@ export default function LeadsPage() {
   const load = useCallback(
     (t: string, p: number) => {
       setLoading(true);
+      // at_risk 是预警视图（健康分<40 或已降级），不走 status 参数
+      const qs = t === "at_risk" ? "at_risk=1" : `status=${t}`;
       api
-        .get<PageData<Lead>>(`/api/leads?status=${t}&page=${p}&page_size=20`)
+        .get<PageData<Lead>>(`/api/leads?${qs}&page=${p}&page_size=20`)
         .then(setData)
         .catch((e) => Toast.error(e.message))
         .finally(() => setLoading(false));
@@ -283,6 +285,23 @@ export default function LeadsPage() {
       render: (v: string) => (v ? <Tag color={GRADE_TAG[v]} type="solid">{v}</Tag> : <span className="text-slate-300">-</span>),
     },
     {
+      title: "健康",
+      width: 130,
+      render: (_: unknown, r: Lead) => {
+        if (r.health_score == null) return <span className="text-slate-300">-</span>;
+        const color = (r.health_score >= 70 ? "green" : r.health_score >= 40 ? "orange" : "red") as "green" | "orange" | "red";
+        const lc = r.lifecycle_stage ? LIFECYCLE[r.lifecycle_stage] : undefined;
+        return (
+          <div className="flex items-center gap-1">
+            <Tag color={color} type="light" size="small">{r.health_score}</Tag>
+            {lc && r.lifecycle_stage !== "lead" && (
+              <Tag color={lc.color} type="light" size="small">{lc.label}</Tag>
+            )}
+          </div>
+        );
+      },
+    },
+    {
       title: "最近跟进",
       dataIndex: "last_followed_at",
       width: 120,
@@ -456,7 +475,10 @@ export default function LeadsPage() {
               setPage(1);
             }}
             className="!px-4 !pt-1"
-            tabList={MY_TABS.map((s) => ({ tab: LEAD_STATUS[s].label, itemKey: s }))}
+            tabList={[
+              ...MY_TABS.map((s) => ({ tab: LEAD_STATUS[s].label, itemKey: s })),
+              { tab: "流失预警", itemKey: "at_risk" },
+            ]}
           />
           {tab === "pool" && (
             <div className="!px-4 !pb-1">

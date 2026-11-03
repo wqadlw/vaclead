@@ -29,6 +29,14 @@ export const LOST_REASONS: Record<string, string> = {
   other: "其他",
 };
 
+/** SPEC-AE 生命周期阶段（won 之后的后销售旅程） */
+export const LIFECYCLE: Record<string, { label: string; color: "grey" | "green" | "red" }> = {
+  lead: { label: "培育期", color: "grey" },
+  customer_success: {label: "客户成功", color: "green" },
+  at_risk: { label: "流失预警", color: "red" },
+  churned: { label: "已流失", color: "grey" },
+};
+
 export const GRADE_COLOR: Record<string, string> = {
   S: "red",
   A: "orange",

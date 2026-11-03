@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.0.20（2026-11-04）
+
+客户健康分与生命周期自动升降级（SPEC-AE）。243 项后端测试 + 6 项 E2E 全绿。
+
+### 健康分模型（AE1）
+- **backend/app/health.py**：行为加权 0-100（近 30 天信号 +30 / 近 7 天跟进 +20 / 履约中合同 +20 / 超 7 天未跟进 -20 / 超 30 天无信号 -30），零 LLM 零新增采集
+- 罚分以 Followup 表真实最近跟进为准（不信冗余字段 last_followed_at）
+
+### 生命周期自动流转（AE2）
+- Lead 新增 `lifecycle_stage` / `health_score` 字段
+- won → customer_success（赢单 API hook + cron 批量回填）→ 健康分 <30 降 at_risk → ≥60 回升
+- churned 留人工确认，自动只降 at_risk
+
+### 预警露出（AE3/AE4）
+- **health_refresh cron 每日 06:15**：全量活跃线索重算
+- **GET /api/leads?at_risk=1** 流失预警视图；`?lifecycle=` 精确筛选
+- 工作台第 5 张 KPI 卡「流失预警」；线索列表「健康」列（色阶分数 + 阶段 Tag）+「流失预警」tab
+
 ## v1.0.19（2026-11-04）
 
 客户全生命周期：合同 + 回款 + 续约（SPEC-AD）。239 项后端测试 + 6 项 E2E 全绿。

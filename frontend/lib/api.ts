@@ -187,6 +187,8 @@ export interface Lead {
   last_followed_at: string | null;
   next_action: string | null;
   next_time: string | null;
+  health_score?: number;
+  lifecycle_stage?: string;
   enterprise?: { id: number; name: string; industry_name: string | null; icp_score: number; intent_score: number };
 }
 

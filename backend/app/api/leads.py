@@ -37,6 +37,8 @@ def _lead_dict(lead: Lead, ent: Enterprise | None) -> dict:
         "amount_wan": lead.amount_wan,
         "probability": lead.probability,
         "expected_close": lead.expected_close,
+        "health_score": lead.health_score,
+        "lifecycle_stage": lead.lifecycle_stage,
         "enterprise": (
             {
                 "id": ent.id,
@@ -54,6 +56,8 @@ def _lead_dict(lead: Lead, ent: Enterprise | None) -> dict:
 @router.get("/leads")
 def list_leads(
     status: str | None = None,
+    lifecycle: str | None = None,
+    at_risk: int = 0,
     page: int = 1,
     page_size: int = 20,
     session: Session = Depends(get_session),
@@ -62,6 +66,13 @@ def list_leads(
     stmt = select(Lead)
     if status:
         stmt = stmt.where(Lead.status == status)
+    if lifecycle:
+        stmt = stmt.where(Lead.lifecycle_stage == lifecycle)
+    if at_risk:
+        # SPEC-AE：流失预警视图（健康分<40 或已降级 at_risk）
+        stmt = stmt.where(
+            (Lead.lifecycle_stage == "at_risk") | (Lead.health_score < 40)
+        )
     # 数据范围（SPEC-N N2）：admin 全库；销售=自己+公海；团队负责人追加成员线索
     owner_ids = visible_owner_ids(user, session)
     if owner_ids is not None:
@@ -137,6 +148,11 @@ def patch_lead(
     if body.status == "following" and lead.owner_id is None:
         lead.owner_id = user.id
         lead.claimed_at = utcnow()
+    if body.status == "won":
+        # SPEC-AE：赢单一次性升入客户成功期，并给出首份健康分
+        from ..health import auto_lifecycle
+
+        auto_lifecycle(session, lead)
     lead.updated_at = utcnow()
     session.commit()
     return _lead_dict(lead, session.get(Enterprise, lead.enterprise_id))

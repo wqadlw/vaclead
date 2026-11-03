@@ -1359,3 +1359,38 @@ main.py（cron 注册）/前端 contracts page.tsx（新）。待调研回传后
 - 典型付款比例：预付 20-30% + 发货 30-40% + 验收 ≥40% + 质保金 5-10% ✓
 
 **门禁**：239 全绿（+2 SPEC-AD）+ build + E2E 6（8017）。
+
+
+## 2026-11-04 · W49 认领 · SPEC-AE 客户健康分与生命周期（Agent B）
+
+PRODUCT_GAP 第四轮复查 Top1/Top2 合并一轮：自动化健康分提前约 63 天预警流失
+（人工仅 11 天），工业设备复购周期 1-3 年，赢单后流失=利润直接漏掉。
+**动文件**：app/health.py（新）/models.py（lifecycle_stage+health_score）/
+api/leads.py（露出+at_risk 视图）/api/analytics.py（KPI）/main.py（06:15 cron）/
+前端 leads page + constants + 工作台 KPI。
+
+
+## 2026-11-04 · W49 SPEC-AE 结果（Agent B）+ 后销售防线收官
+
+**落地**：
+- **AE1 健康分**：行为加权 0-100（近30天信号+30/近7天跟进+20/履约中合同+20/
+  超7天未跟进-20/超30天无信号-30），零 LLM 零新增采集
+- **AE2 生命周期**：won→customer_success（赢单 hook+批量回填）→健康分<30 降
+  at_risk→≥60 回升，churned 留人工
+- **AE3 cron**：health_refresh 每日 06:15，首轮自动回填全部历史赢单
+- **AE4 露出**：leads 序列化+?at_risk=1 预警视图+?lifecycle= 筛选；工作台第5张
+  KPI 卡；线索列表健康列（色阶+阶段 Tag）+「流失预警」tab
+
+**测试拦下的两个真 bug**：
+1. auto_lifecycle 首轮判 `lifecycle_stage == "won"`——won 是 status 的值，
+   生命周期枚举里没有，赢单升级永远不触发。修：判 `lead.status == "won"`。
+2. 超期罚分只看冗余字段 last_followed_at，测试直插 Followup 行绕过 API 时
+   罚分误判。修：改查 Followup 表真实 max(created_at) 兜底。
+另修 test_spec_ae 自身 NameError（漏 import Enterprise/Followup/Signal）。
+
+**调研校准**（HubSpot lifecycle stage + Gainsight 健康分实践）：
+- 行为加权而非 LLM 打分：可解释、零成本、工业复购场景够用 ✓
+- churned 不自动：自动只降 at_risk，人工确认 churn ✓
+- 邮件打开/访问行为暂缺（无跟踪像素），P2 邮件营销轮补 ✓
+
+**门禁**：243 全绿（+4 SPEC-AE）+ build + E2E 6（8047）。
