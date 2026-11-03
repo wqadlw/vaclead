@@ -263,6 +263,11 @@ def run_proposal_gd_scan(max_pages: int = 5) -> dict:
                 ent, is_new = resolve_enterprise(s, rec["name"], source="proposal_gd")
                 if is_new:
                     stats["new_ents"] += 1
+                    # W40 同款：GD 链路建档即分类（首轮漏接，AG 补齐）
+                    if ent.industry_key is None:
+                        from .api.imports import apply_icp
+
+                        apply_icp(ent)
                 year = rec.get("work_time") or ""
                 ba = rec.get("ba_num")
                 title = f"广东项目备案：{rec['name']}（{year}年度）"
@@ -288,6 +293,65 @@ def run_proposal_gd_scan(max_pages: int = 5) -> dict:
                         evidence_claim=(
                             f"该单位于 {rec.get('ba_time') or '近期'} 在广东省投资项目"
                             f"在线审批监管平台完成项目备案（编号 {rec.get('ba_code') or '—'}）"
+                        ),
+                        base_score=40.0,
+                    ))
+                    stats["new_signals"] += 1
+            s.commit()
+    return stats
+
+
+def run_proposal_hb_scan(max_pages: int = 5) -> dict:
+    """湖北备案查询扫描：**项目级**拟建信号（SPEC-AG），幂等可重扫。
+
+    与广东（run_proposal_gd_scan 单位级）互为镜像；每日 05:10 cron 错峰。
+    title 直接带项目名——广东 P2 边界（项目名在未暴露详情接口）在湖北列表可得。
+    """
+    from .collectors.proposal_hb import HB_XXGK_URL, fetch_hb_filing_page
+    from .db import SessionLocal
+    from .normalize import resolve_enterprise
+
+    stats = {"pages": 0, "records": 0, "new_ents": 0, "new_signals": 0}
+    for page_no in range(1, max_pages + 1):
+        records = fetch_hb_filing_page(page_no, client=None)
+        if not records:
+            break
+        stats["pages"] += 1
+        stats["records"] += len(records)
+        with SessionLocal() as s:
+            for rec in records:
+                ent, is_new = resolve_enterprise(s, rec["unit"], source="proposal_hb")
+                if is_new:
+                    stats["new_ents"] += 1
+                    # W40 教训在湖北链路的预防性接线：建档即分类
+                    if ent.industry_key is None:
+                        from .api.imports import apply_icp
+
+                        apply_icp(ent)
+                project = rec.get("project") or rec["unit"]
+                title = f"湖北项目备案：{project[:60]}｜{rec['unit']}"
+                exists = (
+                    s.query(Signal)
+                    .filter(
+                        Signal.enterprise_id == ent.id,
+                        Signal.url == HB_XXGK_URL,
+                        Signal.title == title,
+                    )
+                    .first()
+                )
+                if exists is None:
+                    s.add(Signal(
+                        enterprise_id=ent.id,
+                        type="proposal",
+                        title=title,
+                        url=HB_XXGK_URL,
+                        pub_date=rec.get("declared_at"),
+                        matched_terms="[]",
+                        hit_part="title",
+                        raw_excerpt=f"项目备案 {rec.get('project_code') or '—'}",
+                        evidence_claim=(
+                            f"该单位于 {rec.get('declared_at') or '近期'} 在湖北省投资项目"
+                            f"在线审批监管平台完成「{project[:40]}」项目备案"
                         ),
                         base_score=40.0,
                     ))

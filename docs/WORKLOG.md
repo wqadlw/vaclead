@@ -1452,3 +1452,43 @@ api/leads.py+analytics.py/main.py（路由）/db.py（演进列）/前端 4 页�
 
 **门禁**：252 全绿（+9 SPEC-AF）+ build + E2E 6（8047）；真库迁移
 campaign.track_enabled 幂等 ALTER，integrity ok。
+
+
+## 2026-11-04 · W51 认领 · SPEC-AG 拟建通道多省化：湖北项目级直采（Agent B）
+
+W49 预研收官轮：浙/鄂可达但鄂公示端点需浏览器级观测 → 本轮打通。
+**动文件**：collectors/proposal_hb.py（新）/jobs.py（HB 链+GD 补 ICP）/
+main.py（05:10 cron）/tests/test_spec_ag.py（新）。零前端改动（标题带省前缀）。
+
+
+## 2026-11-04 · W51 SPEC-AG 结果（Agent B）+ "早"阶梯扩至双省
+
+**逆向方法论（金子级，值得复用）**：
+1. IAB evaluate 桥回读在本环境不可靠（返回值被吞）——**确定性路径=项目自带
+   Playwright 写网络捕获脚本**（page.on('request'/'response')，createRequire
+   借 frontend/node_modules，脚本放 scripts/ 用后即删）
+2. 湖北三端点全裸调可用：受理公告/拟批准公示（HP_GS_info）+ 备案查询
+   （filing_search）——备案查询=**项目级**（单位+项目名+申报时间），广东 P2
+   边界（项目名在未暴露详情）在湖北列表直接可得
+3. **extoken 破译**：app.js axios 拦截器
+   `((Date.now()%1e9 + k*1e9) * 911 + 20170706).toString(36)`，k∈{0..9}
+   纯客户端时间签名，服务端按窗校验——伪造随机/过期均 400007，现算即通；
+   screenKey 必需（SCR_l4xunf59n2）；compkey:hb + authtoken:null 固定头
+4. 逆向流程：SPA 壳→XHR 捕获→裸调复放→失败猜鉴权→bundle grep 算法→
+   Python 复现验证。全程无登录无浏览器依赖（运行时）
+
+**落地**：proposal_hb.py（extoken 公式+b36 编码+备案查询拉页）/
+run_proposal_hb_scan（项目级 title=`湖北项目备案：{project}｜{unit}`，幂等）/
+cron 05:10（与 GD 05:00 错峰独立水位）。真库 3 页 26 条 25 新企业。
+
+**数据质量两轮校准（W41 闭环模式复用）**：
+- 首扫 59 条过半是**光伏使用侧噪音**（户用庭院/村组代备案/工商业自投分布式
+  ——买组件逆变器，不在工业设备词表射程）→ is_residential_noise：光伏+太阳能
+  命中且含 发电/电站/分布式/庭院/屋顶/千瓦/kW → 滤；**制造侧（光伏装备/制造）
+  保留**；重扫 26 条零光伏残留
+- **apply_icp 又漏（W40 教训第三次复发）**：GD/HB 两条 proposal 链建档后均未
+  分类 → 补 `industry_key is None 才调 apply_icp`（同 ggzy/ccgp 增量两段）+
+  spy 测试回归。**新采集链路 checklist 必含：归一→打标→词表→幂等→限速**
+
+**门禁**：258 全绿（+6 SPEC-AG）+ build + E2E 6（8047）；真库 integrity ok，
+湖北信号 26 条/建档 25 家/已分类 6 家。
