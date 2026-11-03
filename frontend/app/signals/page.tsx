@@ -31,10 +31,11 @@ interface SignalRow {
   base_score: number;
 }
 
-const TYPE_TAG: Record<string, { label: string; color: "cyan" | "green" | "blue" }> = {
+const TYPE_TAG: Record<string, { label: string; color: "cyan" | "green" | "blue" | "amber" }> = {
   tender_win: { label: "中标", color: "cyan" },
   tender_buy: { label: "公开采购", color: "green" },
   tender: { label: "政采公告", color: "blue" },
+  proposal: { label: "项目备案", color: "amber" },
 };
 
 const PROVINCES = ["江苏省", "广东省", "北京市", "上海市", "浙江省", "山东省", "河南省", "四川省", "湖北省", "湖南省", "安徽省", "陕西省", "福建省", "河北省", "辽宁省"];
@@ -107,6 +108,12 @@ export default function SignalsPage() {
 
   const typeCount = (t: string) => facets?.type?.[t] ?? 0;
 
+  // SPEC-AB：拟建/备案 = 扩张前兆（培育线索，非即时行动）
+  const toggleProposal = () => {
+    setType(type === "proposal" ? "" : "proposal");
+    setPage(1);
+  };
+
   // SPEC-AA AA2：行动窗口快捷筛选（数据已在库，纯视图切换）
   const toggleCompetitor = () => {
     setCompetitor(competitor === 1 ? null : 1);
@@ -127,6 +134,17 @@ export default function SignalsPage() {
           title="招标公告/竞争性磋商/谈判——采购正在发生，行动窗口"
         >
           🎯 招标中 · 行动窗口
+        </button>
+        <button
+          onClick={toggleProposal}
+          className={`rounded-full border px-3 py-1 text-[12.5px] ${
+            type === "proposal"
+              ? "border-[#c2801b] bg-[#c2801b] text-white"
+              : "border-[var(--border)] bg-white text-[var(--ink)]"
+          }`}
+          title="项目备案公示——扩张前兆，比招标早 1-3 个月（培育线索）"
+        >
+          🌱 拟建·备案
         </button>
         <button
           onClick={toggleCompetitor}
@@ -154,6 +172,7 @@ export default function SignalsPage() {
           <Select.Option value="tender_win">中标 ({typeCount("tender_win")})</Select.Option>
           <Select.Option value="tender_buy">公开采购 ({typeCount("tender_buy")})</Select.Option>
           <Select.Option value="tender">政采公告 ({typeCount("tender")})</Select.Option>
+          <Select.Option value="proposal">项目备案 ({typeCount("proposal")})</Select.Option>
         </Select>
         <Select value={province || undefined} placeholder="全部省份" showClear filter onChange={(v) => { setProvince(String(v ?? "")); setPage(1); }} className="!w-32">
           {PROVINCES.map((p) => (

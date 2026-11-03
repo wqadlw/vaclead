@@ -1281,3 +1281,23 @@ signals page.tsx（原文外链）/compare page.tsx（新页）/enterprises view
 `Contact.title.op("GLOB")("*[0-9]*")`。影响面排查：仅 tasks.py 一处。
 
 **门禁**：232 全绿（+2 SPEC-AA）+ build + E2E 6（8017）。
+
+
+## 2026-11-04 · W46 SPEC-AB 结果（Agent B）+ 拟建通道落地
+
+**通道打通**：广东备案公示 API（网关前缀 /tzxmspweb 来自 /js/common.js 的 root 变量
+——通用 JS 配置文件是逆向站点 API 的第一站）。官方主动公开备案数据：
+单位名称/备案时间（极新鲜，最新 10-28）/备案编号/年度。
+
+**落地**：
+- **AB1 采集器**：collectors/proposal_gd.py（翻页+2s 限速+失败即空）；jobs.py
+  run_proposal_gd_scan（resolve→proposal 信号，幂等靠 url+title 唯一约束）
+- **AB2 前端**：标讯中心「🌱 拟建·备案」行动 chip + 类型下拉「项目备案」
+  （amber 徽章，与「招标中·行动窗口」并列——招标=现在能打，备案=培育线索）
+- **AB3 调度**：每日 05:00 cron（proposal_gd），数据自动扩池
+- **真库验证**：5 页/50 条/**10 新企业**/10 proposal 信号（备案时间 10-23 起，
+  极新鲜）
+
+**门禁**：234 全绿（+2 SPEC-AB）+ build + E2E 6（8017）。
+**边界**：列表仅单位级（项目名/投资额在未暴露的详情接口，P2）；baCode 非标准
+18 位不作 uscc 锚点；他省复制待 P1。

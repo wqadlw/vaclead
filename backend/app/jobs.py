@@ -240,6 +240,63 @@ def refresh_all_stats(session: Session) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# SPEC-AB：广东拟建/备案单位采集（比招标早 1-3 个月的采购前兆信号）
+# ---------------------------------------------------------------------------
+def run_proposal_gd_scan(max_pages: int = 5) -> dict:
+    """广东备案公示扫描：单位级拟建信号（proposal），幂等可重扫。
+
+    采集节奏：每日 05:00 cron；失败记水位不静默（SPEC-AB AB1）。
+    """
+    from .collectors.proposal_gd import PROPOSAL_PAGE_URL, fetch_proposal_page
+    from .db import SessionLocal
+    from .normalize import resolve_enterprise
+
+    stats = {"pages": 0, "records": 0, "new_ents": 0, "new_signals": 0}
+    for page_no in range(1, max_pages + 1):
+        records = fetch_proposal_page(page_no, client=None)
+        if not records:
+            break
+        stats["pages"] += 1
+        stats["records"] += len(records)
+        with SessionLocal() as s:
+            for rec in records:
+                ent, is_new = resolve_enterprise(s, rec["name"], source="proposal_gd")
+                if is_new:
+                    stats["new_ents"] += 1
+                year = rec.get("work_time") or ""
+                ba = rec.get("ba_num")
+                title = f"广东项目备案：{rec['name']}（{year}年度）"
+                exists = (
+                    s.query(Signal)
+                    .filter(
+                        Signal.enterprise_id == ent.id,
+                        Signal.url == PROPOSAL_PAGE_URL,
+                        Signal.title == title,
+                    )
+                    .first()
+                )
+                if exists is None:
+                    s.add(Signal(
+                        enterprise_id=ent.id,
+                        type="proposal",
+                        title=title,
+                        url=PROPOSAL_PAGE_URL,
+                        pub_date=rec.get("ba_time"),
+                        matched_terms="[]",
+                        hit_part="title",
+                        raw_excerpt=f"项目备案 {rec.get('ba_code') or ''}｜{ba or ''} 项",
+                        evidence_claim=(
+                            f"该单位于 {rec.get('ba_time') or '近期'} 在广东省投资项目"
+                            f"在线审批监管平台完成项目备案（编号 {rec.get('ba_code') or '—'}）"
+                        ),
+                        base_score=40.0,
+                    ))
+                    stats["new_signals"] += 1
+            s.commit()
+    return stats
+
+
+# ---------------------------------------------------------------------------
 # B3 备份
 # ---------------------------------------------------------------------------
 def backup_sqlite(backup_dir: str | Path, keep: int = 7) -> dict:

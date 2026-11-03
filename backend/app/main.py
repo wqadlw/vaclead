@@ -329,6 +329,14 @@ async def lifespan(app: FastAPI):
 
         _register_cron("subscription_rules", _subscription_rules_sweep, "*/2", 6)  # SPEC-AA AA3：每 2 小时（订阅命中即时化）
 
+        def _proposal_gd_sweep() -> dict:
+            from .jobs import run_proposal_gd_scan
+
+            return run_proposal_gd_scan(max_pages=5)
+
+        # SPEC-AB：广东拟建/备案公示（比招标早 1-3 个月的采购前兆）
+        _register_cron("proposal_gd", _proposal_gd_sweep, 5, 0)
+
         def _audit_cleanup_sweep() -> dict:
             from .db import SessionLocal as _SL
             from .jobs import audit_cleanup

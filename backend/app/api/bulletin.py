@@ -23,7 +23,12 @@ router = APIRouter(tags=["signals"])
 # 与 jobs.py 同源：从证据句提取成交金额（万元）——不 import jobs 防循环
 _AMOUNT_RE = re.compile(r"成交价([\d.]+)万元")
 
-_TYPE_CN = {"tender_win": "中标", "tender_buy": "公开采购", "tender": "政采公告"}
+_TYPE_CN = {
+    "tender_win": "中标",
+    "tender_buy": "公开采购",
+    "tender": "政采公告",
+    "proposal": "项目备案",
+}
 
 #: facet 计数的行数上限（超出则不返回 facet——列表本身也到不了这个量级）
 _FACET_SCAN_LIMIT = 5000
