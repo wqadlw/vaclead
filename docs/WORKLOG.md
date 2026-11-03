@@ -1301,3 +1301,33 @@ signals page.tsx（原文外链）/compare page.tsx（新页）/enterprises view
 **门禁**：234 全绿（+2 SPEC-AB）+ build + E2E 6（8017）。
 **边界**：列表仅单位级（项目名/投资额在未暴露的详情接口，P2）；baCode 非标准
 18 位不作 uscc 锚点；他省复制待 P1。
+
+
+## 2026-11-04 · W47 认领 · SPEC-AC 销售粘性轮：我的周报+团队共享视图（Agent B）
+
+销售粘性双件：**个人成绩单**（每周一邮件，"老板给我发成绩单"粘性）+
+**团队共享视图**（统一管线口径，twenty view 服务端模式收口 localStorage 孤岛）。
+与 SPEC-N 业绩榜互补（我=周粒度个人明细，N=排行榜）；与 SPEC-O 全局周报并列
+（admin vs 个人）。契约 docs/SPEC-AC.md。
+**动文件**：models.py（SavedView 新表，create_all 零 ALTER）/api/views.py（新）/
+reports.py（my-week + per-user sweep）/main.py（cron 一行）/前端视图下拉+报表页。
+不碰：Agent A 领地（零 WIP 冲突，工作区干净）。
+
+
+## 2026-11-04 · W47 SPEC-AC 结果（Agent B）+ 销售粘性双件收官
+
+**落地**：
+- **AC1 团队共享视图**：saved_view 表（page/name/owner/user_ids/filters/hidden_cols/
+  dense/col_aggs，create_all 自动建零 ALTER）+ api/views.py——GET 我的+共享给我的/
+  POST 创建（去重 409）/DELETE 本人或 admin。**安全口径（调研校准）：共享视图应用时
+  以当前用户权限重新执行筛选（vaclead 架构天然合规——筛选走当前用户 API）**
+- **AC2 我的周报**：build_my_week()（owner 维度 KPI/停滞客户/我的 Top 线索）+
+  GET /api/reports/my-week + 周一 08:40 my_weekly_sweep（per-user 邮件摘要走
+  notify_dispatch email 渠道）——admin 全局周报并列不重复
+- **AC3 前端**：视图下拉加「团队共享」分组（owner 落款 + 只读应用 + 定向可见）/
+  保存 Modal 加共享开关 / 报表中心「我的周报」区块（5 KPI 环比卡+停滞数）
+
+**门禁**：234 全绿 + build + E2E 6（8017）。
+**坑**：①build_my_week 里 Followup 归属字段是 user_id 非 owner_id——_mine 的
+owner_col 参数化修正 ②shared 视图 user_ids NOTLIKE "[]" 与 owner 判断组合逻辑
+要在 list 端点做（不在 serialize 里拼表达式）

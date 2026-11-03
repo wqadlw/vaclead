@@ -10,7 +10,7 @@ from __future__ import annotations
 import csv as _csv
 import io
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -274,3 +274,198 @@ def reports_weekly_sweep() -> dict:
             )
             notified += 1
         return {"notified": notified, "period": report["period"]["label"]}
+
+
+# ---------------------------------------------------------------------------
+# SPEC-AC AC2：我的周报（per-user）+ 周一个人邮件
+# ---------------------------------------------------------------------------
+def build_my_week(session: Session, user: User, offset: int = 0) -> dict:
+    """个人周报（owner 维度）：我的新线索/跟进/赢单/金额/待办完成/停滞客户。
+
+    结构与全局周报同款（页面/CSV/邮件三处复用）；口径全部 owner_id=本人。
+    """
+    from ..models import Todo
+
+    start, end = _week_bounds(max(0, offset))
+    p_lo, p_hi = _dt(start), _dt(end)
+    n_lo, n_hi = _dt(end), _dt(end + timedelta(days=7))
+    uid = user.id
+
+    def _mine(model, lo: str, hi: str, owner_col: str = "owner_id") -> int:
+        col = getattr(model, owner_col)
+        return (
+            session.query(func.count())
+            .select_from(model)
+            .filter(model.created_at >= lo, model.created_at < hi, col == uid)
+            .scalar()
+            or 0
+        )
+
+    def _my_followups(lo: str, hi: str) -> int:
+        """Followup 无 user 列：经 Lead.owner_id 归属（join 线索→我的跟进）。"""
+        return (
+            session.query(func.count())
+            .select_from(Followup)
+            .join(Lead, Followup.lead_id == Lead.id)
+            .filter(
+                Lead.owner_id == uid,
+                Followup.created_at >= lo,
+                Followup.created_at < hi,
+            )
+            .scalar()
+            or 0
+        )
+
+    def _won(lo_: str, hi_: str) -> tuple[int, float]:
+        rows = (
+            session.query(Lead.amount_wan)
+            .filter(
+                Lead.owner_id == uid,
+                Lead.status == "won",
+                Lead.updated_at >= lo_,
+                Lead.updated_at < hi_,
+            )
+            .all()
+        )
+        return len(rows), float(sum(a for (a,) in rows if a) or 0.0)
+
+    kpis = []
+    for key, label, fn in [
+        ("new_leads", "我的新线索", lambda l, h: _mine(Lead, l, h)),
+        ("followups", "我的跟进", _my_followups),
+    ]:
+        value = fn(p_lo, p_hi)
+        prev = fn(n_lo, n_hi)
+        kpis.append({
+            "key": key, "label": label, "value": value, "prev": prev,
+            "delta": round((value - prev) / prev, 3) if prev else (1.0 if value else None),
+        })
+    won, won_amount = _won(p_lo, p_hi)
+    won_prev, won_amount_prev = _won(n_lo, n_hi)
+    kpis.append({
+        "key": "won_count", "label": "我的赢单", "value": won, "prev": won_prev,
+        "delta": round((won - won_prev) / won_prev, 3) if won_prev else (1.0 if won else None),
+    })
+    kpis.append({
+        "key": "won_amount_wan", "label": "我的赢单(万)",
+        "value": round(won_amount, 1), "prev": round(won_amount_prev, 1),
+        "delta": round((won_amount - won_amount_prev) / won_amount_prev, 3)
+        if won_amount_prev else (1.0 if won_amount else None),
+    })
+    todos_done = (
+        session.query(func.count())
+        .select_from(Todo)
+        .filter(
+            Todo.owner_id == uid,
+            Todo.done == 1,
+            Todo.created_at >= p_lo,
+            Todo.created_at < p_hi,
+        )
+        .scalar()
+        or 0
+    )
+    kpis.append({
+        "key": "todos_done", "label": "待办完成", "value": todos_done,
+        "prev": todos_done, "delta": None,
+    })
+
+    # 停滞客户（我的活跃线索超 7 天未跟进）
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=7)
+    ).strftime("%Y-%m-%dT%H:%M:%S")
+    stale = (
+        session.query(func.count())
+        .select_from(Lead)
+        .filter(
+            Lead.owner_id == uid,
+            Lead.status.in_(["following", "intent"]),
+            func.coalesce(Lead.last_followed_at, Lead.created_at) < cutoff,
+        )
+        .scalar()
+        or 0
+    )
+
+    top_leads = (
+        session.query(Lead, Enterprise)
+        .join(Enterprise, Lead.enterprise_id == Enterprise.id)
+        .filter(
+            Lead.owner_id == uid,
+            Lead.created_at >= p_lo,
+            Lead.created_at < p_hi,
+        )
+        .order_by(Lead.icp_score.desc() if hasattr(Lead, "icp_score") else Lead.id.desc())
+        .limit(5)
+        .all()
+    )
+    my_top = [
+        {"ent_name": e.name, "status": l.status, "grade": l.grade}
+        for l, e in top_leads
+    ]
+
+    highlights = []
+    if stale:
+        highlights.append(f"有 {stale} 条活跃线索超 7 天未跟进")
+    if won:
+        highlights.append(f"本周赢单 {won} 笔 / {won_amount:.1f} 万元")
+    if not highlights:
+        highlights.append("本周个人数据平稳")
+
+    return {
+        "period": {
+            "start": start.isoformat(), "end": (end - timedelta(days=1)).isoformat(),
+            "label": f"我的周报 {start.month}.{start.day:02d}-{(end - timedelta(days=1)).day:02d}",
+        },
+        "owner": user.display_name or user.username,
+        "kpis": kpis,
+        "stale_clients": stale,
+        "top_leads": my_top,
+        "highlights": highlights,
+    }
+
+
+def _my_email_text(report: dict) -> str:
+    kpi_lines = "\n".join(
+        f"· {k['label']}：{k['value']}"
+        + (f"（上周 {k['prev']}，环比 {round(k['delta'] * 100)}%）" if k["delta"] is not None else "")
+        for k in report["kpis"]
+    )
+    hl = "\n".join(f"· {h}" for h in report["highlights"])
+    return (
+        f"【{report['period']['label']} · {report['owner']}】\n\n"
+        f"{report['highlights'][0] if report['highlights'] else ''}\n\n"
+        f"我的本周：\n{kpi_lines}\n\n{hl}\n\n"
+        f"完整明细：登录平台 → 报表中心 → 我的周报。\n"
+    )
+
+
+def my_weekly_sweep() -> dict:
+    """每周一 08:40：为每个 active 用户生成个人周报摘要 → 邮件推送。"""
+    from .db import SessionLocal
+    from .notify.channels import notify_dispatch
+
+    notified = skipped = 0
+    with SessionLocal() as s:
+        users = s.query(User).filter(User.active == 1).all()
+        period_label = ""
+        for u in users:
+            report = build_my_week(s, u, offset=0)
+            period_label = report["period"]["label"]
+            notify_dispatch(
+                s, u.id, kind="report",
+                title=f"我的周报（{period_label}）",
+                body=_my_email_text(report),
+                ref_type="my_report", ref_id=u.id,
+            )
+            notified += 1
+    return {"notified": notified, "period": period_label}
+
+
+@router.get("/reports/my-week")
+def my_week_report(
+    offset: int = 0,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    from .reports import build_my_week as _build
+
+    return _build(session, user, max(0, offset))

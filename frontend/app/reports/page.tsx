@@ -55,13 +55,60 @@ interface WeeklyReport {
   top_customers: TopCustomer[];
   highlights: string[];
 }
+interface MyWeekReport {
+  period: { start: string; end: string; label: string };
+  owner: string;
+  kpis: { key: string; label: string; value: number; prev: number; delta: number | null }[];
+  stale_clients: number;
+  highlights: string[];
+}
 
 const TYPE_CN: Record<string, string> = { tender_win: "中标", tender_buy: "公开采购", tender: "政采公告" };
+
+/** SPEC-AC：我的周报（owner 维度） */
+function MyWeekSection() {
+  const [data, setData] = useState<MyWeekReport | null>(null);
+  useEffect(() => {
+    api.get<MyWeekReport>("/api/reports/my-week?offset=0")
+      .then(setData)
+      .catch(() => undefined);
+  }, []);
+  if (!data) return null;
+  return (
+    <section className="mt-5 rounded-lg border border-[var(--border)] bg-white p-5">
+      <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">
+        我的周报（{data.owner}）
+      </h2>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        {data.kpis.map((k) => (
+          <div key={k.key} className="rounded-lg border border-[var(--rule)] px-3 py-2.5">
+            <div className="text-[12px] text-[var(--muted)]">{k.label}</div>
+            <div className="mt-1 text-[20px] font-semibold tabular-nums leading-none text-[var(--ink)]">
+              {k.value.toLocaleString()}
+            </div>
+            {k.delta != null && (
+              <div className={`mt-1 text-[11.5px] ${k.delta > 0 ? "text-green-600" : k.delta < 0 ? "text-red-500" : "text-[var(--muted)]"}`}>
+                {k.delta > 0 ? "↑" : k.delta < 0 ? "↓" : "—"} {Math.abs(Math.round(k.delta * 100))}%
+              </div>
+            )}
+          </div>
+        ))}
+        <div className="rounded-lg border border-[var(--rule)] px-3 py-2.5">
+          <div className="text-[12px] text-[var(--muted)]">停滞客户(7d)</div>
+          <div className={`mt-1 text-[20px] font-semibold tabular-nums leading-none ${data.stale_clients > 0 ? "text-[#c2801b]" : "text-[var(--ink)]"}`}>
+            {data.stale_clients}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export default function ReportsPage() {
   const [offset, setOffset] = useState(0);
   const [report, setReport] = useState<WeeklyReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [myWeek, setMyWeek] = useState<MyWeekReport | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -71,6 +118,12 @@ export default function ReportsPage() {
       .finally(() => setLoading(false));
   }, [offset]);
   useEffect(load, [load]);
+
+  useEffect(() => {
+    api.get<MyWeekReport>("/api/reports/my-week?offset=0")
+      .then(setMyWeek)
+      .catch(() => undefined);
+  }, []);
 
   const deltaTag = (d: number | null) => {
     if (d === null) return <span className="text-[12px] text-[var(--muted)]">—</span>;
@@ -101,6 +154,9 @@ export default function ReportsPage() {
           导出 CSV
         </Button>
       </div>
+
+      {/* SPEC-AC AC3：我的周报（owner 维度） */}
+      {myWeek && <MyWeekSection />}
 
       {loading || !report ? (
         <Skeleton placeholder={<Skeleton.Paragraph rows={8} />} loading active />

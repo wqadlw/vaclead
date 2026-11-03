@@ -853,3 +853,29 @@ class EnterpriseNote(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class SavedView(Base):
+    """团队共享视图（SPEC-AC AC3）：把筛选/列配置存服务端，团队统一管线口径。
+
+    user_ids 空数组=全员可见；非空=仅名单内可见。owner 可删/改，他人只读应用。
+    """
+
+    __tablename__ = "saved_view"
+    __table_args__ = (
+        Index("ix_saved_view_page", "page"),
+        UniqueConstraint("page", "name", "owner_id", name="uq_saved_view"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    page: Mapped[str] = mapped_column(Text, nullable=False)  # enterprises/leads
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"), nullable=False
+    )
+    user_ids: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON
+    filters: Mapped[str] = mapped_column(Text, nullable=False, default="{}")  # JSON
+    hidden_cols: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON
+    dense: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    col_aggs: Mapped[str] = mapped_column(Text, nullable=False, default="{}")  # JSON
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
