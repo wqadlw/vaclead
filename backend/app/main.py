@@ -228,7 +228,7 @@ async def lifespan(app: FastAPI):
 
         scheduler = BackgroundScheduler()
 
-        def _register_cron(job_name: str, fn, hour: int, minute: int,
+        def _register_cron(job_name: str, fn, hour: "int | str", minute: int,
                            job_kwargs: dict | None = None,
                            day_of_week: str | None = None) -> None:
             """统一 cron 注册（SPEC-I I0）：签名防呆 + 失败落水位 + 防重入。
@@ -236,6 +236,7 @@ async def lifespan(app: FastAPI):
             注册前 bind 校验拦下参数笔误（曾有 refresh_all_stats 漏传 session
             静默 failed 三天）；misfire 宽限/合并/单实例为每日任务标准加固。
             day_of_week：APScheduler 语义（如 "mon"），供周任务使用（SPEC-O）。
+            hour 支持 "*/2" 等表达式（SPEC-AA AA3 订阅扫播提频）。
             """
             if _jobs_disabled:
                 logging.getLogger("vaclead.jobs").info(
@@ -305,14 +306,14 @@ async def lifespan(app: FastAPI):
 
         def _notice_contacts_daily() -> dict:
             # 直接复用端点逻辑（内部限速/幂等/限流即停），免 HTTP 依赖。
-            # 曾写成 "..api.tasks" 越顶层导入（SPEC-I I0）：每日 04:08 必 ImportError
-            # 且不走水位静默失败。
+            # SPEC-AA AA1：每日限额 30→300（详情页 1s 限速约 8 分钟），
+            # 招标中企业优先（回填查询内排序）。
             from .api.tasks import backfill_notice_contacts as _fn
 
             from .db import SessionLocal as _SL
 
             with _SL() as s:
-                result = _fn(type("B", (), {"limit": 30})(), s, None)
+                result = _fn(type("B", (), {"limit": 300})(), s, None)
             return result if isinstance(result, dict) else {}
 
         _register_cron("notice_contacts", _notice_contacts_daily, 4, 8)
@@ -326,7 +327,7 @@ async def lifespan(app: FastAPI):
             with _SL() as s:
                 return run_subscription_rules(s)
 
-        _register_cron("subscription_rules", _subscription_rules_sweep, 4, 6)
+        _register_cron("subscription_rules", _subscription_rules_sweep, "*/2", 6)  # SPEC-AA AA3：每 2 小时（订阅命中即时化）
 
         def _audit_cleanup_sweep() -> dict:
             from .db import SessionLocal as _SL

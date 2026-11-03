@@ -850,15 +850,40 @@ def backfill_notice_contacts(
     项目联系人/电话/地址/区域 → contact 表 + enterprise 地址区县。幂等可重跑。
 
     联系方式是政采公告法定公开内容（写给投标人），合规边界不变：限速、
-    失败退避、限流即停。"""
+    失败退避、限流即停。
+
+    SPEC-AA AA1 升级：①跳过已有可拨电话联系人的企业（不再重复抓同一公告浪费
+    限额）②优先级排序——招标中的企业（此刻正在对接采购）排最前。
+    """
     import time as _time
 
     from ..collectors.ccgp import fetch_notice_detail
     from ..models import Contact, Enterprise, Signal
 
+    # 已有可拨电话联系人（title 槽位含数字）的企业 → 无需再抓
+    # 注意：SQLite 的 LIKE 不支持 [0-9] 字符类，必须用 GLOB（SPEC-AA AA1 实测坑）
+    has_callable = (
+        session.query(Contact.enterprise_id)
+        .filter(
+            Contact.enterprise_id == Enterprise.id,
+            Contact.title.op("GLOB")("*[0-9]*"),
+        )
+        .subquery()
+    )
+    # 招标中信号（行动窗口）优先
+    tendering = (
+        session.query(Signal.enterprise_id)
+        .filter(Signal.type == "tender", Signal.enterprise_id == Enterprise.id)
+        .exists()
+    )
+
     ents = (
         session.query(Enterprise)
-        .filter(Enterprise.source == "ccgp_buyer")
+        .filter(
+            Enterprise.source == "ccgp_buyer",
+            ~Enterprise.id.in_(has_callable.select()),
+        )
+        .order_by(tendering.desc(), Enterprise.id.asc())
         .limit(min(body.limit, 50))
         .all()
     )

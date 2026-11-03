@@ -49,6 +49,7 @@ export default function SignalsPage() {
   const [industry, setIndustry] = useState<string>("");
   const [q, setQ] = useState("");
   const [days, setDays] = useState<number>(30);
+  const [competitor, setCompetitor] = useState<number | null>(null);
   const [subscribing, setSubscribing] = useState<number | null>(null);
 
   const load = useCallback(() => {
@@ -58,6 +59,7 @@ export default function SignalsPage() {
     if (industry) p.set("industry_key", industry);
     if (q.trim()) p.set("q", q.trim());
     if (days) p.set("days", String(days));
+    if (competitor != null) p.set("competitor", String(competitor));
     api.get<{ items: SignalRow[]; total: number; facets: typeof facets }>(`/api/signals?${p}`)
       .then((d) => {
         setItems(d.items);
@@ -65,7 +67,7 @@ export default function SignalsPage() {
         setFacets(d.facets);
       })
       .catch(() => undefined);
-  }, [page, type, province, industry, q, days]);
+  }, [page, type, province, industry, q, days, competitor]);
   useEffect(load, [load]);
 
   const subscribe = async (entId: number) => {
@@ -105,8 +107,39 @@ export default function SignalsPage() {
 
   const typeCount = (t: string) => facets?.type?.[t] ?? 0;
 
+  // SPEC-AA AA2：行动窗口快捷筛选（数据已在库，纯视图切换）
+  const toggleCompetitor = () => {
+    setCompetitor(competitor === 1 ? null : 1);
+    setPage(1);
+  };
+
   return (
     <AppShell>
+      {/* 行动窗口快捷 chip（SPEC-AA AA2） */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => { setType(type === "tender" ? "" : "tender"); setPage(1); }}
+          className={`rounded-full border px-3 py-1 text-[12.5px] ${
+            type === "tender"
+              ? "border-[#c2801b] bg-[#c2801b] text-white"
+              : "border-[var(--border)] bg-white text-[var(--ink)]"
+          }`}
+          title="招标公告/竞争性磋商/谈判——采购正在发生，行动窗口"
+        >
+          🎯 招标中 · 行动窗口
+        </button>
+        <button
+          onClick={toggleCompetitor}
+          className={`rounded-full border px-3 py-1 text-[12.5px] ${
+            competitor === 1
+              ? "border-[#c0392b] bg-[#c0392b] text-white"
+              : "border-[var(--border)] bg-white text-[var(--ink)]"
+          }`}
+          title="竞对（设备制造商）中标动态——他们刚拿下谁的订单"
+        >
+          🎯 竞对中标动态
+        </button>
+      </div>
       {/* 筛选条 */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input

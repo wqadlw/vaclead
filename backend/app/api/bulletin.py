@@ -35,7 +35,7 @@ def _cutoff(days: int) -> str:
     ).strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def _apply_filters(stmt, *, type_, industry_key, province, q, days, skip=None):
+def _apply_filters(stmt, *, type_, industry_key, province, q, days, competitor=None, skip=None):
     """把标讯筛选条件套到语句上（skip 豁免自身维度，供 facet 计数用）。"""
     if type_ and skip != "type":
         stmt = stmt.where(Signal.type == type_)
@@ -43,6 +43,8 @@ def _apply_filters(stmt, *, type_, industry_key, province, q, days, skip=None):
         stmt = stmt.where(Enterprise.industry_key == industry_key)
     if province and skip != "province":
         stmt = stmt.where(Enterprise.province == province)
+    if competitor is not None and skip != "competitor":
+        stmt = stmt.where(Enterprise.is_competitor == competitor)
     if q and skip != "q":
         stmt = stmt.where(Signal.title.contains(q.strip(), autoescape=True))
     if days and skip != "days":
@@ -57,14 +59,19 @@ def list_signals(
     province: str | None = None,
     q: str | None = None,
     days: int | None = None,
+    competitor: int | None = None,
     page: int = 1,
     page_size: int = 20,
     facets: int = 0,
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    """全局标讯流：筛选 + 分页 + 类型/省份 facet 计数。"""
-    kw = dict(type_=type, industry_key=industry_key, province=province, q=q, days=days)
+    """全局标讯流：筛选 + 分页 + 类型/省份 facet 计数。
+
+    competitor=1 → 竞对中标动态视图（SPEC-AA AA2：对标剑鱼竞对监测）。
+    """
+    kw = dict(type_=type, industry_key=industry_key, province=province, q=q, days=days,
+              competitor=competitor)
 
     stmt = _apply_filters(_joined(Signal, Enterprise), **kw)
     total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0

@@ -1249,3 +1249,35 @@ signals page.tsx（原文外链）/compare page.tsx（新页）/enterprises view
 **门禁**：230 全绿（+0 后端新增——纯前端轮 + bulletin 补 url 字段）+ build + E2E 6。
 **坑**：①Semi TagColor 是 "light-blue"（非 lightBlue）②从页面文件导出工具函数
 会引发打包耦合——工具一律放 lib/。
+
+
+## 2026-11-03 · W45 认领 · SPEC-AA 抢跑轮（Agent B）
+
+用户问"拓客最重要的是什么"→数据审计（24/2028=1.2% 可拨电话；信号池 78% 已成交）
++ 第三次头部调研（PRODUCT_GAP §五：剑鱼实时推送/拟建项目=付费核心）→ 抢跑命题：
+**早 + 打得通**。契约 docs/SPEC-AA.md。
+**动文件**：tasks.py（回填查询升级）/main.py（回填限额+订阅提频）/bulletin.py
+（competitor 参数）/signals page.tsx（两枚行动 chip）。
+
+
+## 2026-11-03 · W45 SPEC-AA 结果（Agent B）+ 抢跑轮收官
+
+**落地**：
+- **AA1 联系人覆盖冲刺**：回填查询三升级——①排除已有可拨电话联系人企业（旧逻辑
+  重复抓同一公告浪费限额）②招标中企业优先排序 ③每日限额 30→300（详情页 1s
+  限速约 8 分钟）。边界如实：ggzy 中标方电话不可得（API 无、详情页无 URL），
+  法人已覆盖（W38）
+- **AA2 招标中提权**：标讯中心两枚行动 chip——「🎯 招标中·行动窗口」（type=tender）
+  与「🎯 竞对中标动态」（competitor=1，bulletin 加 competitor 参数）——对标剑鱼
+  竞对监测（数据已在库零成本）
+- **AA3 订阅提频**：subscription_rules 每日 04:06 → **每 2 小时**（_register_cron
+  hour 扩 "*/2" 表达式）——日间手动扫描来的信号一小时内触达订阅者
+- **AA4 拟建通道预研**：国家平台 hsproject.com 已死（WordPress 停放页）；
+  **省级可达实证** tzxm.gd.gov.cn=200 → P1 按省扩展（同 ccgp 模式，广东先行）
+
+**金子级 SQL 方言坑**：SQLite `LIKE '%[0-9]%'` 的 [0-9] 是**字面量**（LIKE 只有
+%/_ 通配符，字符类是 GLOB 语法）——"有可拨电话联系人"判断从 W38 起在 SQL 层
+恒为 0 匹配（此前统计 24 家用的是 GLOB 直查所以没暴露）。修法
+`Contact.title.op("GLOB")("*[0-9]*")`。影响面排查：仅 tasks.py 一处。
+
+**门禁**：232 全绿（+2 SPEC-AA）+ build + E2E 6（8017）。

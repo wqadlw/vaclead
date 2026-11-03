@@ -34,11 +34,12 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | 04:00 | refresh_enterprise_stats | 中标画像：enterprise_stat 全量聚合 |
 | 04:05 | notify_sweep | 订阅企业新信号 → 站内通知 |
 | 04:07 | automation_sweep | 自动化规则扫播（动作链） |
-| 04:08 | notice_contacts | ccgp_buyer 详情页抓联系人/电话/地址（每次 ≤30 页，幂等） |
+| 04:08 | notice_contacts | ccgp_buyer 详情页抓联系人/电话/地址（每日 300 页，招标中企业优先，已有电话跳过；SPEC-AA） |
 | 04:10 | backup_sqlite | backup API → `data/backups/`，滚动保留 7 份 |
 | 08:05 | digest_flush | 静默期通知聚合出舱（SPEC-G） |
 | 08:30 周一 | reports_weekly | 经营周报生成+通知（SPEC-O，day_of_week 参数已扩展 _register_cron） |
 | 09:30 / 14:30 | outreach_dispatch | 邮件触达：收件同步+预算内发送（SPEC-J J4） |
+| 每 2 小时 | subscription_rules | 订阅规则扫播（hour="*/2"，SPEC-AA 提频；日批 04:06 起改） |
 | 每 10 分钟 | webhook_flush (interval) | SPEC-P 出站 webhook 投递引擎（指数退避，唯一 interval 任务） |
 | 按需 | backfill-icp | 存量未分类企业补 ICP 分类（POST /api/tasks/backfill-icp，幂等，采集打标不被覆盖；SPEC-W） |
 
