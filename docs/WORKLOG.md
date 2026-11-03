@@ -1394,3 +1394,17 @@ api/leads.py（露出+at_risk 视图）/api/analytics.py（KPI）/main.py（06:1
 - 邮件打开/访问行为暂缺（无跟踪像素），P2 邮件营销轮补 ✓
 
 **门禁**：243 全绿（+4 SPEC-AE）+ build + E2E 6（8047）。
+
+
+## 2026-11-04 · W49 附记：P1 拟建通道他省预研（Agent B，SPEC-AF 前置调研）
+
+8 省 tzxm 域名探测（curl 直连）：**浙江/湖北 200 可达**，其余 6 省 000（域名
+猜测未必成立——各省平台命名不统一，下轮先搜真实域名再探测）。
+- **浙江** tzxm.zj.gov.cn → unieap JSP 老平台（window.location 跳
+  unieap/pages/index.jsp），服务端渲染逆向成本中高
+- **湖北** tzxm.hubei.gov.cn → aPaaS Vue SPA（HPAAS_CUSTOM_WEB），与广东同构；
+  bundle 里挖到 `/hMod/HP_GS_info/getProPublicity`（公示端点，走
+  /proxy/custom/hb/hb_aiapp 网关），但 POST 405 / GET 落 SPA 壳——需登录态或
+  真实 XHR 观测（下轮用浏览器自动化观测真实请求后再定契约）
+**结论**：广东逆向模板（壳→common.js→AJAX）在湖北"形似"但网关+鉴权形态不同，
+不能盲复制；浙江走 JSP 老路。SPEC-AF 立项前需完成浏览器级观测。
