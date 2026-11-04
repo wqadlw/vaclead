@@ -116,3 +116,19 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 - admin/admin123（管理员）、sales/sales123（销售）——生产环境**必须立即改密**
 | 2026-10-31 | user +email/active/team_id（SPEC-N N1 组织化）+ 新增表 team/assignment_rule | **首次自动化**：db.init_db `_ensure_columns()` 启动幂等 ALTER（旧库免手工）+ create_all |
+
+## 12. 生产健康检查清单（SPEC-AP 后沉淀，W55 首次执行）
+
+> 建议每周执行一次（或任何异常怀疑时）。全部命令可直接粘贴。
+
+1. **备份可恢复性**（最重要——备份没恢复过等于没备份）：
+   ```bash
+   python -c "import sqlite3,shutil,tempfile,os; tmp=os.path.join(tempfile.mkdtemp(),'r.db'); shutil.copy('data/backups/<最新>.db',tmp); con=sqlite3.connect(tmp); print(con.execute('PRAGMA integrity_check').fetchone()[0]); [print(t, con.execute(f'select count(*) from {t}').fetchone()[0]) for t in ('enterprise','signal','contact','lead')]"
+   ```
+2. **cron 水位盘查**：`select job_name,last_run_at,last_status from sync_watermark order by last_run_at desc`——
+   每个日批任务应有近 24h 内的 ok 行；缺行=当天未触发（本次发现 03:30 增量
+   在 POI 长批并发窗口丢失——长批采集尽量避开 02:00-05:30 cron 窗口）
+3. **错误日志扫描**：`grep -c "ERROR\|Traceback" data/server_8000.log`
+4. **数据增长曲线**：enterprise/signal 计数对比昨日（异常暴涨=采集失控，停滞=通道挂）
+5. **代理环境**：serve_8000.bat 已清代理 env；若手工启动后端，必须先清
+   http_proxy（死代理会把采集/Meili 探测全部打死）
