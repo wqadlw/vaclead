@@ -363,3 +363,15 @@ def read_all_notifications(
     ).update({"read": 1}, synchronize_session=False)
     session.commit()
     return {"ok": True}
+
+
+@router.get("/recommendations")
+def get_recommendations(
+    limit: int = 50,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """今日推荐（SPEC-AL）：可触达性×采购信号的可解释排序，全员可用。"""
+    from ..recommend import score_candidates
+
+    return {"items": score_candidates(session, limit=max(1, min(limit, 100)))}

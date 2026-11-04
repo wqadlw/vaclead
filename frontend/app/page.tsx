@@ -314,6 +314,7 @@ export default function DashboardPage() {
   // AF3 工作台布局偏好：区块显隐（服务端存 settings_kv，跨设备一致）
   const DASH_SECTIONS: { key: string; label: string }[] = [
     { key: "kpi", label: "KPI 环比条" },
+    { key: "recs", label: "今日推荐" },
     { key: "trend", label: "信号趋势" },
     { key: "analytics", label: "分析列（健康度/预测/漏斗/分布）" },
     { key: "battle", label: "今日作战" },
@@ -335,6 +336,24 @@ export default function DashboardPage() {
     api.put("/api/prefs/dashboard", { order: [], hidden: next }).catch(() => {});
   };
   const vis = (k: string) => !dashHidden.includes(k);
+
+  // SPEC-AL AL3：今日推荐（可触达性×采购信号的可解释排序）
+  interface RecItem {
+    ent_id: number;
+    name: string;
+    city: string | null;
+    industry_name: string | null;
+    score: number;
+    reasons: string[];
+    phone?: string | null;
+  }
+  const [recs, setRecs] = useState<RecItem[]>([]);
+  useEffect(() => {
+    api
+      .get<{ items: RecItem[] }>("/api/recommendations?limit=8")
+      .then((d) => setRecs(d.items))
+      .catch(() => setRecs([]));
+  }, []);
 
   const kpis = [
     {
@@ -496,6 +515,50 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+      )}
+
+      {/* SPEC-AL 今日推荐：可触达性×采购信号的可解释排序 */}
+      {vis("recs") && (
+      <section className="mt-5 rounded-lg border border-[var(--border)] bg-white p-5">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 className="text-[15px] font-medium text-[var(--ink)]">今日推荐 · 先打给谁</h2>
+          <span className="text-[12px] text-[var(--muted)]">
+            可触达性×采购信号排序 · 随每日采集自动更新
+          </span>
+        </div>
+        {recs.length === 0 ? (
+          <div className="py-6 text-center text-[13px] text-[var(--muted)]">
+            暂无推荐 —— 采集与联系方式回填跑几天后，这里会给出"先打给谁"
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {recs.map((r) => (
+              <a
+                key={r.ent_id}
+                href={`/enterprises/view?id=${r.ent_id}`}
+                className="flex items-start justify-between gap-3 rounded-lg border border-[var(--border)] px-3 py-2 transition-colors hover:border-[var(--accent)]"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-[13.5px] font-medium text-[var(--ink)]">{r.name}</span>
+                    {r.phone && (
+                      <span className="shrink-0 rounded bg-[color:var(--accent)]/10 px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-[var(--accent)]">
+                        {r.phone}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 truncate text-[12px] text-[var(--muted)]">
+                    {r.city ?? "—"} · {r.industry_name ?? "未分类"} · {r.reasons[0] ?? ""}
+                  </div>
+                </div>
+                <span className="shrink-0 text-[15px] font-semibold tabular-nums text-[var(--accent)]">
+                  {r.score}
+                </span>
+              </a>
+            ))}
+          </div>
+        )}
+      </section>
       )}
 
       {/* 主趋势 + 右列（漏斗/来源） */}
