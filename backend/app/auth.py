@@ -127,14 +127,25 @@ async def current_user(
     session: Session = Depends(get_session),
 ) -> User:
     """async 依赖：在请求上下文（事件循环）里 set actor contextvar，
-    使同一请求的线程池端点继承（sync 依赖里 set 只活在各自线程副本，SPEC-J 实测踩坑）。"""
+    使同一请求的线程池端点继承（sync 依赖里 set 只活在各自线程副本，SPEC-J 实测踩坑）。
+
+    SPEC-AI AI1：EventSource 无法带 Authorization 头——无头时回退 ?token= 查询
+    参数（tasks SSE 此前一直在静默 401 的 latent bug 由此根治）。
+    """
     from .audit import current_actor
 
     api_key = (request.headers.get("X-Api-Key") or "").strip()
     if api_key:
         user = _load_api_key(api_key, request, session)
     else:
-        user = _load_user(creds, session)
+        effective = creds
+        if effective is None or not effective.credentials:
+            qtoken = (request.query_params.get("token") or "").strip()
+            if qtoken:
+                effective = HTTPAuthorizationCredentials(
+                    scheme="Bearer", credentials=qtoken
+                )
+        user = _load_user(effective, session)
     if not user.active:  # API Key 通道同样执行禁用拦截（SPEC-N N1）
         raise HTTPException(status_code=401, detail="账号已禁用")
     current_actor.set(user.id)

@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.0.25（2026-11-05）
+
+实时推送轮（SPEC-AI）。268 项后端测试 + 6 项 E2E 全绿。
+
+### 认证回退（AI1，latent bug 根治）
+- **current_user 支持 ?token= 查询参数回退**——tasks 页 EventSource 此前无法带 Authorization 头，SSE 一直在静默 401
+
+### 信号实时感知（AI2/AI3）
+- **GET /api/signals?since_id=**：PK 游标增量
+- **AppShell 全局监听**：5s 轮询——前台 Toast（节流）、页面隐藏走 Web Notification
+
+### 订阅即时命中（AI4）
+- daily_incremental / proposal_gd / proposal_hb 扫描尾部即时匹配——订阅用户感知从 2 小时缩到扫描完成即达
+
+## v1.0.24（2026-11-05）
+
+高德 POI 通道激活（用户 Key 到位）。可拨电话覆盖 **6.0% → 28.5%**。
+
+### POI 直采
+- **tel 字段透传**（此前被采集器丢弃）+ POI 电话 → 规范化联系人「地图公开电话」（商家自主公开，合规）
+- 10 城首批（真空/镀膜/半导体词表）：**3259 新企业 / 1439 条电话**，59% POI 带电话
+- 数据池 2064 → 5522 家企业
+
+### 单写者锁根治
+- POI ingestion 首次实跑暴露长事务与同线程 checkpoint 写自撞 → **每 25 条分片提交**（SQLite 写事务绝不跨嵌套写的铁律补全）
+
 ## v1.0.23（2026-11-04）
 
 联系方式扩池轮（SPEC-AH）。263 项后端测试 + 6 项 E2E 全绿。

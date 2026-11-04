@@ -65,6 +65,7 @@ def list_signals(
     q: str | None = None,
     days: int | None = None,
     competitor: int | None = None,
+    since_id: int | None = None,
     page: int = 1,
     page_size: int = 20,
     facets: int = 0,
@@ -74,11 +75,14 @@ def list_signals(
     """全局标讯流：筛选 + 分页 + 类型/省份 facet 计数。
 
     competitor=1 → 竞对中标动态视图（SPEC-AA AA2：对标剑鱼竞对监测）。
+    since_id=游标增量（SPEC-AI：前端 5s 轮询实时感知，items 倒序、max_id 带回）。
     """
     kw = dict(type_=type, industry_key=industry_key, province=province, q=q, days=days,
               competitor=competitor)
 
     stmt = _apply_filters(_joined(Signal, Enterprise), **kw)
+    if since_id is not None:
+        stmt = stmt.where(Signal.id > since_id)
     total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = session.execute(
         stmt.order_by(Signal.id.desc())

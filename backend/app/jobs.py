@@ -298,6 +298,14 @@ def run_proposal_gd_scan(max_pages: int = 5) -> dict:
                     ))
                     stats["new_signals"] += 1
             s.commit()
+    # SPEC-AI AI4：扫描尾部订阅即时命中（水位幂等零重复）
+    try:
+        from .db import SessionLocal
+
+        with SessionLocal() as _ss:
+            stats["subscription"] = run_subscription_rules(_ss)
+    except Exception:  # noqa: BLE001 — 订阅侧失败不影响采集
+        logger.warning("订阅即时命中失败", exc_info=True)
     return stats
 
 
@@ -357,6 +365,14 @@ def run_proposal_hb_scan(max_pages: int = 5) -> dict:
                     ))
                     stats["new_signals"] += 1
             s.commit()
+    # SPEC-AI AI4：扫描尾部订阅即时命中
+    try:
+        from .db import SessionLocal
+
+        with SessionLocal() as _ss:
+            stats["subscription"] = run_subscription_rules(_ss)
+    except Exception:  # noqa: BLE001 — 订阅侧失败不影响采集
+        logger.warning("订阅即时命中失败", exc_info=True)
     return stats
 
 
@@ -560,6 +576,14 @@ def run_daily_incremental() -> dict:
             meili.sync_all(s)
     except Exception:  # noqa: BLE001 — 检索层失败不影响增量
         logger.warning("增量后 Meili 同步失败", exc_info=True)
+    # SPEC-AI AI4：增量尾部订阅即时命中（水位幂等）——订阅感知从 2h 提到分钟级
+    try:
+        from .db import SessionLocal as _SL2
+
+        with _SL2() as s:
+            stats["subscription"] = run_subscription_rules(s)
+    except Exception:  # noqa: BLE001 — 订阅侧失败不影响增量
+        logger.warning("订阅即时命中失败", exc_info=True)
     return stats
 
 

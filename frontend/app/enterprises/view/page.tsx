@@ -527,9 +527,9 @@ function IntelInner() {
                       </span>
                     </div>
                     {/* SPEC-AH AH3：规范化可拨号码 chips（可复制） */}
-                    {(c.phones ?? []).length > 0 && (
+                    {((c.phones ?? []).length > 0) && (
                       <div className="mt-1.5 flex flex-wrap gap-1">
-                        {c.phones.map((p) => (
+                        {(c.phones ?? []).map((p) => (
                           <span
                             key={p}
                             className="cursor-pointer rounded border border-[var(--border)] bg-[var(--raised)] px-1.5 py-0.5 font-mono text-[12.5px] tabular-nums text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"

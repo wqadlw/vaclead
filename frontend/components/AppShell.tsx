@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Avatar, Dropdown, Input, Modal } from "@douyinfe/semi-ui";
+import { Avatar, Dropdown, Input, Modal, Toast } from "@douyinfe/semi-ui";
 import {
   BarChart3,
   ClipboardList,
@@ -311,6 +311,55 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     setUser(localStorage.getItem("vaclead_user") || "");
     setReady(true);
   }, [router]);
+
+  // SPEC-AI AI3：新信号轮询感知（5s 游标增量）——前台 Toast（节流 10s），
+  // 页面隐藏时走 Web Notification（需一次授权，拒绝则仅 Toast）
+  useEffect(() => {
+    const token = getToken();
+    if (!token) return;
+    let lastId = 0;
+    let baseline = true;
+    let lastToastAt = 0;
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/signals?since_id=${lastId}&page_size=5`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!r.ok) return;
+        const d = await r.json();
+        const items = d.items ?? [];
+        if (baseline) {
+          lastId = items[0]?.id ?? 0;
+          baseline = false;
+          return;
+        }
+        if (items.length === 0) return;
+        lastId = Math.max(lastId, ...items.map((x: { id: number }) => x.id));
+        const first = items[0];
+        const now = Date.now();
+        if (document.hidden) {
+          if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("vaclead 新信号", {
+              body: `${first.title ?? ""}`.slice(0, 90),
+              tag: "vaclead-signal",
+            });
+          }
+          return;
+        }
+        if (now - lastToastAt < 10000) return;
+        lastToastAt = now;
+        Toast.success({
+          content: `🔔 新信号：${String(first.title ?? "").slice(0, 40)}`,
+          duration: 4,
+        });
+      } catch {
+        /* 网络抖动静默 */
+      }
+    };
+    void tick();
+    const timer = setInterval(tick, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   if (!ready) {
     return (
