@@ -363,6 +363,14 @@ async def lifespan(app: FastAPI):
         # SPEC-AM：每日 03:00 清空超过 30 天保留期的回收站
         _register_cron("purge_deleted", _purge_sweep, 3, 0)
 
+        def _watchdog_sweep() -> dict:
+            from .jobs import run_watermark_watchdog
+
+            return run_watermark_watchdog()
+
+        # SPEC-AR AR1：每日 06:30 水位看门狗（关键日批未执行自动补跑+通知）
+        _register_cron("watermark_watchdog", _watchdog_sweep, 6, 30)
+
         # SPEC-AP AP1：Meili 可用性预热——冷启动首击的 2.5s 探测在启动期消化，
         # 不让第一个倒霉请求吃（探测结果随后走 30s 缓存）
         def _meili_probe_safe() -> None:

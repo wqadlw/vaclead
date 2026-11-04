@@ -35,6 +35,18 @@ def log(msg: str) -> None:
 
 
 def main() -> None:
+    # SPEC-AR AR2 长批错峰：避开 02:00–05:30 cron 密集窗口（W55 体检教训——
+    # 30+ 分钟长批横跨窗口会挤掉 daily_incremental）
+    import datetime as _dt
+
+    now = _dt.datetime.now()
+    win_start = now.replace(hour=2, minute=0, second=0, microsecond=0)
+    win_end = now.replace(hour=5, minute=30, second=0, microsecond=0)
+    if win_start <= now <= win_end:
+        wait_s = (win_end - now).total_seconds()
+        print(f"[错峰] 当前处于 02:00–05:30 cron 窗口，等待 {wait_s/60:.0f} 分钟后开始", flush=True)
+        time.sleep(wait_s)
+
     tok = api("/api/auth/login", {"username": "admin", "password": "admin123"})["token"]
     con = sqlite3.connect(DB)
     total_inserted = 0

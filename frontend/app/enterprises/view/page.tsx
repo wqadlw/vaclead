@@ -7,7 +7,7 @@
  */
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Button, Dropdown, Input, Skeleton, TabPane, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
+import { Button, Dropdown, Input, Modal, Skeleton, TabPane, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
 import { ArrowLeft, Bell, BellRing, Trash2, UserCheck } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { addToCompare, readCompare } from "@/lib/compare";
@@ -306,6 +306,31 @@ function IntelInner() {
               <h1 className="text-[20px] font-semibold text-[var(--ink)]">{detail.name}</h1>
               <Tag color={sourceMeta.color} type="light">{sourceMeta.label}</Tag>
               {detail.is_competitor === 1 && <Tag color="amber" type="light">疑似同行</Tag>}
+              {typeof window !== "undefined" && localStorage.getItem("vaclead_role") === "admin" && (
+                <Button
+                  size="small"
+                  theme="borderless"
+                  type="danger"
+                  className="!ml-auto"
+                  onClick={() =>
+                    Modal.confirm({
+                      title: "删除该企业？",
+                      content: "进入回收站保留 30 天，期间可恢复。",
+                      onOk: async () => {
+                        try {
+                          await api.delete(`/api/enterprises/${eid}`);
+                          Toast.success("已移入回收站");
+                          router.push("/enterprises");
+                        } catch (e) {
+                          Toast.error(e instanceof Error ? e.message : "删除失败");
+                        }
+                      },
+                    })
+                  }
+                >
+                  删除
+                </Button>
+              )}
             </div>
             <div className="mt-1.5 text-[13px] text-[var(--muted)]">
               统一信用代码 {detail.uscc || "—"} · {[detail.province, detail.city, detail.district].filter(Boolean).join(" ") || "地区待回填"} · {detail.address || "地址待回填"}

@@ -426,6 +426,81 @@ def purge_deleted_sweep(retention_days: int = 30) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 水位看门狗（SPEC-AR AR1）
+# ---------------------------------------------------------------------------
+def run_watermark_watchdog() -> dict:
+    """关键日批水位自愈：非当日执行的关键任务自动补跑 + 通知 admin。
+
+    每日 06:30 cron。背景：健康检查发现 03:30 增量在 POI 长批并发窗口
+    丢失且 misfire 未自愈——看门狗把"发现→补跑→通知"系统化。
+    补跑串行执行（SQLite 单写者）。
+    """
+    from datetime import timedelta
+
+    from sqlalchemy import select
+
+    from .db import SessionLocal
+    from .main import _run_job_with_watermark
+    from .models import User
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    watchdog_jobs = [
+        ("daily_incremental", run_daily_incremental),
+        ("proposal_gd", lambda: run_proposal_gd_scan(max_pages=5)),
+        ("proposal_hb", lambda: run_proposal_hb_scan(max_pages=5)),
+        ("health_refresh", lambda: _watchdog_health()),
+        ("backup_sqlite", lambda: backup_sqlite("data/backups")),
+    ]
+    results: dict[str, str] = {}
+    with SessionLocal() as s:
+        for name, fn in watchdog_jobs:
+            row = s.execute(
+                select(SyncWatermark).where(SyncWatermark.job_name == name)
+            ).scalar_one_or_none()
+            ran_today = bool(
+                row and row.last_run_at and row.last_run_at[:10] == today
+            )
+            if ran_today:
+                results[name] = "ok-today"
+                continue
+            try:
+                _run_job_with_watermark(name, fn)
+                results[name] = "recovered"
+            except Exception:  # noqa: BLE001
+                logger.exception("看门狗补跑 %s 失败", name)
+                results[name] = "recover-failed"
+    recovered = [k for k, v in results.items() if v == "recovered"]
+    if recovered:
+        try:
+            from .notify.channels import notify_dispatch
+            from .models import User as _User
+
+            with SessionLocal() as s:
+                admins = s.execute(
+                    select(_User).where(_User.role == "admin")
+                ).scalars().all()
+                for admin in admins:
+                    notify_dispatch(
+                        s, admin.id,
+                        kind="system",
+                        title=f"看门狗自动补跑 {len(recovered)} 个任务",
+                        body="、".join(recovered) + " 昨日未执行，已自动补跑完成",
+                        ref_type="watchdog", ref_id=0,
+                    )
+                s.commit()
+        except Exception:  # noqa: BLE001
+            logger.warning("看门狗通知失败", exc_info=True)
+    return {"checked": len(watchdog_jobs), "recovered": recovered, "results": results}
+
+
+def _watchdog_health() -> dict:
+    from .health import batch_health_refresh
+
+    with SessionLocal() as s:
+        return batch_health_refresh(s)
+
+
+# ---------------------------------------------------------------------------
 # B3 备份
 # ---------------------------------------------------------------------------
 def backup_sqlite(backup_dir: str | Path, keep: int = 7) -> dict:

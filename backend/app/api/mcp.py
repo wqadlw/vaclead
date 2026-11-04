@@ -17,6 +17,24 @@ from ..phones import load_phones
 
 router = APIRouter(tags=["mcp"])
 
+# SPEC-AR AR3：写工具令牌桶限流（每 Key 10 次/分钟，内存桶——单进程部署足够）
+_RATE_BUCKETS: dict[str, list[float]] = {}
+_RATE_LIMIT = 10
+_RATE_WINDOW_S = 60.0
+
+
+def _rate_limit(key: str) -> None:
+    import time as _time
+
+    from fastapi import HTTPException
+
+    now = _time.monotonic()
+    bucket = [t for t in _RATE_BUCKETS.get(key, []) if now - t < _RATE_WINDOW_S]
+    if len(bucket) >= _RATE_LIMIT:
+        raise HTTPException(429, "限流：每 Key 每分钟最多 10 次写调用")
+    bucket.append(now)
+    _RATE_BUCKETS[key] = bucket
+
 
 def _require_api_key(request: Request) -> None:
     """Agent 通道必须走 X-Api-Key（Bearer 属于人类 UI 会话）。"""
@@ -73,6 +91,11 @@ def mcp_tools(
                 "name": "get_recommendations",
                 "description": "今日推荐（先打给谁，可解释排序）",
                 "args": {"limit": "int=10"},
+            },
+            {
+                "name": "convert_lead",
+                "description": "把推荐/企业转为跟进线索（写工具：需 rw scope，10 次/分钟限流，幂等）",
+                "args": {"eid": "int"},
             },
         ],
     }
@@ -157,6 +180,25 @@ async def mcp_call(
 
             limit = max(1, min(int(args.get("limit") or 10), 50))
             return {"ok": True, "data": score_candidates(session, limit=limit)}
+
+        if tool == "convert_lead":
+            # SPEC-AR AR3：唯一受控写工具（最小写面）——推荐转线索
+            import hashlib as _hash
+
+            from ..models import UserApiKey
+
+            raw = (request.headers.get("X-Api-Key") or "").strip()
+            row = session.query(UserApiKey).filter(
+                UserApiKey.key_hash == _hash.sha256(raw.encode()).hexdigest()
+            ).first()
+            key_id = str(row.id) if row else "unknown"
+            _rate_limit(key_id)
+            eid = int(args.get("eid") or 0)
+            from ..api.misc import convert_recommendation
+
+            # 复用 AO2 逻辑（幂等）：借当前请求会话直接构造
+            result = convert_recommendation(eid, session, user)
+            return {"ok": True, "data": result}
 
         return {"ok": False, "error": f"未知工具：{tool}（GET /api/mcp/tools 查清单）"}
     except ValueError as exc:
