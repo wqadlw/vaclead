@@ -1569,3 +1569,22 @@ PRODUCT_GAP 第五轮 Top1（剑鱼实时推 vs 我们 2h 扫播）。
   run_daily_incremental 真网络重试（改源码断言）
 
 **门禁**：268 全绿（+5 SPEC-AI）+ build + E2E 6（8047）。
+
+
+## 2026-11-05 · W53 附记 · SPEC-AJ POI 行业纵深 + 客户地图（Agent B）
+
+3458 家 POI 企业带 GCJ-02 坐标入库——探迹级"客户地图"的数据条件首次齐备。
+**调研**：Leaflet+高德瓦片纠偏议题在混用 WGS84 时才存在，我们坐标与底图
+**同源（都高德）天然对齐零纠偏**（最干净场景）；瓦片 webrd0{s}.is.autonavi
+style=8（subdomains 1-4，公开栅格与 Key 无关）。
+**落地**：
+- **AJ2 /map 客户地图**：leaflet（+types，39KB，项目首个地图依赖，静态导出
+  ssr 动态导入兼容）+ circleMarker 双色语义（有电话=青蓝实心/无=灰）+
+  popup 联系卡直达情报页 + 城市聚焦/行业筛选/只看有电话；导航「客户地图」
+- **AJ2 后端 /api/enterprises/geo**：bbox/with_phone/industry/limit≤2000
+  防炸（注册在 /{eid} 之前——路由顺序坑第三次提醒自己）
+- **AJ1 行业纵深**：poi_batch.py 参数化 industry_keys（argv），环保/机械加工/
+  暖通机电/检验检测/医疗卫生 5 行业 × 10 城——单城 inserted 2000+，
+  首批四城已 9130（纵深密度 6 倍于首期三行业）
+
+**门禁**：270 全绿（+2 SPEC-AJ）+ build（out/map.html 生成）+ E2E 6。

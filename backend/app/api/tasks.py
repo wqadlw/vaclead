@@ -124,6 +124,7 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, d
     # 计数器放外层作用域：TaskCancelled 兜底分支需要读取（审计修复）
     inserted = 0
     merged = 0
+    poi_contact_done: set[int] = set()  # 本轮已建 POI 电话联系人的企业（防 autoflush 盲区撞唯一约束）
 
     async def _main() -> None:
         nonlocal inserted, merged
@@ -167,8 +168,10 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, d
                     ent.industry_name = ind["name"]
                 apply_icp(ent)
                 # SPEC-AH 补：POI 自主公开电话 → 规范化联系人（地图公开信息，合规）
+                # poi_contact_done：同批两个 poi_id 可解析到同一企业（autoflush=False
+                # 下 exists 查不到 pending 写，西安 96% 撞 uq_contact 实证）——集合兜底
                 poi_phones = extract_phones(poi.get("tel") or "")
-                if poi_phones:
+                if poi_phones and ent.id not in poi_contact_done:
                     exists = (
                         s.query(Contact)
                         .filter(
@@ -187,6 +190,7 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, d
                             source="amap",
                             evidence_claim=f"高德地图 POI「{poi['name'][:30]}」自主公开电话",
                         ))
+                        poi_contact_done.add(ent.id)
                     elif load_phones(exists.phones_json) != poi_phones:
                         exists.phones_json = dump_phones(poi_phones)
                 # SQLite 单写者（W52 锁事故实证）：ingestion 长事务会与同线程

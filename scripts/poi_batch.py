@@ -1,17 +1,20 @@
 """首批 POI 批量采集：10 城顺序执行（SQLite 单写者——并发任务会撞锁）。
 
 逐城 POST /api/tasks/poi → 轮询 task_checkpoint 至 done/error → 下一城。
-日志写 data/poi_batch.log。运行前提：演示服务 :8000 已启动且加载 tel 修复。
+日志写 data/poi_batch.log。运行前提：演示服务 :8000 已启动。
+用法：python scripts/poi_batch.py [industry_key ...]（缺省=vacuum/coating/semiconductor）
 """
 import json
 import sqlite3
+import sys
 import time
 import urllib.request
 
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 BASE = "http://127.0.0.1:8000"
 CITIES = ["无锡", "苏州", "东莞", "佛山", "深圳", "宁波", "常州", "南通", "西安", "合肥"]
-INDUSTRY_KEYS = ["vacuum", "coating", "semiconductor"]
+DEFAULT_INDUSTRY_KEYS = ["vacuum", "coating", "semiconductor"]
+INDUSTRY_KEYS = sys.argv[1:] or DEFAULT_INDUSTRY_KEYS
 DB = r"E:\AAAA\A-xiaosou\vaclead\data\vaclead.db"
 
 

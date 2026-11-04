@@ -5,13 +5,13 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from ..auth import admin_only, current_user
 from ..api.leads import _claim_guard
 from ..db import get_session
-from ..models import Enterprise, Lead, Signal, User, utcnow
+from ..models import Contact, Enterprise, Lead, Signal, User, utcnow
 from .. import search as meili
 
 router = APIRouter(tags=["enterprises"])
@@ -434,6 +434,74 @@ def advanced_filter_enterprises(
             for e in rows
         ],
         "total": total, "page": page, "page_size": page_size,
+    }
+
+
+@router.get("/enterprises/geo")
+def enterprises_geo(
+    south: float | None = None,
+    west: float | None = None,
+    north: float | None = None,
+    east: float | None = None,
+    with_phone: int = 0,
+    industry_key: str | None = None,
+    limit: int = 2000,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """客户地图打点（SPEC-AJ AJ2）：GCJ-02 坐标（与高德瓦片同源零纠偏）。
+
+    bbox 可选；with_phone=1 只看打得通的；limit ≤2000 防炸（前端分城聚合加载）。
+    """
+    callable_ids = (
+        session.query(Contact.enterprise_id)
+        .filter(
+            or_(
+                Contact.phones_json != "[]",
+                Contact.title.op("GLOB")("*[0-9]*"),
+            )
+        )
+        .subquery()
+    )
+    stmt = (
+        select(Enterprise)
+        .where(
+            Enterprise.lat.is_not(None),
+            Enterprise.lng.is_not(None),
+            Enterprise.lat != 0,
+            Enterprise.lng != 0,
+        )
+    )
+    if south is not None and north is not None and west is not None and east is not None:
+        stmt = stmt.where(
+            Enterprise.lat >= south, Enterprise.lat <= north,
+            Enterprise.lng >= west, Enterprise.lng <= east,
+        )
+    if with_phone:
+        stmt = stmt.where(Enterprise.id.in_(callable_ids.select()))
+    if industry_key:
+        stmt = stmt.where(Enterprise.industry_key == industry_key)
+    rows = session.scalars(stmt.limit(min(limit, 2000))).all()
+    phone_set = {
+        r[0] for r in session.execute(select(Contact.enterprise_id).where(
+            or_(
+                Contact.phones_json != "[]",
+                Contact.title.op("GLOB")("*[0-9]*"),
+            )
+        )).all()
+    }
+    return {
+        "items": [
+            {
+                "id": e.id, "name": e.name, "lat": e.lat, "lng": e.lng,
+                "city": e.city, "district": e.district,
+                "industry_name": e.industry_name,
+                "intent_score": e.intent_score,
+                "has_phone": e.id in phone_set,
+            }
+            for e in rows
+        ],
+        "total": len(rows),
     }
 
 
