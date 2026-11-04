@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from ..auth import admin_only, current_user
@@ -859,14 +859,19 @@ def backfill_notice_contacts(
 
     from ..collectors.ccgp import fetch_notice_detail
     from ..models import Contact, Enterprise, Signal
+    from ..normalize import resolve_enterprise
+    from ..phones import dump_phones, extract_phones, load_phones
 
-    # 已有可拨电话联系人（title 槽位含数字）的企业 → 无需再抓
+    # 已有可拨电话联系人（phones_json 或 title 槽位含数字）的企业 → 无需再抓
     # 注意：SQLite 的 LIKE 不支持 [0-9] 字符类，必须用 GLOB（SPEC-AA AA1 实测坑）
     has_callable = (
         session.query(Contact.enterprise_id)
         .filter(
             Contact.enterprise_id == Enterprise.id,
-            Contact.title.op("GLOB")("*[0-9]*"),
+            or_(
+                Contact.phones_json != "[]",
+                Contact.title.op("GLOB")("*[0-9]*"),
+            ),
         )
         .subquery()
     )
@@ -877,21 +882,140 @@ def backfill_notice_contacts(
         .exists()
     )
 
+    def _phones_of_any_contact(eid: int) -> bool:
+        row = (
+            session.query(Contact.id)
+            .filter(Contact.enterprise_id == eid, Contact.phones_json != "[]")
+            .first()
+        )
+        return row is not None
+
+    # AH2 存量迁移：老联系人号码 → phones_json（幂等，cron 自愈）。
+    # 存量形态两处都有：项目/代理联系人在 title，采购联系人在 name（原元组
+    # 布局 name=电话文本）——两侧都扫。
+    def migrate_contact_phones(s) -> int:
+        legacy = (
+            s.query(Contact)
+            .filter(Contact.phones_json == "[]")
+            .filter(
+                or_(
+                    Contact.title.op("GLOB")("*[0-9]*"),
+                    Contact.name.op("GLOB")("*[0-9]*"),
+                )
+            )
+            .all()
+        )
+        n = 0
+        for c in legacy:
+            phones = extract_phones(f"{c.name or ''} {c.title or ''}")
+            if phones:
+                c.phones_json = dump_phones(phones)
+                n += 1
+        s.commit()
+        return n
+
+    # AH2 存量迁移：老联系人 title 槽位号码 → phones_json（幂等，cron 自愈）
+    # 必须在池查询前跑——迁移本身会改变 has_callable 判定
+    migrated = migrate_contact_phones(session)
+
     ents = (
         session.query(Enterprise)
         .filter(
-            Enterprise.source == "ccgp_buyer",
+            Enterprise.source.in_(["ccgp_buyer", "ggzy_buyer"]),
             ~Enterprise.id.in_(has_callable.select()),
         )
         .order_by(tendering.desc(), Enterprise.id.asc())
-        .limit(min(body.limit, 50))
+        .limit(body.limit)
         .all()
     )
-    if not ents:
-        return {"updated": 0, "skipped": "无 ccgp_buyer 企业"}
+    # SPEC-AH AH1 池 B：中标供应商（source='ccgp'）的公告详情里是采购人侧信息——
+    # 解析 buyer_name 挂到采购人（建档/复用），供应商公告里的买家线索不浪费
+    supplier_pool = (
+        session.query(Enterprise)
+        .filter(Enterprise.source == "ccgp")
+        .order_by(tendering.desc(), Enterprise.id.asc())
+        .limit(body.limit)
+        .all()
+        if body.limit > len(ents)
+        else []
+    )
+    if not ents and not supplier_pool:
+        return {"updated": 0, "skipped": "无待回填企业（买家池+供应商池均空）", "phones_migrated": migrated}
     contacts_created = 0
     ents_updated = 0
     fetched = 0
+    buyer_created = 0
+    detail_cache: dict[str, dict | None] = {}
+
+    def _fetch(url: str) -> dict | None:
+        if url not in detail_cache:
+            detail_cache[url] = fetch_notice_detail(url)
+        return detail_cache[url]
+
+    def _attach(target: Enterprise, detail: dict, claim_prefix: str) -> None:
+        """把详情页联系方式挂到 target 企业（买家直采与供应商侧归挂共用）。"""
+        nonlocal contacts_created, ents_updated
+        changed = False
+        if detail.get("buyer_address") and not target.address:
+            target.address = detail["buyer_address"]
+            changed = True
+        if detail.get("region") and not target.city:
+            target.city = detail["region"]
+            changed = True
+        if changed:
+            ents_updated += 1
+        # 三元组语义（SPEC-AH 修正）：name=联系人名（采购联系人无个人名用固定名），
+        # phone_text=含号码的原文（进 title 留档 + 抽取进 phones_json）
+        pairs = []
+        if detail.get("buyer_contact"):
+            # 采购单位联系方式通常是采购负责人——决策链关键人（SPEC-J J2）
+            pairs.append(("采购联系人", "采购联系人", detail["buyer_contact"],
+                          f"{claim_prefix}采购单位联系方式", "decision_maker"))
+        if detail.get("project_contact"):
+            pairs.append(("项目联系人", detail["project_contact"],
+                          detail.get("project_phone") or "ccgp",
+                          f"{claim_prefix}项目联系方式", "handler"))
+        if detail.get("agency_name"):
+            pairs.append(("代理机构", detail["agency_name"],
+                          detail.get("agency_contact") or "ccgp",
+                          f"{claim_prefix}代理机构", "handler"))
+        notice_email = (detail.get("email") or "").strip() or None
+        for role, name, phone_text, claim, drole in pairs:
+            exists = (
+                session.query(Contact)
+                .filter(
+                    Contact.enterprise_id == target.id,
+                    Contact.name == name,
+                    Contact.role == role,
+                )
+                .first()
+            )
+            phones = extract_phones(phone_text)
+            if exists is None:
+                session.add(Contact(
+                    enterprise_id=target.id, name=name, role=role,
+                    title=phone_text[:80] if phone_text else None,
+                    email=notice_email,
+                    phones_json=dump_phones(phones),
+                    decision_role=drole,
+                    verify_state="verified",
+                    source="ccgp", evidence_claim=claim,
+                ))
+                contacts_created += 1
+            else:
+                # 补全：老联系人补 phones/邮箱（幂等）
+                if phones and load_phones(exists.phones_json) != phones:
+                    merged = load_phones(exists.phones_json)
+                    for p in phones:
+                        if p not in merged:
+                            merged.append(p)
+                    exists.phones_json = dump_phones(merged)
+                if notice_email and not exists.email:
+                    exists.email = notice_email
+                    exists.decision_role = exists.decision_role or drole
+                    exists.verify_state = "verified"
+
+    # ---- 池 A：买家直采（语义同前版）----
     for e in ents:
         if fetched >= body.limit:
             break
@@ -902,65 +1026,56 @@ def backfill_notice_contacts(
         )
         if sig is None:
             continue
-        detail = fetch_notice_detail(sig.url)
+        detail = _fetch(sig.url)
         fetched += 1
         if detail is None:
             continue
-        changed = False
-        if detail.get("buyer_address") and not e.address:
-            e.address = detail["buyer_address"]
-            changed = True
-        if detail.get("region") and not e.city:
-            e.city = detail["region"]
-            changed = True
-        if changed:
-            ents_updated += 1
-        pairs = []
-        if detail.get("buyer_contact"):
-            # 采购单位联系方式通常是采购负责人——决策链关键人（SPEC-J J2）
-            pairs.append(("采购联系人", detail["buyer_contact"], "ccgp_buyer",
-                          f"政采公告「{sig.title[:30]}」采购单位联系方式", "decision_maker"))
-        if detail.get("project_contact"):
-            pairs.append(("项目联系人", detail["project_contact"],
-                          detail.get("project_phone") or "ccgp",
-                          f"政采公告「{sig.title[:30]}」项目联系方式", "handler"))
-        if detail.get("agency_name"):
-            pairs.append(("代理机构", detail["agency_name"],
-                          detail.get("agency_contact") or "ccgp",
-                          f"政采公告「{sig.title[:30]}」代理机构", "handler"))
-        for role, name, contact_info, claim, drole in pairs:
-            exists = (
-                session.query(Contact)
-                .filter(
-                    Contact.enterprise_id == e.id,
-                    Contact.name == name,
-                    Contact.role == role,
-                )
-                .first()
-            )
-            # 公告正文的法定公开邮箱 → 回填到该企业联系人（verified：公告直接公开）
-            notice_email = (detail.get("email") or "").strip() or None
-            if exists is None:
-                session.add(Contact(
-                    enterprise_id=e.id, name=name, role=role,
-                    title=contact_info[:80] if contact_info else None,
-                    email=notice_email,
-                    decision_role=drole,
-                    verify_state="verified",
-                    source="ccgp", evidence_claim=claim,
-                ))
-                contacts_created += 1
-            elif notice_email and not exists.email:
-                exists.email = notice_email
-                exists.decision_role = exists.decision_role or drole
-                exists.verify_state = "verified"
+        _attach(e, detail, f"政采公告「{sig.title[:30]}」")
         _time.sleep(1.0)  # 详情页额外礼貌间隔
+
+    # ---- 池 B：供应商公告挖采购人（SPEC-AH AH1）----
+    for sup in supplier_pool:
+        if fetched >= body.limit:
+            break
+        sig = (
+            session.query(Signal)
+            .filter(Signal.enterprise_id == sup.id, Signal.url.like("%ccgp.gov.cn%"))
+            .order_by(Signal.pub_date.desc())
+            .first()
+        )
+        if sig is None:
+            continue
+        detail = _fetch(sig.url)
+        fetched += 1
+        buyer_name = (detail or {}).get("buyer_name") or ""
+        if not detail or len(buyer_name) < 4 or buyer_name == sup.name:
+            continue
+        buyer, is_new = resolve_enterprise(session, buyer_name, source="ccgp_buyer")
+        if is_new:
+            buyer_created += 1
+        already = (
+            session.query(Contact)
+            .filter(
+                Contact.enterprise_id == buyer.id,
+                Contact.title.op("GLOB")("*[0-9]*"),
+            )
+            .first()
+            is not None
+        ) or _phones_of_any_contact(buyer.id)
+        if not already:
+            _attach(
+                buyer, detail,
+                f"来自供应商「{sup.name[:14]}」中标公告「{sig.title[:24]}」",
+            )
+        _time.sleep(1.0)
     session.commit()
     return {
         "contacts_created": contacts_created,
+        "buyer_created": buyer_created,
         "enterprises_updated": ents_updated,
         "pages_fetched": fetched,
-        "scanned": len(ents),
+        "phones_migrated": migrated,
+        "scanned": len(ents) + len(supplier_pool),
     }
 
 

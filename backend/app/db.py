@@ -73,6 +73,9 @@ _EVOLUTION_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "campaign": [
         ("track_enabled", "INTEGER NOT NULL DEFAULT 1"),
     ],
+    "contact": [
+        ("phones_json", "TEXT NOT NULL DEFAULT '[]'"),
+    ],
 }
 
 

@@ -1492,3 +1492,41 @@ cron 05:10（与 GD 05:00 错峰独立水位）。真库 3 页 26 条 25 新企�
 
 **门禁**：258 全绿（+6 SPEC-AG）+ build + E2E 6（8047）；真库 integrity ok，
 湖北信号 26 条/建档 25 家/已分类 6 家。
+
+
+## 2026-11-04 · W52 认领 · SPEC-AH 联系方式扩池轮（Agent B）
+
+用户拍板"联系方式是拓客平台最重要的"+风鸟调研（它们的电话=企业年报自主
+公示+公开聚合，卖工商固话不卖决策人手机——印证我们公告法定公开路线质量）。
+首轮全量回填 24→124 家（1.2%→6.0%）暴露三处结构限制，本轮根治。
+**动文件**：app/phones.py（新）/api/tasks.py（回填双池重构）/api/intel.py
+（序列化）/models.py+db.py（phones_json 列）/前端情报页联系人抽屉。
+
+
+## 2026-11-04 · W52 SPEC-AH 结果（Agent B）+ 联系方式结构性升级
+
+**落地**：
+- **AH1 双池回填**：池 A=买家直采（ccgp_buyer/ggzy_buyer，语义不变）；
+  **池 B=供应商公告挖采购人**（source='ccgp' 的中标公告详情里是采购人侧
+  信息 → buyer_name → resolve_enterprise 建档/复用 → 联系人挂采购人，
+  evidence 记"来自供应商「XX」中标公告"可溯源）——59 家供应商公告的买家
+  线索不再浪费
+- **限额修复**：min(body.limit,50) 截断使 AA1 的 300/天实际只跑 50——去掉，
+  cron 恢复 300/天真实语义
+- **AH2 电话规范化**：app/phones.py（手机 1[3-9]\d{9}+座机 0\d{2,3}-\d{7,8}
+  含分机，去重保序，参考 python-phonenumbers 实践零新依赖）；
+  contact.phones_json 列（幂等 ALTER）+迁移（**title+name 双槽位扫**——
+  存量采购联系人的号码在 name 槽位，原元组布局 name=电话文本/title="ccgp_buyer"
+  字面量，顺势修正语义：name=固定名、title=原文、phones=真号码）；
+  has_callable 判定升级 phones_json!='[]' OR title GLOB
+- **AH3 露出**：contacts 序列化加 phones 数组；情报页抽屉渲染可复制号码
+  chips（hover 反色，点击 clipboard+Toast）
+
+**坑**：
+1. 迁移必须跑在池查询前（迁移改变 has_callable 判定；且早退分支原先跳过迁移）
+2. monkeypatch 函数内延迟 import 要打源模块（ccgp_mod）不能打 api.tasks
+3. SQLAlchemy 表达式 `|` 组合触发 SADeprecation（Text 类型无 or_ 算子类）
+   ——用 sqlalchemy.or_() 正规化
+4. 供应商公告里 buyer_name 可能等于供应商自己（自产自销公告）——跳过防自挂
+
+**门禁**：263 全绿（+5 SPEC-AH）+ build + E2E 6（8047）；真库迁移 integrity ok。

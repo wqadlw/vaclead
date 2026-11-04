@@ -433,6 +433,9 @@ class Contact(Base):
     verify_state: Mapped[str] = mapped_column(Text, nullable=False, default="none")
     source: Mapped[str] = mapped_column(Text, nullable=False, default="ggzy")
     evidence_claim: Mapped[str | None] = mapped_column(Text)
+    # SPEC-AH AH2：规范化电话列表（["010-68290510",...]）——title 槽位存原文，
+    # 拨得通的真号码在这里（GLOB 数字判断分不清电话和项目编号）
+    phones_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
 
 

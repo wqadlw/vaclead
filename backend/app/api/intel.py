@@ -131,11 +131,14 @@ def list_contacts(
     if e is None:
         raise HTTPException(404, "企业不存在")
     rows = session.query(Contact).filter(Contact.enterprise_id == eid).all()
+    from ..phones import load_phones
+
     return {
         "items": [
             {"id": c.id, "name": c.name, "role": c.role, "title": c.title,
              "email": c.email, "decision_role": c.decision_role,
              "verify_state": c.verify_state,
+             "phones": load_phones(c.phones_json),  # SPEC-AH AH3：规范化可拨号码
              "source": c.source, "evidence_claim": c.evidence_claim}
             for c in rows
         ]

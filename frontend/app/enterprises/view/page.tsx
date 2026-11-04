@@ -29,6 +29,7 @@ interface ContactRow {
   email: string | null;
   decision_role: string | null;
   verify_state: string;
+  phones?: string[];
   source: string;
   evidence_claim: string | null;
 }
@@ -525,7 +526,25 @@ function IntelInner() {
                         <Tag color="cyan" type="light" size="small">{ROLE_CN[c.role] ?? c.role}</Tag>
                       </span>
                     </div>
-                    {c.title && <div className="mt-1 text-[13px] tabular-nums text-[var(--accent)]">{c.title}</div>}
+                    {/* SPEC-AH AH3：规范化可拨号码 chips（可复制） */}
+                    {(c.phones ?? []).length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {c.phones.map((p) => (
+                          <span
+                            key={p}
+                            className="cursor-pointer rounded border border-[var(--border)] bg-[var(--raised)] px-1.5 py-0.5 font-mono text-[12.5px] tabular-nums text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
+                            title="点击复制号码"
+                            onClick={() => {
+                              void navigator.clipboard?.writeText(p);
+                              Toast.success(`已复制 ${p}`);
+                            }}
+                          >
+                            {p}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {c.title && <div className="mt-1 text-[12px] leading-4 text-[var(--muted)]">{c.title}</div>}
                     {c.email && (
                       <div className="mt-1 text-[13px] text-[var(--ink)]">
                         <a href={`mailto:${c.email}`} className="hover:text-[var(--accent)]">{c.email}</a>
