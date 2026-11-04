@@ -363,6 +363,20 @@ async def lifespan(app: FastAPI):
         # SPEC-AM：每日 03:00 清空超过 30 天保留期的回收站
         _register_cron("purge_deleted", _purge_sweep, 3, 0)
 
+        # SPEC-AP AP1：Meili 可用性预热——冷启动首击的 2.5s 探测在启动期消化，
+        # 不让第一个倒霉请求吃（探测结果随后走 30s 缓存）
+        def _meili_probe_safe() -> None:
+            try:
+                from . import search as _meili
+
+                _meili.available()
+            except Exception:  # noqa: BLE001
+                pass
+
+        import threading as _th
+
+        _th.Thread(target=_meili_probe_safe, daemon=True).start()
+
         def _health_sweep() -> dict:
             from .health import batch_health_refresh
             from .db import SessionLocal as _SL

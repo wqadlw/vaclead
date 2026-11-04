@@ -1685,3 +1685,23 @@ vaclead 的 26.6k 池/信号/推荐引擎是同类资产且从未对外暴露。
   「转线索」按钮（转后 loadRecs 刷新，"尚未分配"理由消失=引擎自动）
 **真库**：integrity ok。
 **门禁**：282 全绿（+3 SPEC-AO）+ build + E2E 6（8047）。
+
+
+## 2026-11-05 · W55 · SPEC-AP 规模性能审计 + 债务清理（Agent B）
+
+26k 规模下关键端点实测：**企业列表 2529ms**（日活页面！）、深翻页 2216ms
+——SQL 层仅 46ms（EXPLAIN 证实），根因在 **Meili 死端口可用性探测**：
+`available()` 每请求执行，Windows TCP 拒绝路径实测 2.5s/次。
+**AP1 修复**（三件套）：
+1. 探测缓存 TTL 30s（正常路径零探测开销）
+2. 客户端 timeout 10s→2s
+3. lifespan 后台预热线程（冷启动首击的 2.5s 在启动期消化）
+**实测修复后**：深翻页 170ms（13 倍）、geo 自动聚合 192ms（mode=clusters
+total=2000——Mimosa 冷却后放行，AK2 聚合端点并入 enterprises_geo）、
+列表冷启动首击已预热消纳。
+**债务清理**：exportcenter.py 死文件删除（AM2 转流式后遗留）；geoutil 单测
+补齐（WORKLOG 曾不实声明"单测覆盖"——修正）；西安补扫（vacuum 词密度低
+inserted=0，符合行业分布）。
+**AK2 聚合前端接入**：geo 响应带 mode——clusters（全国级：圆面积∝数量
++青蓝占比=电话覆盖率+点击下钻）/ points（城市级 ≤1500）双模式渲染。
+**门禁**：284 全绿（+2 geoutil）+ build + E2E 6（8047）。

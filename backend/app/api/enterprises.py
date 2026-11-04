@@ -490,7 +490,16 @@ def enterprises_geo(
             )
         )).all()
     }
+    # SPEC-AK AK2：超 1500 点自动网格聚合（geoutil 纯函数，24k 点前端防炸）
+    from ..geoutil import grid_cluster
+
+    flat = [(e.lat, e.lng, e.id in phone_set) for e in rows]
+    clustered = grid_cluster(flat, threshold=1500)
+    if clustered["mode"] == "clusters":
+        return {"mode": "clusters", "total": clustered["total"], "items": clustered["items"]}
     return {
+        "mode": "points",
+        "total": clustered["total"],
         "items": [
             {
                 "id": e.id, "name": e.name, "lat": e.lat, "lng": e.lng,
@@ -501,7 +510,6 @@ def enterprises_geo(
             }
             for e in rows
         ],
-        "total": len(rows),
     }
 
 

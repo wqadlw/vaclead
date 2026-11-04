@@ -92,31 +92,49 @@ export default function MapPage() {
       for (const m of markersRef.current) m.remove();
       markersRef.current = [];
       try {
-        const d = await api.get<{ items: GeoPoint[]; total: number }>(
+        const d = await api.get<{ mode: string; items: GeoPoint[]; total: number }>(
           `/api/enterprises/geo?limit=2000${withPhone ? "&with_phone=1" : ""}${
             industry ? `&industry_key=${industry}` : ""
           }`,
         );
         const L = (await import("leaflet")).default;
         let phoneCount = 0;
-        for (const p of d.items) {
-          if (p.has_phone) phoneCount += 1;
-          const marker = L.circleMarker([p.lat, p.lng], {
-            radius: p.has_phone ? 5 : 3.5,
-            color: p.has_phone ? "#1b6c80" : "#9aa5a9",
-            weight: 1,
-            fillColor: p.has_phone ? "#1b6c80" : "#e8ecee",
-            fillOpacity: p.has_phone ? 0.85 : 0.6,
-          }).addTo(map);
-          marker.bindPopup(
-            `<div style="font-size:13px;min-width:180px">
-               <b>${p.name}</b><br/>
-               <span style="color:#6b7175">${p.industry_name ?? "未分类"} · ${p.district ?? p.city ?? ""}</span><br/>
-               ${p.has_phone ? '<span style="color:#1b6c80">☎ 有公开电话</span>' : '<span style="color:#9aa5a9">无公开电话</span>'}<br/>
-               <a href="/enterprises/view?id=${p.id}" target="_blank" rel="noreferrer">查看详情 →</a>
-             </div>`,
-          );
-          markersRef.current.push(marker);
+        if (d.mode === "clusters") {
+          // AK2：全国级聚合——圆面积∝数量，青蓝占比=电话覆盖率
+          for (const cl of d.items as unknown as { lat: number; lng: number; count: number; phone: number }[]) {
+            phoneCount += cl.phone;
+            const ratio = cl.phone / Math.max(cl.count, 1);
+            const marker = L.circleMarker([cl.lat, cl.lng], {
+              radius: 6 + Math.min(18, Math.sqrt(cl.count) * 1.6),
+              color: "#1b6c80",
+              weight: 1.5,
+              fillColor: ratio > 0.4 ? "#1b6c80" : "#8fb8c2",
+              fillOpacity: 0.45,
+            }).addTo(map);
+            marker.bindTooltip(`${cl.count} 家 · ☎ ${cl.phone}`, { permanent: false });
+            marker.on("click", () => map.setView([cl.lat, cl.lng], 12));
+            markersRef.current.push(marker);
+          }
+        } else {
+          for (const p of d.items) {
+            if (p.has_phone) phoneCount += 1;
+            const marker = L.circleMarker([p.lat, p.lng], {
+              radius: p.has_phone ? 5 : 3.5,
+              color: p.has_phone ? "#1b6c80" : "#9aa5a9",
+              weight: 1,
+              fillColor: p.has_phone ? "#1b6c80" : "#e8ecee",
+              fillOpacity: p.has_phone ? 0.85 : 0.6,
+            }).addTo(map);
+            marker.bindPopup(
+              `<div style="font-size:13px;min-width:180px">
+                 <b>${p.name}</b><br/>
+                 <span style="color:#6b7175">${p.industry_name ?? "未分类"} · ${p.district ?? p.city ?? ""}</span><br/>
+                 ${p.has_phone ? '<span style="color:#1b6c80">☎ 有公开电话</span>' : '<span style="color:#9aa5a9">无公开电话</span>'}<br/>
+                 <a href="/enterprises/view?id=${p.id}" target="_blank" rel="noreferrer">查看详情 →</a>
+               </div>`,
+            );
+            markersRef.current.push(marker);
+          }
         }
         setStats({ total: d.total, phone: phoneCount });
       } catch (e) {

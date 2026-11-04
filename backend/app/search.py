@@ -39,16 +39,35 @@ def _client():
     # requests 的 trust_env 只能 monkeypatch 全局会话：直接归零代理环境变量
     for k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
         os.environ.pop(k, None)
-    return meilisearch.Client(_MEILI_URL, _MEILI_KEY, timeout=10)
+    return meilisearch.Client(_MEILI_URL, _MEILI_KEY, timeout=2)
+
+
+# SPEC-AP AP1：可用性探测缓存（TTL 30s）——Meili 宕机时 Windows TCP 拒绝
+# 路径实测 2.5s/次，日活列表页每请求都吃（26k 规模性能审计实证）。
+# 缓存后：正常路径零探测开销，宕机时每 30s 一次失败探测。
+_avail_cache: dict = {"ok": None, "at": 0.0}
+_AVAIL_TTL_S = 30.0
 
 
 def available() -> bool:
-    """Meili 不可用时所有检索 API 自动回退 SQLite（平台不因检索引擎宕机不可用）。"""
+    """Meili 不可用时所有检索 API 自动回退 SQLite（平台不因检索引擎宕机不可用）。
+
+    探测结果缓存 30s——既不拖慢正常请求，宕机切换也足够快。
+    """
+    import time as _time
+
+    now = _time.monotonic()
+    if _avail_cache["ok"] is not None and now - _avail_cache["at"] < _AVAIL_TTL_S:
+        return bool(_avail_cache["ok"])
+    ok = False
     try:
         _client().health()
-        return True
+        ok = True
     except Exception:  # noqa: BLE001
-        return False
+        ok = False
+    _avail_cache["ok"] = ok
+    _avail_cache["at"] = now
+    return ok
 
 
 def _doc_of(e) -> dict:
