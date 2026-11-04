@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.0.31（2026-11-05）
+
+Agent 数据基座 + 推荐漏斗收口（SPEC-AO）。
+
+### MCP 风格工具端点（AO1，企查查 2026 方向对齐）
+- **GET /api/mcp/tools** + **POST /api/mcp/call**：四只读工具
+  （search_enterprises / get_enterprise / list_signals / get_recommendations）
+- **X-Api-Key 强制认证**（复用 J1；调用需 rw scope——POST 传输）
+- 统一 {ok, data} 响应——任意 AI 助手（Claude/Coze/飞书）可对接 vaclead 数据
+
+### 推荐漏斗收口（AO2）
+- **POST /api/recommendations/{eid}/convert**：一键转线索（幂等复用）+ 自动建「48h 内首联」待办 + pending 触达结果联动标 interested
+- 工作台推荐卡新增「转线索」按钮（转后即时刷新状态）
+
 ## v1.0.30（2026-11-05）
 
 触达运营闭环（SPEC-AN）。

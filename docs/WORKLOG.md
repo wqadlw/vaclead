@@ -1667,3 +1667,21 @@ style=8（subdomains 1-4，公开栅格与 Key 无关）。
   **模式清洗必须两轮预览校准——模式即词表，同一防误伤纪律**
 **数据终态**：活跃企业 26,639 | 可拨覆盖 49.9% | integrity ok。
 **门禁**：279 全绿（+4 SPEC-AN）+ build + E2E 6（8047）。
+
+
+## 2026-11-05 · W55 · SPEC-AO Agent 接口 + 推荐漏斗收口（Agent B）
+
+PRODUCT_GAP 第六轮：**企查查 2026.3 已转向 MCP 智能体数据平台**（Claw 助手+
+百炼/Coze/飞书对接）——把企业数据变成任意 AI 助手可调用的工具是行业新方向。
+vaclead 的 26.6k 池/信号/推荐引擎是同类资产且从未对外暴露。
+**落地**：
+- **AO1 app/api/mcp.py**：GET /mcp/tools（发现）+ POST /mcp/call（统一调用），
+  四只读工具（search/get/list_signals/recommendations 薄封装）；**X-Api-Key
+  强制**（Bearer 是人类会话）；scope 语义=POST 传输需 rw（J1 方法级拦截 read），
+  工具清单响应注记；响应统一 {ok,data}/{ok:false,error}（Agent 好解析）
+- **AO2 一键转线索**：POST /recommendations/{eid}/convert——复用已有
+  following/intent（幂等）或新建+owner；自动建「推荐转化：48h 内首联」待办
+  （open 唯一索引防重建）；pending 触达结果联动标 interested；推荐卡加
+  「转线索」按钮（转后 loadRecs 刷新，"尚未分配"理由消失=引擎自动）
+**真库**：integrity ok。
+**门禁**：282 全绿（+3 SPEC-AO）+ build + E2E 6（8047）。

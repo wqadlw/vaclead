@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Modal, Table } from "@douyinfe/semi-ui";
+import { Button, Modal, Table, Toast } from "@douyinfe/semi-ui";
 import { ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { AreaTrend, BarList, DeltaBadge, FunnelBars, ProvinceBars, SparkBars } from "@/components/charts";
@@ -346,14 +346,29 @@ export default function DashboardPage() {
     score: number;
     reasons: string[];
     phone?: string | null;
+    managed?: boolean;
   }
   const [recs, setRecs] = useState<RecItem[]>([]);
-  useEffect(() => {
+  const loadRecs = useCallback(() => {
     api
       .get<{ items: RecItem[] }>("/api/recommendations?limit=8")
-      .then((d) => setRecs(d.items))
+      .then((d) => setRecs(d.items.map((x) => ({ ...x, managed: x.reasons.some((r) => r.includes("尚未分配")) === false }))))
       .catch(() => setRecs([]));
   }, []);
+  useEffect(() => {
+    loadRecs();
+  }, [loadRecs]);
+  const convertRec = useCallback(async (entId: number) => {
+    try {
+      const r = await api.post<{ lead_id: number; created: boolean }>(
+        `/api/recommendations/${entId}/convert`,
+      );
+      Toast.success(r.created ? "已转线索并建首联待办" : "已有跟进线索");
+      loadRecs();
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "转换失败");
+    }
+  }, [loadRecs]);
 
   const kpis = [
     {
@@ -551,9 +566,14 @@ export default function DashboardPage() {
                     {r.city ?? "—"} · {r.industry_name ?? "未分类"} · {r.reasons[0] ?? ""}
                   </div>
                 </div>
-                <span className="shrink-0 text-[15px] font-semibold tabular-nums text-[var(--accent)]">
-                  {r.score}
-                </span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-[15px] font-semibold tabular-nums text-[var(--accent)]">
+                    {r.score}
+                  </span>
+                  <Button size="small" theme="outline" onClick={() => void convertRec(r.ent_id)}>
+                    转线索
+                  </Button>
+                </div>
               </a>
             ))}
           </div>

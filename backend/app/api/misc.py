@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..auth import admin_only, create_token, current_user, verify_password
@@ -375,6 +375,51 @@ def get_recommendations(
     from ..recommend import score_candidates
 
     return {"items": score_candidates(session, limit=max(1, min(limit, 100)))}
+
+
+@router.post("/recommendations/{ent_id}/convert")
+def convert_recommendation(
+    ent_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """推荐漏斗收口（SPEC-AO AO2）：一键转线索（幂等——复用已有 following/intent）。"""
+    from datetime import datetime, timedelta, timezone
+
+    from ..models import Contact, Lead, Todo
+
+    ent = session.get(Enterprise, ent_id)
+    if ent is None or ent.deleted_at:
+        raise HTTPException(404, "企业不存在")
+    lead = session.query(Lead).filter(
+        Lead.enterprise_id == ent_id,
+        or_(Lead.status == "following", Lead.status == "intent"),
+    ).first()
+    created = False
+    if lead is None:
+        lead = Lead(enterprise_id=ent_id, status="following", owner_id=user.id)
+        session.add(lead)
+        session.flush()
+        created = True
+    # 首联待办（48h 期限；open 唯一索引防重建）
+    due = (datetime.now(timezone.utc) + timedelta(hours=48)).strftime("%Y-%m-%d")
+    exists = session.query(Todo).filter(
+        Todo.enterprise_id == ent_id,
+        Todo.title == "推荐转化：48 小时内首联",
+        Todo.done == 0,
+    ).first()
+    if exists is None:
+        session.add(Todo(
+            title="推荐转化：48 小时内首联",
+            enterprise_id=ent_id, lead_id=lead.id,
+            due_date=due, owner_id=user.id, source="automation",
+        ))
+    # interested 触达结果联动：有联系人未标则补
+    session.query(Contact).filter(
+        Contact.enterprise_id == ent_id, Contact.call_result == "pending"
+    ).update({"call_result": "interested"}, synchronize_session=False)
+    session.commit()
+    return {"ok": True, "lead_id": lead.id, "created": created}
 
 
 @router.get("/analytics/call-funnel")
