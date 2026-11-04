@@ -1646,3 +1646,24 @@ style=8（subdomains 1-4，公开栅格与 Key 无关）。
 **20000**；异步文件中心方案被 Mimosa 连拦（f-string LIKE/文件写/FileResponse
 路径形态）→ **务实保留流式 + 扩容**，exportcenter.py 候选代码记档不提交
 **门禁**：275 全绿（+3 SPEC-AM）+ build + E2E 6（8047）；真库迁移 integrity ok。
+
+
+## 2026-11-05 · W54 · SPEC-AN 触达运营闭环（Agent B）
+
+13,389 个可拨电话就位后"打了之后"空白。调研（Revenue.io/Trestle/Salesloft）：
+受控 picklist、连接类（connected/no_answer/voicemail/invalid）与对话类
+（interested/not_interested）分层、结果驱动自动下一步、结果关联管道。
+**落地**：
+- **AN1** Contact.call_result 受控枚举+called_at；POST /contacts/{id}/call-result
+  （非法枚举 422）；contacts 序列化带结果；前端号码 chips 旁 ☎ 结果标记下拉
+  （7 态色阶，标记即局部刷新）
+- **AN2 推荐接入**：全部 invalid → 排除（数据卫生）；interested → +25
+  「已表示兴趣——建议立即转线索」；no_answer×2 → -10
+- **AN3 GET /api/analytics/call-funnel**：dials→connected→interested 漏斗
+  +connect_rate/interest_rate（近 30 天窗口）
+- **AN4 批量清洗实战**：bulk-cleanup 端点（dry_run 预览→执行）——首轮预览
+  216 家样例暴露误伤（"厦门**市**"撞"门市"、"张家**园**"撞"家园"）→ 收紧
+  模式（去门市/家园）→ 178 家全真噪音（住宅苑/钟表商行/超市店）执行软删。
+  **模式清洗必须两轮预览校准——模式即词表，同一防误伤纪律**
+**数据终态**：活跃企业 26,639 | 可拨覆盖 49.9% | integrity ok。
+**门禁**：279 全绿（+4 SPEC-AN）+ build + E2E 6（8047）。

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import current_user
 from ..db import get_session
-from ..models import Contact, Enterprise, Signal, User
+from ..models import Contact, Enterprise, Signal, User, utcnow
 
 router = APIRouter(tags=["intel"])
 
@@ -139,7 +139,33 @@ def list_contacts(
              "email": c.email, "decision_role": c.decision_role,
              "verify_state": c.verify_state,
              "phones": load_phones(c.phones_json),  # SPEC-AH AH3：规范化可拨号码
+             "call_result": c.call_result,  # SPEC-AN AN1 触达结果
+             "called_at": c.called_at,
              "source": c.source, "evidence_claim": c.evidence_claim}
             for c in rows
         ]
     }
+
+
+_CALL_RESULTS = ("pending", "no_answer", "voicemail", "invalid",
+                 "connected", "interested", "not_interested")
+
+
+@router.post("/contacts/{cid}/call-result")
+def set_call_result(
+    cid: int,
+    body: dict,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """触达结果标记（SPEC-AN AN1，受控枚举）：连接类与对话类分层。"""
+    result = str(body.get("result") or "")
+    if result not in _CALL_RESULTS:
+        raise HTTPException(422, f"非法结果，允许值：{'/'.join(_CALL_RESULTS)}")
+    c = session.get(Contact, cid)
+    if c is None:
+        raise HTTPException(404, "联系人不存在")
+    c.call_result = result
+    c.called_at = utcnow()
+    session.commit()
+    return {"ok": True, "id": cid, "call_result": result, "called_at": c.called_at}

@@ -70,12 +70,27 @@ def score_candidates(session: Session, limit: int = 50) -> list[dict]:
     ):
         managed.add(eid)
 
+    # SPEC-AN AN2：触达结果聚合（全部 invalid 排除；interested 加权）
+    call_states: dict[int, list[str]] = {}
+    for eid, result in session.execute(
+        select(Contact.enterprise_id, Contact.call_result).where(
+            Contact.call_result != "pending"
+        )
+    ):
+        call_states.setdefault(eid, []).append(result)
+
     out: list[dict] = []
     seen_ent: set[int] = set()
     for ent, _cid in ent_rows:
         if ent.id in seen_ent:
             continue  # 一企业多联系人多行——只评一次
         seen_ent.add(ent.id)
+
+        # AN2：触达结果前置过滤——全部号码 invalid 的企业排除（数据卫生）
+        states = call_states.get(ent.id) or []
+        if states and all(r == "invalid" for r in states):
+            continue
+
         reasons: list[str] = []
         score = 0.0
 
@@ -107,6 +122,14 @@ def score_candidates(session: Session, limit: int = 50) -> list[dict]:
         if ent.id in proposal_ents:
             score += 15
             reasons.append("近 90 天有项目备案（扩张前兆）")
+
+        # AN2：触达结果加权
+        if "interested" in states:
+            score += 25
+            reasons.append("已表示兴趣——建议立即转线索")
+        elif states.count("no_answer") >= 2:
+            score -= 10
+            reasons.append("多次无人接——建议换时段或渠道")
 
         if score < 45:
             continue

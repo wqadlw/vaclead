@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.0.30（2026-11-05）
+
+触达运营闭环（SPEC-AN）。
+
+### 电话结果标记（AN1）
+- **Contact.call_result 受控枚举**（pending/no_answer/voicemail/invalid/connected/interested/not_interested）+ called_at
+- `POST /api/contacts/{id}/call-result`；情报页号码旁 ☎ 结果标记下拉（7 态色阶）
+
+### 推荐引擎接入（AN2，结果驱动自动下一步）
+- 全部号码 invalid → 排除（数据卫生）；interested → +25「建议立即转线索」；no_answer×2 → -10
+
+### 触达漏斗（AN3）
+- **GET /api/analytics/call-funnel**：dials→connected→interested + 连通率/意向率
+
+### POI 噪音批量清洗（AN4）
+- `POST /api/enterprises/bulk-cleanup`（模式匹配 + dry_run 预览；**两轮预览校准防误伤**——"厦门市"撞"门市"教训）
+- 真库实战：178 家住宅/零售噪音软删
+
 ## v1.0.29（2026-11-05）
 
 回收站与数据治理（SPEC-AM）。

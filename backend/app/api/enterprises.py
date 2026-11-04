@@ -1305,3 +1305,33 @@ def purge_enterprise(
     session.delete(e)
     session.commit()
     return {"ok": True, "id": eid, "purged": True}
+
+
+@router.post("/enterprises/bulk-cleanup")
+def bulk_cleanup(
+    body: dict,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """POI 噪音批量软删（SPEC-AM 回收站能力 + SPEC-AN AN4）。
+
+    patterns：名称子串列表（苑/家园/小区/便利店…）；dry_run=1 只预览计数。
+    """
+    patterns = [str(p).strip() for p in (body.get("patterns") or []) if str(p).strip()]
+    dry_run = int(body.get("dry_run") or 0)
+    if not patterns:
+        raise HTTPException(422, "patterns 不能为空")
+    matched = []
+    rows = session.scalars(select(Enterprise)).all()
+    for e in rows:
+        if any(p in e.name for p in patterns):
+            matched.append(e)
+    if dry_run:
+        return {"matched": len(matched), "dry_run": True,
+                "samples": [e.name for e in matched[:10]]}
+    from ..models import utcnow as _now
+
+    for e in matched:
+        e.deleted_at = _now()
+    session.commit()
+    return {"deleted": len(matched), "dry_run": False}

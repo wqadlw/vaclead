@@ -7,7 +7,7 @@
  */
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Button, Input, Skeleton, TabPane, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
+import { Button, Dropdown, Input, Skeleton, TabPane, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
 import { ArrowLeft, Bell, BellRing, Trash2, UserCheck } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { addToCompare, readCompare } from "@/lib/compare";
@@ -30,8 +30,47 @@ interface ContactRow {
   decision_role: string | null;
   verify_state: string;
   phones?: string[];
+  call_result?: string;
+  called_at?: string | null;
   source: string;
   evidence_claim: string | null;
+}
+
+/** SPEC-AN AN1：触达结果受控枚举（连接类→对话类分层） */
+const CALL_RESULTS: { key: string; label: string; color: "grey" | "orange" | "red" | "green" }[] = [
+  { key: "pending", label: "未拨", color: "grey" },
+  { key: "no_answer", label: "无人接", color: "orange" },
+  { key: "voicemail", label: "语音信箱", color: "orange" },
+  { key: "invalid", label: "空号", color: "red" },
+  { key: "connected", label: "已接通", color: "green" },
+  { key: "interested", label: "有意向", color: "green" },
+  { key: "not_interested", label: "无需求", color: "grey" },
+];
+
+function CallResultTag({ result, onChange }: { result: string; onChange: (r: string) => void }) {
+  const cur = CALL_RESULTS.find((x) => x.key === result) ?? CALL_RESULTS[0];
+  return (
+    <Dropdown
+      trigger="click"
+      render={
+        <div className="flex flex-col py-1">
+          {CALL_RESULTS.map((r) => (
+            <button
+              key={r.key}
+              className={`border-0 bg-transparent px-3 py-1.5 text-left text-[12.5px] hover:bg-[var(--raised)] ${r.key === result ? "font-medium text-[var(--accent)]" : "text-[var(--ink)]"}`}
+              onClick={() => onChange(r.key)}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      <Tag color={cur.color} type="light" size="small" className="!cursor-pointer">
+        ☎ {cur.label}
+      </Tag>
+    </Dropdown>
+  );
 }
 interface NoteRow {
   id: number;
@@ -157,6 +196,20 @@ function IntelInner() {
   }, [eid]);
 
   useEffect(() => load(), [load]);
+
+  /** SPEC-AN AN1：标记触达结果并局部刷新联系人 */
+  const markCallResult = useCallback(async (cid: number, result: string) => {
+    try {
+      await api.post(`/api/contacts/${cid}/call-result`, { result });
+      Toast.success("已标记");
+      api
+        .get<{ items: ContactRow[] }>(`/api/enterprises/${eid}/contacts`)
+        .then((d) => setContacts(d.items))
+        .catch(() => undefined);
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "标记失败");
+    }
+  }, [eid]);
 
   const saveTags = async () => {
     if (!detail) return;
@@ -526,9 +579,9 @@ function IntelInner() {
                         <Tag color="cyan" type="light" size="small">{ROLE_CN[c.role] ?? c.role}</Tag>
                       </span>
                     </div>
-                    {/* SPEC-AH AH3：规范化可拨号码 chips（可复制） */}
-                    {((c.phones ?? []).length > 0) && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
+                    {/* SPEC-AH AH3：规范化可拨号码 chips（可复制）+ SPEC-AN AN1 触达结果标记 */}
+                    {((c.phones ?? []).length > 0 || c.call_result) && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1">
                         {(c.phones ?? []).map((p) => (
                           <span
                             key={p}
@@ -542,6 +595,10 @@ function IntelInner() {
                             {p}
                           </span>
                         ))}
+                        <CallResultTag
+                          result={(c.call_result as string) ?? "pending"}
+                          onChange={(r) => void markCallResult(c.id, r)}
+                        />
                       </div>
                     )}
                     {c.title && <div className="mt-1 text-[12px] leading-4 text-[var(--muted)]">{c.title}</div>}

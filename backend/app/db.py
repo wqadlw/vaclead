@@ -98,6 +98,8 @@ _EVOLUTION_COLUMNS: dict[str, list[tuple[str, str]]] = {
     ],
     "contact": [
         ("phones_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ("call_result", "TEXT NOT NULL DEFAULT 'pending'"),
+        ("called_at", "TEXT"),
     ],
     "enterprise": [
         ("deleted_at", "TEXT"),

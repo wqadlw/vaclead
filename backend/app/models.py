@@ -437,6 +437,10 @@ class Contact(Base):
     # SPEC-AH AH2：规范化电话列表（["010-68290510",...]）——title 槽位存原文，
     # 拨得通的真号码在这里（GLOB 数字判断分不清电话和项目编号）
     phones_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # SPEC-AN AN1 触达结果（受控枚举）：pending|no_answer|voicemail|invalid|
+    # connected|interested|not_interested（连接类与对话类分层）
+    call_result: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    called_at: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
 
 

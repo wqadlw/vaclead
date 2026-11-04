@@ -375,3 +375,43 @@ def get_recommendations(
     from ..recommend import score_candidates
 
     return {"items": score_candidates(session, limit=max(1, min(limit, 100)))}
+
+
+@router.get("/analytics/call-funnel")
+def call_funnel(
+    days: int = 30,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """触达漏斗（SPEC-AN AN3，Salesloft 连通率语义）：dials→connected→interested。"""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import func
+
+    from ..models import Contact
+
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 365)))
+    ).strftime("%Y-%m-%dT%H:%M:%S")
+    by = dict(
+        session.execute(
+            select(Contact.call_result, func.count())
+            .where(Contact.called_at.is_not(None), Contact.called_at >= cutoff)
+            .group_by(Contact.call_result)
+        ).all()
+    )
+    dials = sum(by.values())
+    connected = int(by.get("connected", 0)) + int(by.get("interested", 0)) + int(
+        by.get("not_interested", 0)
+    )
+    return {
+        "days": days,
+        "dials": dials,
+        "connected": connected,
+        "interested": int(by.get("interested", 0)),
+        "no_answer": int(by.get("no_answer", 0)),
+        "voicemail": int(by.get("voicemail", 0)),
+        "invalid": int(by.get("invalid", 0)),
+        "connect_rate": round(connected / dials, 3) if dials else 0.0,
+        "interest_rate": round(int(by.get("interested", 0)) / dials, 3) if dials else 0.0,
+    }
