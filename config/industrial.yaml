@@ -199,7 +199,7 @@ downstream_industries:
     name: 真空镀膜加工
     tier: 1
     industry_codes: ["C34"]
-    keywords: [镀膜加工, 表面处理, 涂层加工, PVD加工, 光学镀膜, 真空镀膜厂, 电镀]
+    keywords: [镀膜加工, 表面处理, 涂层加工, PVD加工, 光学镀膜, 真空镀膜厂, 电镀, 镀膜]
   - key: photovoltaic
     name: 光伏
     tier: 2
@@ -224,7 +224,7 @@ downstream_industries:
     name: 机械加工/零部件
     tier: 1
     industry_codes: ["C34", "C36"]
-    keywords: [机械加工, 精密制造, 机械制造, 精密机械, 零部件, 五金制品, 模具制造, 模具科技, 紧固件, 铸造, 锻造]
+    keywords: [机械加工, 精密制造, 机械制造, 精密机械, 零部件, 五金制品, 模具制造, 模具科技, 紧固件, 铸造, 锻造, 机械]
   - key: heat_treatment
     name: 金属热处理
     tier: 3
@@ -259,7 +259,7 @@ downstream_industries:
     name: 检验检测/第三方实验室
     tier: 1
     industry_codes: ["M74"]
-    keywords: [检测公司, 检测技术, 检测科技, 检验检测, 检验认证, 第三方检测, 测试技术, 分析测试, 质量技术]
+    keywords: [检测公司, 检测技术, 检测科技, 检验检测, 检验认证, 第三方检测, 测试技术, 分析测试, 质量技术, 检测, 测控]
   - key: environmental
     name: 环保水务
     tier: 1
@@ -269,7 +269,7 @@ downstream_industries:
     name: 暖通/机电安装
     tier: 2
     industry_codes: ["E49", "C346"]
-    keywords: [机电安装, 暖通, 制冷科技, 空调工程, 净化工程, 建筑科技]
+    keywords: [机电安装, 暖通, 制冷科技, 空调工程, 净化工程, 建筑科技, 通风, 风管]
   - key: mining_metallurgy
     name: 矿冶建材
     tier: 3
@@ -283,7 +283,7 @@ downstream_industries:
 
 # 竞对（同行）判定：企业名称命中任一 device_terms.strong 词
 # 且经营范围含 manufacture_or_sale 中任一词 → is_competitor=1（打标保留、默认从推荐列表排除）
-manufacture_or_sale: [制造, 生产, 厂家, 销售, 产销, 装备, 设备有限]
+manufacture_or_sale: [制造, 生产, 厂家, 销售, 产销, 装备, 设备有限, 厂]
 
 manufacturing_terms: [生产, 制造, 加工]
 qualification_terms: [专精特新, 高新技术企业, 高新技术]

@@ -97,6 +97,10 @@ def init_db(seed: bool = True) -> None:
     Base.metadata.create_all(ENGINE)
     _ensure_columns()
     with ENGINE.connect() as conn:
+        # SPEC-AK AK3：地理范围查询索引（26k 行全表 SCAN → 索引点查，EXPLAIN 实证）
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_enterprise_geo ON enterprise (lat, lng)"
+        ))
         conn.execute(
             text(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS enterprise_fts USING fts5("

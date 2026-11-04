@@ -153,6 +153,9 @@ export default function MapPage() {
           <span className="text-[12.5px] text-[var(--muted)]">
             本视图 <span className="font-medium text-[var(--ink)]">{stats.total}</span> 家
             · 有电话 <span className="font-medium text-[var(--accent)]">{stats.phone}</span>
+            {stats.total > 2000 && (
+              <span className="ml-1 text-[#c2801b]">（视图上限 2000，缩放到单城看全量）</span>
+            )}
           </span>
           <Select
             value={city}
