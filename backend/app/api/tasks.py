@@ -17,7 +17,8 @@ from sqlalchemy.orm import Session
 
 from ..auth import admin_only, current_user
 from ..db import SessionLocal, get_session
-from ..models import Enterprise, SettingsKV, TaskCheckpoint, User, utcnow
+from ..models import Contact, Enterprise, SettingsKV, TaskCheckpoint, User, utcnow
+from ..phones import dump_phones, extract_phones, load_phones
 from ..vertical import detect_industry, downstream_industries, poi_cities
 
 from .imports import apply_icp, recompute_intent
@@ -165,6 +166,33 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, d
                     ent.industry_key = ind["key"]
                     ent.industry_name = ind["name"]
                 apply_icp(ent)
+                # SPEC-AH 补：POI 自主公开电话 → 规范化联系人（地图公开信息，合规）
+                poi_phones = extract_phones(poi.get("tel") or "")
+                if poi_phones:
+                    exists = (
+                        s.query(Contact)
+                        .filter(
+                            Contact.enterprise_id == ent.id,
+                            Contact.name == "地图公开电话",
+                            Contact.role == "poi",
+                        )
+                        .first()
+                    )
+                    if exists is None:
+                        s.add(Contact(
+                            enterprise_id=ent.id, name="地图公开电话", role="poi",
+                            title=(poi.get("tel") or "")[:80] or None,
+                            phones_json=dump_phones(poi_phones),
+                            verify_state="verified",
+                            source="amap",
+                            evidence_claim=f"高德地图 POI「{poi['name'][:30]}」自主公开电话",
+                        ))
+                    elif load_phones(exists.phones_json) != poi_phones:
+                        exists.phones_json = dump_phones(poi_phones)
+                # SQLite 单写者（W52 锁事故实证）：ingestion 长事务会与同线程
+                # checkpoint 写自撞——每 25 条短提交释放写锁，checkpoint 在提交后落
+                if (i + 1) % 25 == 0 or i == len(pois) - 1:
+                    s.commit()
                 if (i + 1) % 50 == 0 or i == len(pois) - 1:
                     _checkpoint(
                         task_id,

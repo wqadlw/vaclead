@@ -104,6 +104,8 @@ def _parse_poi(poi: dict, default_city: str = "") -> dict:
         "poi_id": str(poi.get("id") or "").strip(),
         "city": str(poi.get("cityname") or default_city or "").strip(),
         "district": str(poi.get("adname") or "").strip(),  # 区县名（adname/adcode 字段）
+        # SPEC-AH 补：商家在地图自主公开的电话（合规）——此前被丢弃
+        "tel": str(poi.get("tel") or "").strip(),
     }
 
 
