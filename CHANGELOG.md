@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.0.29（2026-11-05）
+
+回收站与数据治理（SPEC-AM）。
+
+### 软删除 + 回收站（AM1）
+- **enterprise.deleted_at 软删**：`with_loader_criteria` 全局过滤器一处覆盖所有查询路径（列表/详情/geo/推荐/信号 join/KPI）
+- 端点：DELETE（软删）/ restore / purge（confirm=1 级联删除）/ trash 列表（admin）
+- **purge_deleted cron 每日 03:00**：30 天保留期自动清空（EspoCRM Trash 语义）
+- 前端：企业列表「回收站」（admin）——列表/恢复/彻底删
+
+### 导出扩容（AM2）
+- 流式导出上限 5000 → **20000 行**（流式响应无超时风险）
+
 ## v1.0.28（2026-11-05）
 
 智能推荐轮（SPEC-AL）：先打给谁。

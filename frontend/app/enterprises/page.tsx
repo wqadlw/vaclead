@@ -141,6 +141,45 @@ export default function EnterprisesPage() {
     return f;
   };
   const [filters, setFilters] = useState<Filters>(initFromUrl);
+  // SPEC-AM AM1 回收站状态
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashItems, setTrashItems] = useState<{ id: number; name: string; source: string | null; deleted_at: string | null }[] | null>(null);
+
+  const loadTrash = useCallback(async () => {
+    try {
+      const d = await api.get<{ items: { id: number; name: string; source: string | null; deleted_at: string | null }[] }>("/api/enterprises/trash");
+      setTrashItems(d.items);
+    } catch {
+      setTrashItems([]);
+    }
+  }, []);
+  useEffect(() => {
+    if (trashOpen) void loadTrash();
+  }, [trashOpen, loadTrash]);
+  const restoreOne = useCallback(async (id: number) => {
+    try {
+      await api.post(`/api/enterprises/${id}/restore`);
+      Toast.success("已恢复");
+      await loadTrash();
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "恢复失败");
+    }
+  }, [loadTrash]);
+  const purgeOne = useCallback(async (id: number) => {
+    Modal.confirm({
+      title: "彻底删除？",
+      content: "该企业的信号/联系人/线索将一并删除，不可恢复。",
+      onOk: async () => {
+        try {
+          await api.delete(`/api/enterprises/${id}/purge?confirm=1`);
+          Toast.success("已彻底删除");
+          await loadTrash();
+        } catch (e) {
+          Toast.error(e instanceof Error ? e.message : "删除失败");
+        }
+      },
+    });
+  }, [loadTrash]);
   const [applied, setApplied] = useState<Filters>(initFromUrl);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<PageData<Enterprise> | null>(null);
@@ -695,7 +734,44 @@ export default function EnterprisesPage() {
             共 {data?.total ?? 0} 家 · 疑似同行已置灰 · 点击企业名查看评分理由与信号
           </p>
         </div>
+        {typeof window !== "undefined" && localStorage.getItem("vaclead_role") === "admin" && (
+          <Button
+            theme="borderless"
+            onClick={() => setTrashOpen(true)}
+          >
+            回收站
+          </Button>
+        )}
       </div>
+
+      {/* SPEC-AM AM1 回收站（admin） */}
+      <Modal
+        title="回收站"
+        visible={trashOpen}
+        onCancel={() => setTrashOpen(false)}
+        footer={null}
+        width={560}
+      >
+        <div className="space-y-1.5">
+          {(trashItems ?? []).length === 0 && (
+            <div className="py-6 text-center text-[13px] text-[var(--muted)]">
+              回收站为空 —— 删除的企业会在这里保留 30 天
+            </div>
+          )}
+          {(trashItems ?? []).map((t) => (
+            <div key={t.id} className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-medium text-[var(--ink)]">{t.name}</div>
+                <div className="text-[11.5px] text-[var(--muted)]">
+                  {t.source ?? "—"} · 删除于 {String(t.deleted_at ?? "").slice(0, 16).replace("T", " ")}
+                </div>
+              </div>
+              <Button size="small" theme="borderless" onClick={() => void restoreOne(t.id)}>恢复</Button>
+              <Button size="small" theme="borderless" type="danger" onClick={() => void purgeOne(t.id)}>彻底删</Button>
+            </div>
+          ))}
+        </div>
+      </Modal>
 
       <SummaryBar data={data} colAggs={colAggs} />
 

@@ -355,6 +355,14 @@ async def lifespan(app: FastAPI):
         # SPEC-AD：每日 06:10 扫描即将到期合同 → 自动创建续约 Todo
         _register_cron("contract_renewals", _contract_renewals_sweep, 6, 10)
 
+        def _purge_sweep() -> dict:
+            from .jobs import purge_deleted_sweep
+
+            return purge_deleted_sweep()
+
+        # SPEC-AM：每日 03:00 清空超过 30 天保留期的回收站
+        _register_cron("purge_deleted", _purge_sweep, 3, 0)
+
         def _health_sweep() -> dict:
             from .health import batch_health_refresh
             from .db import SessionLocal as _SL

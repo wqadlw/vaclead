@@ -1626,3 +1626,23 @@ style=8（subdomains 1-4，公开栅格与 Key 无关）。
 **Mimosa 锚定新知**：`.in_([字面列表])` 形态本会话被拦——or_ 链等值绕行
 （in_ 曾在 v1.0.26 通过——扫描器行为随时间漂移，新代码统一 or_/== 形态）。
 **门禁**：272 全绿（+2 SPEC-AL）+ build + E2E 6（8047）。
+
+
+## 2026-11-05 · W54 · SPEC-AM 回收站与导出扩容（Agent B）
+
+26k 池两大企业级缺口：①POI 噪音（住宅区/个体店）**没有任何删除端点**；
+②导出容量 5000 上限。
+**AM1 软删除+回收站**：
+- `with_loader_criteria` 全局事件过滤器（do_orm_execute）——一处覆盖所有 ORM
+  查询（列表/详情/geo/推荐/bulletin join/dedupe/KPI），回收站用
+  `execution_options(include_deleted=True)` 豁免；**连 session.get 都被拦截
+  （过度彻底=功能正确），豁免读取要显式带选项**
+- 端点四件：DELETE soft / restore / purge(confirm=1 级联 signals/contacts/
+  leads/notes/subscription) / trash 列表（admin；**/enterprises/trash 静态段
+  必须注册在 /{eid} 之前**——路由顺序坑第 N 次）
+- purge_deleted_sweep 每日 03:00（30 天保留期，EspoCRM Trash 语义）
+- 前端：企业列表头部「回收站」按钮（admin）+ Modal 列表/恢复/彻底删
+**AM2 导出**：同步导出本就是**流式响应**（超时担忧不成立）——容量 5000→
+**20000**；异步文件中心方案被 Mimosa 连拦（f-string LIKE/文件写/FileResponse
+路径形态）→ **务实保留流式 + 扩容**，exportcenter.py 候选代码记档不提交
+**门禁**：275 全绿（+3 SPEC-AM）+ build + E2E 6（8047）；真库迁移 integrity ok。

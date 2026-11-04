@@ -377,6 +377,55 @@ def run_proposal_hb_scan(max_pages: int = 5) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 回收站清空（SPEC-AM AM1）
+# ---------------------------------------------------------------------------
+def purge_deleted_sweep(retention_days: int = 30) -> dict:
+    """回收站 30 天自动清空（EspoCRM Trash 语义）+ 导出文件清理。
+
+    每日 03:00：彻底删超过保留期的软删企业（级联）。
+    """
+    from datetime import timedelta
+
+    from sqlalchemy import select
+
+    from .db import SessionLocal
+    from .models import Contact, Enterprise, utcnow
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).strftime(
+        "%Y-%m-%dT%H:%M:%S"
+    )
+    purged = 0
+    with SessionLocal() as s:
+        rows = (
+            s.execute(
+                select(Enterprise)
+                .where(
+                    Enterprise.deleted_at.is_not(None),
+                    Enterprise.deleted_at < cutoff,
+                )
+                .execution_options(include_deleted=True)
+            )
+            .scalars()
+            .all()
+        )
+        for e in rows:
+            for model in (
+                getattr(__import__("app.models", fromlist=["Signal"]), "Signal"),
+                Contact,
+                getattr(__import__("app.models", fromlist=["Lead"]), "Lead"),
+                getattr(__import__("app.models", fromlist=["EnterpriseNote"]), "EnterpriseNote"),
+                getattr(__import__("app.models", fromlist=["Subscription"]), "Subscription"),
+            ):
+                s.query(model).filter(model.enterprise_id == e.id).delete(
+                    synchronize_session=False
+                )
+            s.delete(e)
+            purged += 1
+        s.commit()
+    return {"purged": purged, "retention_days": retention_days}
+
+
+# ---------------------------------------------------------------------------
 # B3 备份
 # ---------------------------------------------------------------------------
 def backup_sqlite(backup_dir: str | Path, keep: int = 7) -> dict:

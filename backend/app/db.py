@@ -8,7 +8,7 @@ import os
 from collections.abc import Iterator
 
 from sqlalchemy import create_engine, event, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker, with_loader_criteria
 
 from .models import Base, PoolSetting, User
 
@@ -28,6 +28,29 @@ ENGINE = create_engine(
 )
 
 SessionLocal = sessionmaker(bind=ENGINE, autoflush=False, expire_on_commit=False)
+
+
+@event.listens_for(SessionLocal, "do_orm_execute")
+def _soft_delete_filter(execute_state) -> None:
+    """SPEC-AM AM1：软删除全局过滤——所有 ORM select 自动排除已删企业。
+
+    回收站/彻底删等管理查询用 statement.execution_options(include_deleted=True)
+    显式豁免。join 到 Enterprise 的查询（bulletin/推荐等）同样被过滤
+    （include_aliases=True）。
+    """
+    if not execute_state.is_select:
+        return
+    if execute_state.execution_options.get("include_deleted", False):
+        return
+    from .models import Enterprise
+
+    execute_state.statement = execute_state.statement.options(
+        with_loader_criteria(
+            Enterprise,
+            lambda cls: cls.deleted_at.is_(None),
+            include_aliases=True,
+        )
+    )
 
 
 @event.listens_for(ENGINE, "connect")
@@ -75,6 +98,9 @@ _EVOLUTION_COLUMNS: dict[str, list[tuple[str, str]]] = {
     ],
     "contact": [
         ("phones_json", "TEXT NOT NULL DEFAULT '[]'"),
+    ],
+    "enterprise": [
+        ("deleted_at", "TEXT"),
     ],
 }
 

@@ -515,7 +515,7 @@ def export_enterprises(
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    """导出当前筛选的企业 CSV（SQLite 路径同款筛选，上限 5000 行，SPEC-C F2）。"""
+    """导出当前筛选的企业 CSV（流式响应无超时风险；上限 20000 行，SPEC-AM AM2 扩容）。"""
     import csv as _csv
     import io
 
@@ -537,7 +537,7 @@ def export_enterprises(
         like = f"%{q.strip()}%"
         stmt = stmt.where(Enterprise.name.like(like))
     rows = session.scalars(
-        stmt.order_by(Enterprise.icp_score.desc()).limit(5000)
+        stmt.order_by(Enterprise.icp_score.desc()).limit(20000)
     ).all()
 
     from ..models import Contact
@@ -691,6 +691,41 @@ def _tags_of(e) -> list[str]:
         return []
 
 
+# ---------------- 回收站（SPEC-AM AM1） ----------------
+# 注意：/enterprises/trash 静态段必须在 /enterprises/{eid} 之前注册（路由顺序坑）
+@router.get("/enterprises/trash")
+def trash_list(
+    page: int = 1,
+    page_size: int = 20,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """回收站（admin）：deleted_at 倒序。"""
+    stmt = (
+        select(Enterprise)
+        .where(Enterprise.deleted_at.is_not(None))
+        .order_by(Enterprise.deleted_at.desc())
+        .execution_options(include_deleted=True)
+    )
+    total = session.scalar(
+        select(func.count())
+        .select_from(Enterprise)
+        .where(Enterprise.deleted_at.is_not(None))
+        .execution_options(include_deleted=True)
+    ) or 0
+    rows = session.scalars(
+        stmt.offset((page - 1) * page_size).limit(page_size)
+    ).all()
+    return {
+        "items": [
+            {"id": e.id, "name": e.name, "city": e.city, "source": e.source,
+             "deleted_at": e.deleted_at}
+            for e in rows
+        ],
+        "total": total,
+    }
+
+
 @router.get("/enterprises/{eid}")
 def enterprise_detail(
     eid: int,
@@ -698,7 +733,7 @@ def enterprise_detail(
     user: User = Depends(current_user),
 ):
     e = session.get(Enterprise, eid)
-    if e is None:
+    if e is None or e.deleted_at:
         raise HTTPException(404, "企业不存在")
     signals = (
         session.query(Signal)
@@ -1196,3 +1231,77 @@ def unsubscribe_enterprise(
     ).delete()
     session.commit()
     return {"ok": True, "subscribed": False}
+
+
+# ---------------- 回收站操作（SPEC-AM AM1） ----------------
+@router.delete("/enterprises/{eid}")
+def soft_delete_enterprise(
+    eid: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """软删（admin）：进回收站，30 天后自动清空。信号保留但全链隐藏。"""
+    e = session.get(Enterprise, eid)
+    if e is None or e.deleted_at:
+        raise HTTPException(404, "企业不存在")
+    from ..models import utcnow as _now
+
+    e.deleted_at = _now()
+    session.commit()
+    return {"ok": True, "id": eid}
+
+
+@router.post("/enterprises/{eid}/restore")
+def restore_enterprise(
+    eid: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """从回收站恢复。"""
+    stmt = (
+        select(Enterprise)
+        .where(Enterprise.id == eid, Enterprise.deleted_at.is_not(None))
+        .execution_options(include_deleted=True)
+    )
+    e = session.scalar(stmt)
+    if e is None:
+        raise HTTPException(404, "回收站中不存在该企业")
+    e.deleted_at = None
+    session.commit()
+    return {"ok": True, "id": eid}
+
+
+@router.delete("/enterprises/{eid}/purge")
+def purge_enterprise(
+    eid: int,
+    confirm: int = 0,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """彻底删（admin，confirm=1 二次确认）：级联信号/联系人/线索/备注。"""
+    if confirm != 1:
+        raise HTTPException(422, "彻底删除需要 confirm=1 二次确认")
+    stmt = (
+        select(Enterprise)
+        .where(Enterprise.id == eid, Enterprise.deleted_at.is_not(None))
+        .execution_options(include_deleted=True)
+    )
+    e = session.scalar(stmt)
+    if e is None:
+        raise HTTPException(404, "回收站中不存在该企业")
+    # 级联（显式删，避免依赖各表 FK 是否带 ondelete）
+    from ..models import (
+        Contact,
+        EnterpriseNote,
+        Lead,
+        Signal,
+        Subscription,
+    )
+
+    for model in (Signal, Contact, Lead, EnterpriseNote, Subscription):
+        session.query(model).filter(model.enterprise_id == eid).delete(
+            synchronize_session=False
+        )
+    session.delete(e)
+    session.commit()
+    return {"ok": True, "id": eid, "purged": True}

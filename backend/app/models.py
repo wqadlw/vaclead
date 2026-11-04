@@ -111,6 +111,7 @@ class Enterprise(Base):
     legal_rep: Mapped[str | None] = mapped_column(Text)  # 法定代表人（SPEC-U U1，ggzy legal_rep 补入库）
     tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON 数组（SPEC-V V2 销售自定义标签）
     poi_id: Mapped[str | None] = mapped_column(Text)
+    deleted_at: Mapped[str | None] = mapped_column(Text)  # SPEC-AM AM1 软删除（NULL=正常；回收站 30 天自动清空）
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
