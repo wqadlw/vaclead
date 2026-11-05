@@ -99,6 +99,29 @@ def proposal_print(
         select(Product).where(Product.name == match, Product.active == 1)
     ).scalars().first()
 
+    # SPEC-AV AV2：同行业公开采购案例（"同行都在用"——工程师的不背锅证据）
+    from datetime import datetime, timedelta, timezone
+
+    from ..models import Signal
+
+    case_rows = []
+    if e.industry_key:
+        cutoff3y = (
+            datetime.now(timezone.utc) - timedelta(days=1095)
+        ).strftime("%Y-%m-%dT%H:%M:%S")
+        case_rows = session.execute(
+            select(Signal.title, Signal.pub_date, Signal.url, Enterprise.name)
+            .join(Enterprise, Signal.enterprise_id == Enterprise.id)
+            .where(
+                Enterprise.industry_key == e.industry_key,
+                Enterprise.deleted_at.is_(None),
+                Signal.type.in_(["tender_win", "tender_buy", "tender"]),
+                Signal.created_at >= cutoff3y,
+            )
+            .order_by(Signal.id.desc())
+            .limit(5)
+        ).all()
+
     rows = [
         ("现状年用电量", f"{calc['baseline_year_kwh']:,.0f} 度", "功率 × 小时 × 负载率 × 365"),
         ("现状年电费", f"{calc['baseline_year_cost']:,.0f} 元", "用电量 × 电价"),
@@ -112,6 +135,22 @@ def proposal_print(
         f"<p><b>{product.name}</b>（{product.model or '—'}）—— {product.spec or ''}</p>"
         if product else "<p>选型请联系工程师获取计算书。</p>"
     )
+    if case_rows:
+        case_lis = "".join(
+            f"<li>{t[:56]} — {n}（{d or ''}）"
+            + (f" <a href='{u}'>原文</a>" if u else "")
+            + "</li>"
+            for t, d, u, n in case_rows
+        )
+        cases_html = (
+            f"<h2>三、同行业公开采购案例（{e.industry_name or '同行业'}）</h2>"
+            f"<ol class='cases'>{case_lis}</ol>"
+            "<p class='note'>以上为法定公开公告摘引，原文可溯源。</p>"
+        )
+        sec4, sec5 = "四、为什么选择昊志", "五、下一步"
+    else:
+        cases_html = ""
+        sec4, sec5 = "三、为什么选择昊志", "四、下一步"
     html = f"""<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
 <title>{e.name} 真空系统节能提案</title>
 <style>
@@ -124,6 +163,7 @@ td,th{{border:1px solid #d8dee2;padding:7px 10px;text-align:left}}
 .num{{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}}
 .why{{color:#6b7175;font-size:12.5px}}
 .note{{color:#8a8d8f;font-size:12px}}
+ol.cases{{padding-left:20px}}ol.cases li{{margin-bottom:4px;font-size:13px}}
 @media print{{.noprint{{display:none}}}}
 </style></head><body>
 <h1>{e.name} · 真空系统节能改造提案</h1>
@@ -133,13 +173,14 @@ td,th{{border:1px solid #d8dee2;padding:7px 10px;text-align:left}}
 <p class="note">节省率按同工况实测案例区间估算（负载波动场景优势显著）；实际以现场工况勘测为准。</p>
 <h2>二、推荐方案</h2>
 {spec_html}
-<h2>三、为什么选择昊志</h2>
+{cases_html}
+<h2>{sec4}、为什么选择昊志</h2>
 <ul>
 <li><b>官方销售商</b>：昊青气体装备直接授权，原厂备件与质保可追溯</li>
 <li><b>系统搭建能力</b>：按贵司工艺出具选型计算书——选型与工况不匹配是行业最常见痛点，我们不让客户背这个锅</li>
 <li><b>区域响应</b>：本地服务团队，维保响应快于国际品牌（国产体系平均快 30%）</li>
 </ul>
-<h2>四、下一步</h2>
+<h2>{sec5}、下一步</h2>
 <p>安排现场工况勘测（免费）→ 出具正式选型计算书与报价 → 样机试机验证节能数据。</p>
 <p class="note noprint">打印：浏览器 Ctrl+P / 另存为 PDF。参数可在回链调整重算。</p>
 </body></html>"""

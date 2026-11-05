@@ -460,3 +460,46 @@ def call_funnel(
         "connect_rate": round(connected / dials, 3) if dials else 0.0,
         "interest_rate": round(int(by.get("interested", 0)) / dials, 3) if dials else 0.0,
     }
+
+
+@router.get("/cases/industry/{key}")
+def industry_cases(
+    key: str,
+    limit: int = 8,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """同行业公开采购案例库（SPEC-AV AV1）。
+
+    自有信号池按行业聚合（中标/采购/招标三类，法定公开可引用）——
+    工程师的"不背锅"证据：同行产线在用同类设备。
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from ..models import Enterprise, Signal
+
+    limit_n = max(1, min(limit, 20))
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=1095)
+    ).strftime("%Y-%m-%dT%H:%M:%S")
+    rows = session.execute(
+        select(Signal.title, Signal.evidence_claim, Signal.pub_date, Signal.url,
+               Enterprise.name)
+        .join(Enterprise, Signal.enterprise_id == Enterprise.id)
+        .where(
+            Enterprise.industry_key == key,
+            Enterprise.deleted_at.is_(None),
+            Signal.type.in_(["tender_win", "tender_buy", "tender"]),
+            Signal.created_at >= cutoff,
+        )
+        .order_by(Signal.id.desc())
+        .limit(limit_n)
+    ).all()
+    return {
+        "items": [
+            {"title": t, "evidence": ev or "", "pub_date": d or "",
+             "url": u or "", "ent_name": n}
+            for t, ev, d, u, n in rows
+        ],
+        "total": len(rows),
+    }
