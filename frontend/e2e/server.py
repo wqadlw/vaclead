@@ -74,11 +74,13 @@ with SessionLocal() as s:
     s.add(Contact(
         enterprise_id=ent1.id, name="王工", role="采购联系人",
         title="13800000001", source="ccgp",
+        phones_json='["13800000001"]',  # SPEC-BB BB2：推荐引擎口径（规范化号码）
         evidence_claim="E2E 种子联系人",
     ))
     s.add(Contact(
         enterprise_id=ent2.id, name="李老师", role="项目联系人",
         title="010-62750000", source="ccgp",
+        phones_json='["010-62750000"]',
         evidence_claim="E2E 种子联系人",
     ))
     s.add(AutomationRule(

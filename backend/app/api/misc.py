@@ -412,8 +412,9 @@ def list_case_studies(
 def create_case_study(
     body: CaseStudyIn,
     session: Session = Depends(get_session),
-    user: User = Depends(admin_only),
+    user: User = Depends(current_user),
 ):
+    """私有成交案例（SPEC-BB BB1 权限修正）：销售成交后自己录案例。"""
     from ..models import CaseStudy
 
     if len(body.title) < 4:
