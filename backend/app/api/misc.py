@@ -554,6 +554,24 @@ def call_funnel(
     connected = int(by.get("connected", 0)) + int(by.get("interested", 0)) + int(
         by.get("not_interested", 0)
     )
+    # SPEC-BA BA1：未触达池计数（有可拨电话且全部联系人未拨）
+    from sqlalchemy import or_
+
+    from ..models import Enterprise
+
+    phone_ents = select(Contact.enterprise_id).where(Contact.phones_json != "[]")
+    touched_ents = select(Contact.enterprise_id).where(Contact.call_result != "pending")
+    untouched_pool = (
+        session.query(func.count())
+        .select_from(Enterprise)
+        .filter(
+            Enterprise.deleted_at.is_(None),
+            Enterprise.id.in_(phone_ents),
+            ~Enterprise.id.in_(touched_ents),
+        )
+        .scalar()
+        or 0
+    )
     return {
         "days": days,
         "dials": dials,
@@ -564,6 +582,7 @@ def call_funnel(
         "invalid": int(by.get("invalid", 0)),
         "connect_rate": round(connected / dials, 3) if dials else 0.0,
         "interest_rate": round(int(by.get("interested", 0)) / dials, 3) if dials else 0.0,
+        "untouched_pool": untouched_pool,
     }
 
 
