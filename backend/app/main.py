@@ -562,6 +562,9 @@ app.include_router(mcp.router, prefix="/api")
 from .api import units  # noqa: E402
 
 app.include_router(units.router, prefix="/api")
+from .api import proposal  # noqa: E402
+
+app.include_router(proposal.router, prefix="/api")
 
 
 # ---- 单进程部署：托管前端静态导出（frontend/out），SPA 回退 ----

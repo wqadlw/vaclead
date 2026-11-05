@@ -182,6 +182,10 @@ function IntelInner() {
   const [contacts, setContacts] = useState<ContactRow[]>([]);
   // SPEC-AS AS1 装机台账
   const [units, setUnits] = useState<UnitRow[]>([]);
+  // SPEC-AT 节能账
+  const [roiOpen, setRoiOpen] = useState(false);
+  const [roiForm, setRoiForm] = useState({ power_kw: "37", hours_per_day: "16", load_factor: "0.8", price_per_kwh: "0.7", saving_pct: "25" });
+  const [roiResult, setRoiResult] = useState<{ annual_save: number; five_year_save: number; baseline_year_cost: number; payback_months: number | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [subscribed, setSubscribed] = useState(false);
   const [converting, setConverting] = useState(false);
@@ -312,6 +316,99 @@ function IntelInner() {
         <ArrowLeft size={14} /> 返回企业列表
       </button>
 
+      {/* SPEC-AT 节能账计算器 */}
+      <Modal
+        title="真空系统节能账（给老板的账 / 给工程师的口径）"
+        visible={roiOpen}
+        onCancel={() => setRoiOpen(false)}
+        footer={null}
+        width={520}
+      >
+        <div className="grid grid-cols-2 gap-2.5">
+          {[
+            { key: "power_kw", label: "现有泵功率 (kW)" },
+            { key: "hours_per_day", label: "运行小时/天" },
+            { key: "load_factor", label: "负载率 (0-1)" },
+            { key: "price_per_kwh", label: "电价 (元/度)" },
+            { key: "saving_pct", label: "节省率 %（实测区间 8.7-30）" },
+          ].map((f) => (
+            <label key={f.key} className="text-[12.5px] text-[var(--muted)]">
+              {f.label}
+              <Input
+                size="small"
+                value={roiForm[f.key as keyof typeof roiForm]}
+                onChange={(v) => setRoiForm((fm) => ({ ...fm, [f.key]: String(v) }))}
+                className="mt-0.5"
+              />
+            </label>
+          ))}
+        </div>
+        <Button
+          theme="solid"
+          className="!mt-3"
+          block
+          onClick={async () => {
+            try {
+              const r = await api.post<{ result: NonNullable<typeof roiResult> }>("/api/proposal/roi", {
+                power_kw: Number(roiForm.power_kw),
+                hours_per_day: Number(roiForm.hours_per_day),
+                load_factor: Number(roiForm.load_factor),
+                price_per_kwh: Number(roiForm.price_per_kwh),
+                saving_pct: Number(roiForm.saving_pct),
+              });
+              setRoiResult(r.result);
+            } catch (e) {
+              Toast.error(e instanceof Error ? e.message : "计算失败");
+            }
+          }}
+        >
+          计算
+        </Button>
+        {roiResult && (
+          <div className="mt-3 rounded-lg border border-[var(--border)] p-3">
+            <div className="grid grid-cols-2 gap-2 text-center">
+              <div>
+                <div className="text-[12px] text-[var(--muted)]">预计年节省</div>
+                <div className="text-[22px] font-semibold text-[var(--accent)]">
+                  {roiResult.annual_save.toLocaleString()} 元
+                </div>
+              </div>
+              <div>
+                <div className="text-[12px] text-[var(--muted)]">5 年累计</div>
+                <div className="text-[22px] font-semibold text-[var(--ink)]">
+                  {roiResult.five_year_save.toLocaleString()} 元
+                </div>
+              </div>
+            </div>
+            {roiResult.payback_months && (
+              <div className="mt-1 text-center text-[12.5px] text-[var(--muted)]">
+                投资回收期约 {roiResult.payback_months} 个月
+              </div>
+            )}
+            <Button
+              theme="outline"
+              block
+              className="!mt-3"
+              onClick={() => {
+                const qs = new URLSearchParams({
+                  eid: String(eid), power_kw: roiForm.power_kw,
+                  hours_per_day: roiForm.hours_per_day,
+                  load_factor: roiForm.load_factor,
+                  price_per_kwh: roiForm.price_per_kwh,
+                  saving_pct: roiForm.saving_pct,
+                });
+                window.open(`/api/proposal/print?${qs}`, "_blank");
+              }}
+            >
+              打印客户提案（另存 PDF）
+            </Button>
+            <p className="mt-2 text-[11.5px] leading-4 text-[var(--muted)]">
+              节省率为可调假设，按同工况实测案例区间估算（8.7%-30%）——对客户如实说明，现场勘测后出具正式计算书。
+            </p>
+          </div>
+        )}
+      </Modal>
+
       <div className="mt-3 rounded-lg border border-[var(--border)] bg-white px-6 py-5">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -324,7 +421,6 @@ function IntelInner() {
                   size="small"
                   theme="borderless"
                   type="danger"
-                  className="!ml-auto"
                   onClick={() =>
                     Modal.confirm({
                       title: "删除该企业？",
@@ -344,6 +440,14 @@ function IntelInner() {
                   删除
                 </Button>
               )}
+              <Button
+                size="small"
+                theme="outline"
+                className="!ml-auto"
+                onClick={() => setRoiOpen(true)}
+              >
+                生成节能账
+              </Button>
             </div>
             <div className="mt-1.5 text-[13px] text-[var(--muted)]">
               统一信用代码 {detail.uscc || "—"} · {[detail.province, detail.city, detail.district].filter(Boolean).join(" ") || "地区待回填"} · {detail.address || "地址待回填"}
