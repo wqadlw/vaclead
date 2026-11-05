@@ -58,6 +58,8 @@ interface SummaryData {
     target: number | null;
     attain: number | null;
     contract_backlog?: number;
+    receivable_overdue?: number;
+    receivable_due30?: number;
   };
 }
 
@@ -735,6 +737,28 @@ export default function DashboardPage() {
                       {(sum.forecast.contract_backlog ?? 0).toLocaleString()} 万
                     </span>
                     （active 合同 − 已回款）
+                  </div>
+                )}
+                {/* SPEC-AX AX2 应收视角：现金流风险一眼可见 */}
+                {((sum.forecast.receivable_overdue ?? 0) > 0 ||
+                  (sum.forecast.receivable_due30 ?? 0) > 0) && (
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-[12.5px]">
+                    {(sum.forecast.receivable_overdue ?? 0) > 0 && (
+                      <span className="text-[var(--negative)]">
+                        ⚠ 回款逾期{" "}
+                        <span className="font-semibold tabular-nums">
+                          {sum.forecast.receivable_overdue!.toLocaleString()} 万
+                        </span>
+                      </span>
+                    )}
+                    {(sum.forecast.receivable_due30 ?? 0) > 0 && (
+                      <span className="text-[var(--muted)]">
+                        30 天内到期{" "}
+                        <span className="font-medium tabular-nums text-[var(--ink)]">
+                          {sum.forecast.receivable_due30!.toLocaleString()} 万
+                        </span>
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
