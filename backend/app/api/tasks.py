@@ -167,6 +167,13 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, d
                     ent.industry_key = ind["key"]
                     ent.industry_name = ind["name"]
                 apply_icp(ent)
+                # SPEC-AS AS2 客户角色：OEM 搜索词（"XX设备制造"类目）采出的
+                # 制造商=应用设备 OEM（买泵装设备的高价值客户）；泵/真空设备
+                # 制造商仍走 is_competitor（正交）
+                if ent.customer_role is None:
+                    _nm = poi["name"]
+                    if any(k in _nm for k in ("设备制造", "机械制造", "装备制造", "仪器制造")):
+                        ent.customer_role = "oem"
                 # SPEC-AH 补：POI 自主公开电话 → 规范化联系人（地图公开信息，合规）
                 # poi_contact_done：同批两个 poi_id 可解析到同一企业（autoflush=False
                 # 下 exists 查不到 pending 写，西安 96% 撞 uq_contact 实证）——集合兜底
