@@ -600,6 +600,24 @@ class SubscriptionRule(Base):
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
 
 
+class CaseStudy(Base):
+    """私有成交案例（SPEC-AZ AZ2）：昊志真实交付记录——比公开招标证据更强的
+    提案信任资产。内容为手工录入（真实交付后由销售填写，不虚构）。"""
+
+    __tablename__ = "case_study"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    enterprise_id: Mapped[int | None] = mapped_column(
+        ForeignKey("enterprise.id", ondelete="SET NULL")
+    )
+    industry_key: Mapped[str | None] = mapped_column(Text)  # 行业锚（提案按行业匹配）
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    year: Mapped[str | None] = mapped_column(Text)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
 class Product(Base):
     """产品目录（SPEC-J J3，espocrm Quotes 思想）：报价单的行项目来源。"""
 

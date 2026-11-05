@@ -1882,3 +1882,19 @@ owner 的必须置 None 或显式建用户**。
 - **OEM 扩批**：热处理/干燥设备制造 × 苏/莞/锡 → **OEM 角色 477→508 家**，
   活跃企业 27,309
 **门禁**：build + E2E 6（8047）。（后端 303 未动，纯前端+数据扩批）
+
+
+## 2026-11-06 · W57 · SPEC-AZ 触达覆盖与私有案例轮（Agent B）
+
+**落地**：
+- **AZ1 触达覆盖筛选**：GET /api/enterprises?call_status=untouched|touched
+  （untouched=有电话且全部联系人未拨=还没打过的金矿；touched=任一已拨）
+  + Quick picks「未触达（有电话）」「已触达」——打电话的覆盖率从"感觉"
+  变成"可管"（调研：未触达线索堆积需按阶段监控+每周触达率）
+- **AZ2 私有成交案例库**：case_study 表（enterprise/industry/title/content/
+  year）+ CRUD（admin 写）+ **提案两层证据**：私有交付案例节在前（昊志
+  真实成交 > 行业公开记录）+ 公开案例节兜底——提案信任资产升级
+**坑（编辑残留类新形态）**：proposal.py 多轮 Edit 后 elif 分支残留
+  cases_html="" 且引用未定义 case_lis——多轮编辑同一区块后必须整块重读
+  校验变量完整性（编译不报错、运行时才炸的隐性断链）。
+**门禁**：305 全绿（+2 SPEC-AZ）+ build + E2E 6（8047）。

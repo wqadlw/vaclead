@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
@@ -100,9 +100,22 @@ def proposal_print(
     ).scalars().first()
 
     # SPEC-AV AV2：同行业公开采购案例（"同行都在用"——工程师的不背锅证据）
+    # SPEC-AZ AZ2：私有成交案例优先（昊志真实交付 > 行业公开记录）
     from datetime import datetime, timedelta, timezone
 
-    from ..models import Signal
+    from ..models import CaseStudy, Signal
+
+    private_cases = session.execute(
+        select(CaseStudy.title, CaseStudy.content, CaseStudy.year)
+        .where(
+            or_(
+                CaseStudy.enterprise_id == eid,
+                CaseStudy.industry_key == (e.industry_key or "__none__"),
+            )
+        )
+        .order_by(CaseStudy.id.desc())
+        .limit(3)
+    ).all()
 
     case_rows = []
     if e.industry_key:
@@ -135,16 +148,33 @@ def proposal_print(
         f"<p><b>{product.name}</b>（{product.model or '—'}）—— {product.spec or ''}</p>"
         if product else "<p>选型请联系工程师获取计算书。</p>"
     )
-    if case_rows:
-        case_lis = "".join(
-            f"<li>{t[:56]} — {n}（{d or ''}）"
-            + (f" <a href='{u}'>原文</a>" if u else "")
-            + "</li>"
-            for t, d, u, n in case_rows
+    # 两层案例：私有交付优先（真实成交 > 行业公开记录），公开案例兜底
+    public_lis = "".join(
+        f"<li>{t[:56]} — {n}（{d or ''}）"
+        + (f" <a href='{u}'>原文</a>" if u else "")
+        + "</li>"
+        for t, d, u, n in case_rows
+    )
+    if private_cases:
+        priv_lis = "".join(
+            f"<li><b>{t}</b>（{y or ''}）—— {c[:100]}</li>"
+            for t, c, y in private_cases
         )
         cases_html = (
+            "<h2>三、昊志交付案例（真实成交）</h2>"
+            f"<ol class='cases'>{priv_lis}</ol>"
+        ) + (
+            f"<h2>四、同行业公开采购案例（{e.industry_name or '同行业'}）</h2>"
+            f"<ol class='cases'>{public_lis}</ol>"
+            "<p class='note'>以上为法定公开公告摘引，原文可溯源。</p>"
+            if case_rows
+            else ""
+        )
+        sec4, sec5 = "五、为什么选择昊志", "六、下一步"
+    elif case_rows:
+        cases_html = (
             f"<h2>三、同行业公开采购案例（{e.industry_name or '同行业'}）</h2>"
-            f"<ol class='cases'>{case_lis}</ol>"
+            f"<ol class='cases'>{public_lis}</ol>"
             "<p class='note'>以上为法定公开公告摘引，原文可溯源。</p>"
         )
         sec4, sec5 = "四、为什么选择昊志", "五、下一步"

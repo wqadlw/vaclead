@@ -377,6 +377,72 @@ def get_recommendations(
     return {"items": score_candidates(session, limit=max(1, min(limit, 100)))}
 
 
+# ---------------- 私有成交案例库（SPEC-AZ AZ2） ----------------
+class CaseStudyIn(BaseModel):
+    enterprise_id: int | None = None
+    industry_key: str | None = None
+    title: str
+    content: str = ""
+    year: str | None = None
+
+
+@router.get("/cases")
+def list_case_studies(
+    industry_key: str | None = None,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """私有成交案例（昊志真实交付——比公开招标证据更强的提案资产）。"""
+    from ..models import CaseStudy
+
+    stmt = select(CaseStudy).order_by(CaseStudy.id.desc())
+    if industry_key:
+        stmt = stmt.where(CaseStudy.industry_key == industry_key)
+    rows = session.scalars(stmt.limit(50)).all()
+    return {
+        "items": [
+            {"id": c.id, "enterprise_id": c.enterprise_id, "industry_key": c.industry_key,
+             "title": c.title, "content": c.content, "year": c.year}
+            for c in rows
+        ]
+    }
+
+
+@router.post("/cases", status_code=201)
+def create_case_study(
+    body: CaseStudyIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    from ..models import CaseStudy
+
+    if len(body.title) < 4:
+        raise HTTPException(422, "案例标题过短")
+    c = CaseStudy(
+        enterprise_id=body.enterprise_id, industry_key=body.industry_key,
+        title=body.title, content=body.content, year=body.year,
+    )
+    session.add(c)
+    session.commit()
+    return {"id": c.id}
+
+
+@router.delete("/cases/{cid}")
+def delete_case_study(
+    cid: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    from ..models import CaseStudy
+
+    c = session.get(CaseStudy, cid)
+    if c is None:
+        raise HTTPException(404, "案例不存在")
+    session.delete(c)
+    session.commit()
+    return {"ok": True}
+
+
 @router.post("/recommendations/{ent_id}/convert")
 def convert_recommendation(
     ent_id: int,
