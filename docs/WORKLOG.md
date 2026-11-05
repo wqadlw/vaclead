@@ -1855,3 +1855,20 @@ Playbook"方案武器库"60%→85%：工程师买"不背锅"，最有力弹药�
 **闭环实测**：推荐卡标 interested → 引擎 +25「建议立即转线索」即时生效
 （刷新即变）。
 **门禁**：300 后端整 + build + E2E 6（8047）。
+
+
+## 2026-11-06 · W57 · SPEC-AX 应收账款守护轮（Agent B）
+
+健康检查式盘点再捞一笔：**AD 轮契约承诺的"回款分期逾期 cron"从未落地**
+（due_date 过期无标记/无提醒/无应收视角）——设备销售商的现金流风险裸奔。
+**落地**：
+- **AX1 payment_overdue_sweep 每日 06:25**：pending 且 due_date<今日 →
+  status=overdue（幂等单向）+ Todo「回款逾期：{企业} {label} {金额}万」
+  （owner=合同/线索负责人）——逾期从数据状态变成待办动作
+- **AX2 应收露出**：dashboard forecast 增 receivable_overdue（逾期合计）
+  / receivable_due30（30 天内到期）——现金流风险一眼可见
+**坑（金子级）**：**init_db(seed=False) 下 user 表为空**——测试种子的
+lead/contract.owner_id=1 及 sweep 生成的 Todo.owner_id 全触发 user FK，
+症状伪装成"enterprise FK"极难定位（探针三连才锁定）。**测试种子涉及
+owner 的必须置 None 或显式建用户**。
+**门禁**：303 全绿（+2 SPEC-AX）+ build + E2E 6（8047）。

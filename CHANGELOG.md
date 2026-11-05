@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.0.39（2026-11-06）
+
+应收账款守护轮（SPEC-AX）：补齐 AD 轮承诺未落地的回款逾期 cron。
+
+### 回款逾期扫描（AX1）
+- **payment_overdue_sweep 每日 06:25**：pending 分期 due_date 过期 → status=overdue（幂等单向）+ 自动 Todo「回款逾期：{企业} {分期} {金额}万」（owner=合同负责人）
+
+### 应收视角（AX2）
+- dashboard forecast 新增 **receivable_overdue（逾期合计）/ receivable_due30（30 天内到期）**——现金流风险一眼可见
+
 ## v1.0.38（2026-11-06）
 
 触达快标轮（SPEC-AW）：销售日常流最后一米。

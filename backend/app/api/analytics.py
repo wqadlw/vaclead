@@ -189,6 +189,37 @@ def dashboard_summary(
         or 0.0
     )
     forecast["contract_backlog"] = round(float(amount) - float(paid), 1)
+
+    # SPEC-AX AX2 应收视角：逾期金额 + 30 天内到期（active 合同 pending 分期）
+    from ..models import PaymentMilestone as _PM
+
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    in30 = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+    active_contracts = (
+        session.query(Contract.id).filter(Contract.status == "active").subquery()
+    )
+    receivable_overdue = (
+        session.query(func.coalesce(func.sum(_PM.amount_wan), 0.0))
+        .filter(
+            _PM.contract_id.in_(active_contracts.select()),
+            _PM.status == "overdue",
+        )
+        .scalar()
+        or 0.0
+    )
+    receivable_due30 = (
+        session.query(func.coalesce(func.sum(_PM.amount_wan), 0.0))
+        .filter(
+            _PM.contract_id.in_(active_contracts.select()),
+            _PM.status == "pending",
+            _PM.due_date.is_not(None),
+            _PM.due_date <= in30,
+        )
+        .scalar()
+        or 0.0
+    )
+    forecast["receivable_overdue"] = round(float(receivable_overdue), 1)
+    forecast["receivable_due30"] = round(float(receivable_due30), 1)
     target = (
         session.query(UserTarget)
         .filter(UserTarget.user_id == user.id, UserTarget.month == this_month)

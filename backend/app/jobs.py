@@ -500,6 +500,56 @@ def _watchdog_health() -> dict:
         return batch_health_refresh(s)
 
 
+def payment_overdue_sweep() -> dict:
+    """回款逾期守护（SPEC-AX AX1，每日 06:25）：
+
+    pending 且 due_date < 今日 → status=overdue（幂等单向）+
+    Todo「回款逾期」（owner=合同负责人）。应收逾期=设备销售商直接的
+    现金流风险——从数据状态变成待办动作。
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from .db import SessionLocal
+    from .models import Contract, Enterprise, Lead, PaymentMilestone, Todo
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    marked = 0
+    todos_created = 0
+    with SessionLocal() as s:
+        rows = s.execute(
+            select(PaymentMilestone, Contract, Lead, Enterprise.name)
+            .join(Contract, PaymentMilestone.contract_id == Contract.id)
+            .join(Lead, Contract.lead_id == Lead.id)
+            .join(Enterprise, Lead.enterprise_id == Enterprise.id)
+            .where(
+                PaymentMilestone.status == "pending",
+                PaymentMilestone.due_date.is_not(None),
+                PaymentMilestone.due_date < today,
+            )
+        ).all()
+        for m, contract, lead, ename in rows:
+            m.status = "overdue"
+            marked += 1
+            title = f"回款逾期：{ename} {m.label or '分期'} {m.amount_wan}万"
+            exists = (
+                s.query(Todo)
+                .filter(Todo.title == title, Todo.done == 0)
+                .first()
+            )
+            if exists is None:
+                s.add(Todo(
+                    title=title, enterprise_id=lead.enterprise_id,
+                    lead_id=contract.lead_id,
+                    due_date=today, owner_id=contract.owner_id or lead.owner_id,
+                    source="automation",
+                ))
+                todos_created += 1
+        s.commit()
+    return {"marked": marked, "todos_created": todos_created}
+
+
 def oem_touch_sweep() -> dict:
     """OEM 季度关系维护（SPEC-AU，Playbook 三节奏之 OEM 按季度）：
 
