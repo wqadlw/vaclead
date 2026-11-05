@@ -389,6 +389,14 @@ async def lifespan(app: FastAPI):
 
         _register_cron("product_seed", _seed_products, 6, 18)
 
+        def _oem_touch_sweep() -> dict:
+            from .jobs import oem_touch_sweep
+
+            return oem_touch_sweep()
+
+        # SPEC-AU：每周一 07:00 OEM 季度关系维护扫描（90 天未触达 → 待办）
+        _register_cron("oem_touch", _oem_touch_sweep, 1, 7, day_of_week="mon")
+
         # SPEC-AP AP1：Meili 可用性预热——冷启动首击的 2.5s 探测在启动期消化，
         # 不让第一个倒霉请求吃（探测结果随后走 30s 缓存）
         def _meili_probe_safe() -> None:

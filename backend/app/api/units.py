@@ -165,3 +165,68 @@ def consumable_clock_sweep() -> dict:
                     created += 1
         s.commit()
     return {"todos_created": created}
+
+
+class UnitsPasteIn(BaseModel):
+    """装机批量粘贴导入（SPEC-AU AU2）：历史成交 Excel 直接 Ctrl+V。
+
+    每行：企业名称[Tab]型号[Tab]序列号[Tab]安装日期；表头行自动跳过。
+    企业走 resolve_enterprise 归一（撞库复用）；已删企业跳过；
+    同企业同型号 active 装机去重（重复导入幂等）。
+    """
+
+    text: str = Field(..., description="Tab 分隔，每行一条")
+
+
+@router.post("/import/units-paste", status_code=201)
+def import_units_paste(
+    body: UnitsPasteIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    from ..normalize import resolve_enterprise
+
+    created = 0
+    skipped = 0
+    seen_models: set[tuple[int, str]] = set()  # autoflush=False 盲区兜底
+    for raw in (body.text or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split("\t")]
+        if len(parts) < 2 or "企业" in parts[0] or "型号" in parts[0]:
+            continue  # 表头/垃圾行
+        name, model = parts[0], parts[1]
+        serial = parts[2] if len(parts) > 2 and parts[2] else None
+        install = parts[3] if len(parts) > 3 and parts[3] else None
+        if len(name) < 4 or not model:
+            skipped += 1
+            continue
+        ent, _is_new = resolve_enterprise(session, name, source="manual")
+        if ent.deleted_at:
+            skipped += 1
+            continue
+        key = (ent.id, model)
+        if key in seen_models:
+            skipped += 1
+            continue
+        exists = (
+            session.query(InstalledUnit)
+            .filter(
+                InstalledUnit.enterprise_id == ent.id,
+                InstalledUnit.model == model,
+                InstalledUnit.status == "active",
+            )
+            .first()
+        )
+        if exists is not None:
+            skipped += 1
+            continue
+        session.add(InstalledUnit(
+            enterprise_id=ent.id, model=model, serial=serial,
+            install_date=install, notes="paste-import",
+        ))
+        seen_models.add(key)
+        created += 1
+    session.commit()
+    return {"created": created, "skipped": skipped}

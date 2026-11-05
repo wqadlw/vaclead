@@ -500,6 +500,69 @@ def _watchdog_health() -> dict:
         return batch_health_refresh(s)
 
 
+def oem_touch_sweep() -> dict:
+    """OEM 季度关系维护（SPEC-AU，Playbook 三节奏之 OEM 按季度）：
+
+    90 天无任何触达结果标记/待办的 OEM → 生成关系维护待办（幂等）。
+    OEM 买泵装设备——供货稳定性的关系维护比价格战更重要。
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from .db import SessionLocal
+    from .models import Contact, Todo
+
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=90)
+    ).strftime("%Y-%m-%dT%H:%M:%S")
+    created = 0
+    with SessionLocal() as s:
+        oems = (
+            s.execute(
+                select(Enterprise).where(
+                    Enterprise.customer_role == "oem",
+                    Enterprise.deleted_at.is_(None),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for e in oems:
+            # 已有未完成维护待办 → 跳过（幂等）
+            exists = (
+                s.query(Todo)
+                .filter(
+                    Todo.enterprise_id == e.id,
+                    Todo.title.like("OEM 季度关系维护%"),
+                    Todo.done == 0,
+                )
+                .first()
+            )
+            if exists:
+                continue
+            # 90 天内有触达动作（联系人标记过结果）→ 跳过
+            touched = (
+                s.query(Contact.id)
+                .filter(
+                    Contact.enterprise_id == e.id,
+                    Contact.called_at.is_not(None),
+                    Contact.called_at >= cutoff,
+                )
+                .first()
+            )
+            if touched:
+                continue
+            s.add(Todo(
+                title=f"OEM 季度关系维护：{e.name}",
+                enterprise_id=e.id,
+                owner_id=None, source="automation",
+            ))
+            created += 1
+        s.commit()
+    return {"oem_total": len(oems), "todos_created": created}
+
+
 # ---------------------------------------------------------------------------
 # B3 备份
 # ---------------------------------------------------------------------------

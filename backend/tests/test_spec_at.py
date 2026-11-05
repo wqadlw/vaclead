@@ -16,6 +16,7 @@ from app.main import app
 
 from app.db import SessionLocal, init_db  # noqa: E402
 from app.models import (  # noqa: E402
+    AuditLog,  # noqa: E402
     Enterprise,
     Product,
     SettingsKV,
@@ -23,7 +24,7 @@ from app.models import (  # noqa: E402
 
 init_db(seed=False)
 
-_ISOLATED_MODELS: list[type] = [Enterprise, Product]
+_ISOLATED_MODELS: list[type, AuditLog] = [Enterprise, Product, AuditLog]
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -37,6 +38,8 @@ def _isolate_rows():
     with SessionLocal() as s:
         for m in _ISOLATED_MODELS:
             s.query(m).filter(m.id > snap[m.__tablename__]).delete()
+        # audit_log 同步清（entity_id 跨模块撞库会污染审计断言，W57）
+        s.query(AuditLog).filter(AuditLog.id > snap.get('audit_log', 0)).delete()
         s.query(SettingsKV).filter(SettingsKV.key.like("pref:%")).delete()
         s.commit()
 

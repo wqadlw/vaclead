@@ -163,3 +163,13 @@ GET https://data.ggzy.gov.cn/yjcx/index/bid_list?uniscid=91320924MA1T6WGX7T&page
 - §1.3 表格修正：www.ggzy.gov.cn 的 WAF 为 **360 网站卫士类**（非瑞数）；cebpubservice 才疑似瑞数。且公告侧 dealList 有已验证的浏览器采集路径（ggzy-scraper 2026-05 实测），从"❌ 当前放弃"修正为"⏳ P2 浏览器采集池"。
 - **ccgp 限流实测（2026-10-25）**：单日连续 4 轮扫描（约 60+ 请求）后触发"频繁访问"拦截页（HTTP 200 + 拦截内容）。对策已入码：collector 显式检测拦截页并告警；运营守则——ccgp 增量靠每日 03:30 定时任务（新配额），手动全量扫描单日 ≤2 轮。
 - **ggzy 名称检索 vs ccgp 全文检索词表分工**（实测教训）：ggzy 按企业名匹配，细词（罗茨泵/磁控溅射）召回≈0，须用品类宽词（vertical.GGZY_NAME_TERMS）；ccgp bxsearch 为全文匹配，34 细词有效。
+
+## §7 环评/备案公示通道（2026-11-06 归档 P3）
+
+三级探测结论（苏州 302 循环→neweia 空壳 SPA→qsyhbgj 腾讯 TCaptcha→
+china-eia 两步握手后仍需 validateCodeServlet 验证码）：
+- **全线有反爬门槛，裸调不可行**
+- 合规路径仅剩：①浏览器池+人工过码辅助（P3，ROI 低——公示数据 10 个工作
+  日公开期，过期需信息公开申请）②官方 open data 等待
+- 业务替代：三级信号阶梯（备案 tzxm 粤鄂/招标/中标）已覆盖"扩产前兆"
+  主语义；环评设备清单（真空泵直读）作为 P3 保留

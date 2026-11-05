@@ -1804,3 +1804,22 @@ qsyhbgj=腾讯验证码（TCaptcha）——裸调不可行，按湖北先例需�
 - **企业列表角色筛选**：GET /api/enterprises?customer_role=（SQLite 路径
   强制——Meili 投影无此列）+ 前端 Quick pick「OEM 设备商」（URL/请求/
   三处 plumbing 全接）——名单从"库里存在"变成"一键可筛可用"
+
+
+## 2026-11-06 · W57 · SPEC-AU 触达节奏与装机导入轮（Agent B）
+
+**环评通道最终归档（DATA_ACQUISITION §7）**：苏州 302 循环/neweia 空壳 SPA/
+qsyhbgj 腾讯 TCaptcha/china-eia 两步握手后仍需 validateCodeServlet 验证码
+——**全线反爬，裸调不可行**。合规路径仅剩浏览器池+人工过码（P3 低 ROI，
+公示期仅 10 个工作日）。三级信号阶梯已覆盖"扩产前兆"主语义，不再投入。
+**落地**：
+- **AU1 OEM 季度节奏**：oem_touch_sweep 每周一 07:00——OEM 90 天无触达
+  结果标记 → 「OEM 季度关系维护」待办（幂等；近期触达跳过）——Playbook
+  三节奏（替换=耗材时钟/项目=信号阶梯/OEM=季度关系）全就位
+- **AU2 装机粘贴导入**：POST /import/units-paste（历史成交 Excel Ctrl+V，
+  表头跳过/resolve 归一复用/同企业同型号去重/已删企业跳过）
+**坑（新素养）**：**audit_log 共享库 entity_id 撞库**——AS/AT/AU 走 API
+resolve 路径带 admin 埋点的审计行跨模块留存，数字 id 复用后污染审计断言
+（J 轮 test_system_insert_not_audited）→ 三个新模块隔离清理补 audit_log
+id 快照删除。**凡走 API resolve 的测试模块都要清 audit_log**。
+**门禁**：296 全绿（+2 SPEC-AU）+ build + E2E 6（8047）。
