@@ -422,6 +422,45 @@ def convert_recommendation(
     return {"ok": True, "lead_id": lead.id, "created": created}
 
 
+@router.post("/recommendations/{ent_id}/mark-call")
+def mark_recommendation_call(
+    ent_id: int,
+    body: dict,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """触达快标（SPEC-AW AW2）：按企业标记主联系人通话结果——日活循环收口。
+
+    result ∈ connected|interested|no_answer|voicemail|invalid（快标五态）。
+    标记对象=该企业首个带可拨电话的联系人。
+    """
+    from datetime import datetime, timezone
+
+    from sqlalchemy import or_
+
+    from ..models import Contact
+
+    result = str(body.get("result") or "")
+    if result not in ("connected", "interested", "no_answer", "voicemail", "invalid"):
+        raise HTTPException(422, "非法结果（快标五态）")
+    ent = session.get(Enterprise, ent_id)
+    if ent is None or ent.deleted_at:
+        raise HTTPException(404, "企业不存在")
+    contact = session.query(Contact).filter(
+        Contact.enterprise_id == ent_id,
+        or_(
+            Contact.phones_json != "[]",
+            Contact.title.op("GLOB")("*[0-9]*"),
+        ),
+    ).order_by(Contact.id.asc()).first()
+    if contact is None:
+        raise HTTPException(404, "该企业无可标记电话联系人")
+    contact.call_result = result
+    contact.called_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    session.commit()
+    return {"ok": True, "contact_id": contact.id, "call_result": result}
+
+
 @router.get("/analytics/call-funnel")
 def call_funnel(
     days: int = 30,

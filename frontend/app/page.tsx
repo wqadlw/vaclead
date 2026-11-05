@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Modal, Table, Toast } from "@douyinfe/semi-ui";
+import { Button, Modal, Table, Tag, Toast } from "@douyinfe/semi-ui";
 import { ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { AreaTrend, BarList, DeltaBadge, FunnelBars, ProvinceBars, SparkBars } from "@/components/charts";
@@ -347,7 +347,18 @@ export default function DashboardPage() {
     reasons: string[];
     phone?: string | null;
     managed?: boolean;
+    call_state?: string;
+    contact_id?: number | null;
   }
+  const CALL_STATE_CN: Record<string, { label: string; color: string }> = {
+    pending: { label: "未拨", color: "grey" },
+    no_answer: { label: "无人接", color: "orange" },
+    voicemail: { label: "语音信箱", color: "orange" },
+    invalid: { label: "空号", color: "red" },
+    connected: { label: "已接通", color: "green" },
+    interested: { label: "有意向", color: "green" },
+    not_interested: { label: "无需求", color: "grey" },
+  };
   const [recs, setRecs] = useState<RecItem[]>([]);
   const loadRecs = useCallback(() => {
     api
@@ -367,6 +378,15 @@ export default function DashboardPage() {
       loadRecs();
     } catch (e) {
       Toast.error(e instanceof Error ? e.message : "转换失败");
+    }
+  }, [loadRecs]);
+  // SPEC-AW AW3：推荐卡触达快标（标记主联系人结果）
+  const markRec = useCallback(async (entId: number, result: string) => {
+    try {
+      await api.post(`/api/recommendations/${entId}/mark-call`, { result });
+      loadRecs();
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "标记失败");
     }
   }, [loadRecs]);
 
@@ -570,6 +590,40 @@ export default function DashboardPage() {
                   <span className="text-[15px] font-semibold tabular-nums text-[var(--accent)]">
                     {r.score}
                   </span>
+                  {/* SPEC-AW AW3：触达快标（未拨时三快标；已拨显示状态） */}
+                  {(r.call_state ?? "pending") === "pending" && r.contact_id ? (
+                    <div className="flex items-center gap-1">
+                      <button
+                        className="cursor-pointer rounded border border-[var(--border)] bg-white px-1.5 py-0.5 text-[11px] text-[var(--ink)] hover:border-[var(--accent)]"
+                        onClick={async (ev) => {
+                          ev.preventDefault();
+                          await markRec(r.ent_id, "interested");
+                        }}
+                      >接通</button>
+                      <button
+                        className="cursor-pointer rounded border border-[var(--border)] bg-white px-1.5 py-0.5 text-[11px] text-[var(--muted)] hover:border-[var(--accent)]"
+                        onClick={async (ev) => {
+                          ev.preventDefault();
+                          await markRec(r.ent_id, "no_answer");
+                        }}
+                      >未接</button>
+                      <button
+                        className="cursor-pointer rounded border border-[var(--border)] bg-white px-1.5 py-0.5 text-[11px] text-[var(--negative)] hover:border-[var(--negative)]"
+                        onClick={async (ev) => {
+                          ev.preventDefault();
+                          await markRec(r.ent_id, "invalid");
+                        }}
+                      >空号</button>
+                    </div>
+                  ) : (
+                    <Tag
+                      color={(CALL_STATE_CN[r.call_state ?? "pending"] ?? { color: "grey" }).color as "green" | "orange" | "red" | "grey"}
+                      type="light"
+                      size="small"
+                    >
+                      {CALL_STATE_CN[r.call_state ?? "pending"]?.label ?? "未拨"}
+                    </Tag>
+                  )}
                   <Button size="small" theme="outline" onClick={() => void convertRec(r.ent_id)}>
                     转线索
                   </Button>

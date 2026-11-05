@@ -20,6 +20,18 @@ _TIER_CACHE: dict[str, int] | None = None
 _PRODUCT_MATCH_CACHE: dict[str, str] | None = None
 
 
+def _agg_call_state(states: list[str]) -> str:
+    """企业级触达聚合态（SPEC-AW AW1）：interested > connected > 已拨其他 > 未拨。"""
+    if not states:
+        return "pending"
+    for pref in ("interested", "connected", "not_interested", "voicemail",
+                 "no_answer", "invalid"):
+        if pref in states:
+            return pref
+    return "pending"
+_PRODUCT_MATCH_CACHE: dict[str, str] | None = None
+
+
 def _product_match(session: Session, industry_key: str | None) -> str | None:
     """产品线反向匹配（SPEC-AS AS3）：客户行业 ∈ 产品应用面 → 产品名。"""
     global _PRODUCT_MATCH_CACHE
@@ -59,7 +71,7 @@ def score_candidates(session: Session, limit: int = 50) -> list[dict]:
     未在管+15 / 近90天 proposal+15；阈值 45 起推。
     """
     ent_rows = session.execute(
-        select(Enterprise, Contact.id)
+        select(Enterprise, Contact.id, Contact.call_result)
         .outerjoin(Contact, Contact.enterprise_id == Enterprise.id)
         .where(
             Contact.phones_json != "[]",
@@ -106,7 +118,10 @@ def score_candidates(session: Session, limit: int = 50) -> list[dict]:
 
     out: list[dict] = []
     seen_ent: set[int] = set()
-    for ent, _cid in ent_rows:
+    primary_contact: dict[int, int] = {}  # SPEC-AW AW1：主联系人（首个带电话的）
+    for ent, cid, cresult in ent_rows:
+        if cid is not None and ent.id not in primary_contact:
+            primary_contact[ent.id] = cid
         if ent.id in seen_ent:
             continue  # 一企业多联系人多行——只评一次
         seen_ent.add(ent.id)
@@ -175,6 +190,9 @@ def score_candidates(session: Session, limit: int = 50) -> list[dict]:
             "industry_name": ent.industry_name,
             "score": round(score, 1),
             "reasons": reasons,
+            # SPEC-AW AW1：触达快标（企业级聚合态 + 主联系人 id）
+            "call_state": _agg_call_state(states),
+            "contact_id": primary_contact.get(ent.id),
         })
 
     out.sort(key=lambda x: (-x["score"], x["ent_id"]))  # 同分按 id 稳定序
