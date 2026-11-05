@@ -21,6 +21,7 @@ export interface QuickPickFilters {
   is_competitor: number;
   source?: string;
   has_contact?: number;
+  customer_role?: string;
   complete?: number;
   established_within_years?: number | null;
   bid_min?: number | null;
@@ -29,6 +30,7 @@ export interface QuickPickFilters {
 
 const QUICK_PICKS: { label: string; patch: Partial<QuickPickFilters> }[] = [
   { label: "有联系电话", patch: { has_contact: 1 } },
+  { label: "OEM 设备商", patch: { customer_role: "oem" } },
   { label: "近期有采购", patch: { signal_days: 90 } },
   { label: "高意图", patch: { score_min: 40, signal_days: 180 } },
   { label: "官方中标数据", patch: { source: "ggzy" } },

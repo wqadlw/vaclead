@@ -76,6 +76,7 @@ def list_enterprises(
     bid_amount_min: float | None = None,
     complete: int = 0,
     tag: str | None = None,
+    customer_role: str | None = None,
     page: int = 1,
     page_size: int = 20,
     facets: int = 0,
@@ -84,7 +85,7 @@ def list_enterprises(
 ):
     # SPEC-M M2：新维度（成立年限/中标力）只支持 SQLite 路径——带参时跳过 Meili，
     # 保证 total/分页语义正确（Meili 投影不含这两列）
-    sqlite_only = bool(established_within_years or bid_min or bid_amount_min or complete or tag)
+    sqlite_only = bool(established_within_years or bid_min or bid_amount_min or complete or tag or customer_role)
     # Quick picks（gmaps-scraper 模式）：has_contact=1 → 只看有可拨打联系人的企业。
     # SPEC-I I5：不再物化全量 id 列表（limit(5000) 会静默漏企业）——
     # SQLite 路径走 IN 子查询半连接；Meili 路径只对当前页 id 做存活过滤。
@@ -157,6 +158,9 @@ def list_enterprises(
             pass
 
     stmt = select(Enterprise)
+    if customer_role:
+        # SPEC-AU：OEM/终端/分销/集成商 角色筛选（AS2）
+        stmt = stmt.where(Enterprise.customer_role == customer_role)
     if has_contact:
         from ..models import Contact
 

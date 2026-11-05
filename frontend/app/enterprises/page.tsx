@@ -77,6 +77,7 @@ interface Filters {
   is_competitor: number;
   source?: string;
   has_contact?: number;
+  customer_role?: string;
 }
 
 const ESTABLISHED_OPTIONS = [
@@ -126,6 +127,8 @@ export default function EnterprisesPage() {
     if (src2) f.source = src2;
     const hc = sp.get("has_contact");
     if (hc) f.has_contact = Number(hc);
+    const cr = sp.get("customer_role");
+    if (cr) f.customer_role = cr;
     const sm = sp.get("score_min");
     if (sm) f.score_min = Number(sm);
     const ey = sp.get("established_within_years");
@@ -355,6 +358,7 @@ export default function EnterprisesPage() {
       params.set("is_competitor", String(f.is_competitor));
       if (f.source) params.set("source", f.source);
       if (f.has_contact) params.set("has_contact", "1");
+      if (f.customer_role) params.set("customer_role", f.customer_role);
       params.set("page", String(p));
       params.set("page_size", String(PAGE_SIZE));
       const next = await api.get<PageData<Enterprise>>(`/api/enterprises?${params.toString()}`);
@@ -387,6 +391,7 @@ export default function EnterprisesPage() {
     if (applied.city?.trim()) sp.set("city", applied.city.trim());
     if (applied.source) sp.set("source", applied.source);
     if (applied.has_contact) sp.set("has_contact", String(applied.has_contact));
+    if (applied.customer_role) sp.set("customer_role", applied.customer_role);
     if (typeof applied.score_min === "number") sp.set("score_min", String(applied.score_min));
     if (typeof applied.established_within_years === "number") sp.set("established_within_years", String(applied.established_within_years));
     if (typeof applied.bid_min === "number") sp.set("bid_min", String(applied.bid_min));
