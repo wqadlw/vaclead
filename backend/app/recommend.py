@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, select
@@ -16,6 +17,30 @@ from .models import Contact, Enterprise, Lead, Signal
 
 _TIER_BONUS = {1: 10, 2: 5, 3: 2}
 _TIER_CACHE: dict[str, int] | None = None
+_PRODUCT_MATCH_CACHE: dict[str, str] | None = None
+
+
+def _product_match(session: Session, industry_key: str | None) -> str | None:
+    """产品线反向匹配（SPEC-AS AS3）：客户行业 ∈ 产品应用面 → 产品名。"""
+    global _PRODUCT_MATCH_CACHE
+    if _PRODUCT_MATCH_CACHE is None:
+        from .models import Product
+
+        mapping: dict[str, str] = {}
+        for pname, inds in session.execute(
+            select(Product.name, Product.application_industries).where(
+                Product.active == 1
+            )
+        ):
+            try:
+                for k in json.loads(inds or "[]"):
+                    mapping.setdefault(k, pname)
+            except ValueError:
+                continue
+        _PRODUCT_MATCH_CACHE = mapping
+    if not industry_key:
+        return None
+    return _PRODUCT_MATCH_CACHE.get(industry_key)
 
 
 def _tier_of(industry_key: str) -> int:
@@ -130,6 +155,15 @@ def score_candidates(session: Session, limit: int = 50) -> list[dict]:
         elif states.count("no_answer") >= 2:
             score -= 10
             reasons.append("多次无人接——建议换时段或渠道")
+
+        # SPEC-AS AS2/AS3：业务锚点——OEM 配套潜力 + 产品线工艺适配（销售语言）
+        if ent.customer_role == "oem":
+            score += 10
+            reasons.append("应用设备制造商——批量配套潜力")
+        match = _product_match(session, ent.industry_key)
+        if match:
+            score += 8
+            reasons.append(f"工艺适配：{match} 适配其「{ent.industry_name}」工序")
 
         if score < 45:
             continue

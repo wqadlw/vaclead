@@ -371,6 +371,24 @@ async def lifespan(app: FastAPI):
         # SPEC-AR AR1：每日 06:30 水位看门狗（关键日批未执行自动补跑+通知）
         _register_cron("watermark_watchdog", _watchdog_sweep, 6, 30)
 
+        def _consumable_sweep() -> dict:
+            from .api.units import consumable_clock_sweep
+
+            return consumable_clock_sweep()
+
+        # SPEC-AS AS1：每日 06:20 装机耗材时钟扫描 → 回访待办
+        _register_cron("consumable_clock", _consumable_sweep, 6, 20)
+
+        # SPEC-AS AS3：昊青产品线种子（幂等）
+        def _seed_products() -> dict:
+            from .db import SessionLocal as _SL
+            from .api.units import seed_haoqing_products
+
+            with _SL() as s:
+                return {"seeded": seed_haoqing_products(s)}
+
+        _register_cron("product_seed", _seed_products, 6, 18)
+
         # SPEC-AP AP1：Meili 可用性预热——冷启动首击的 2.5s 探测在启动期消化，
         # 不让第一个倒霉请求吃（探测结果随后走 30s 缓存）
         def _meili_probe_safe() -> None:
@@ -541,6 +559,9 @@ app.include_router(prefs.router, prefix="/api")
 from .api import mcp  # noqa: E402
 
 app.include_router(mcp.router, prefix="/api")
+from .api import units  # noqa: E402
+
+app.include_router(units.router, prefix="/api")
 
 
 # ---- 单进程部署：托管前端静态导出（frontend/out），SPA 回退 ----

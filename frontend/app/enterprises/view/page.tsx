@@ -72,6 +72,16 @@ function CallResultTag({ result, onChange }: { result: string; onChange: (r: str
     </Dropdown>
   );
 }
+interface UnitRow {
+  id: number;
+  product_name: string | null;
+  model: string;
+  serial: string | null;
+  install_date: string | null;
+  status: string;
+  consumable_json: string;
+  notes: string | null;
+}
 interface NoteRow {
   id: number;
   content: string;
@@ -170,6 +180,8 @@ function IntelInner() {
   const [graph, setGraph] = useState<GraphEdge[]>([]);
   const [related, setRelated] = useState<RelatedData | null>(null);
   const [contacts, setContacts] = useState<ContactRow[]>([]);
+  // SPEC-AS AS1 装机台账
+  const [units, setUnits] = useState<UnitRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [subscribed, setSubscribed] = useState(false);
   const [converting, setConverting] = useState(false);
@@ -192,6 +204,7 @@ function IntelInner() {
     api.get<{ edges: GraphEdge[] }>(`/api/enterprises/${eid}/graph`).then((d) => setGraph(d.edges)).catch(() => undefined);
     api.get<RelatedData>(`/api/enterprises/${eid}/related`).then(setRelated).catch(() => undefined);
     api.get<{ items: ContactRow[] }>(`/api/enterprises/${eid}/contacts`).then((d) => setContacts(d.items)).catch(() => undefined);
+    api.get<{ items: UnitRow[] }>(`/api/enterprises/${eid}/units`).then((d) => setUnits(d.items)).catch(() => undefined);
     api.get<{ items: NoteRow[] }>(`/api/enterprises/${eid}/notes`).then((d) => setNotes(d.items)).catch(() => undefined);
   }, [eid]);
 
@@ -636,6 +649,70 @@ function IntelInner() {
                       <div className="mt-1 border-l-2 border-[var(--accent)] pl-2 text-[11.5px] leading-4 text-[var(--muted)]">
                         {c.evidence_claim}
                       </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabPane>
+
+          {/* SPEC-AS AS1 装机台账（CMMS 模型：装机=资产负债表，耗材时钟=定时订单） */}
+          <TabPane tab="装机设备" itemKey="units" className="p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-[12.5px] text-[var(--muted)]">
+                每台装机自带耗材时钟（密封 12-24 月/滤芯 2000-4000h）——到期自动生成回访待办
+              </span>
+              <Button
+                size="small"
+                theme="outline"
+                onClick={() => {
+                  const model = window.prompt("设备型号：");
+                  if (!model) return;
+                  const install = window.prompt("安装日期（YYYY-MM-DD，可空）：") || null;
+                  api
+                    .post(`/api/enterprises/${eid}/units`, { model, install_date: install, consumable_json: "{}" })
+                    .then(() => load())
+                    .catch((e) => Toast.error(e instanceof Error ? e.message : "新增失败"));
+                }}
+              >
+                + 新增装机
+              </Button>
+            </div>
+            {units.length === 0 ? (
+              <div className="py-8 text-center text-[13px] text-[var(--muted)]">
+                暂无装机记录 —— 成交交付后在这里登记，耗材时钟开始产出回访清单
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {units.map((u) => (
+                  <div key={u.id} className="flex items-center gap-3 rounded-lg border border-[var(--border)] px-4 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[13.5px] font-medium text-[var(--ink)]">{u.product_name ?? u.model}</span>
+                        <Tag color={u.status === "active" ? "green" : "grey"} type="light" size="small">
+                          {u.status === "active" ? "在用" : u.status === "replaced" ? "已替换" : "退役"}
+                        </Tag>
+                      </div>
+                      <div className="mt-0.5 text-[12px] text-[var(--muted)]">
+                        {u.model} {u.serial ? `· SN ${u.serial}` : ""} {u.install_date ? `· 安装 ${u.install_date}` : ""}
+                      </div>
+                    </div>
+                    {u.status === "active" && (
+                      <Button
+                        size="small"
+                        theme="borderless"
+                        type="danger"
+                        onClick={async () => {
+                          try {
+                            await api.patch(`/api/units/${u.id}`, { status: "retired" });
+                            void load();
+                          } catch {
+                            Toast.error("操作失败");
+                          }
+                        }}
+                      >
+                        退役
+                      </Button>
                     )}
                   </div>
                 ))}

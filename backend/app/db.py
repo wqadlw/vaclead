@@ -103,6 +103,10 @@ _EVOLUTION_COLUMNS: dict[str, list[tuple[str, str]]] = {
     ],
     "enterprise": [
         ("deleted_at", "TEXT"),
+        ("customer_role", "TEXT"),
+    ],
+    "product": [
+        ("application_industries", "TEXT NOT NULL DEFAULT '[]'"),
     ],
 }
 

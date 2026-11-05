@@ -1739,3 +1739,25 @@ inserted=0，符合行业分布）。
 **坑**：看门狗测试打真网络（proposal 扫描 minutes 级）——五任务 monkeypatch
 打桩；SessionLocal 漏 import（jobs.py 函数级导入惯例）。
 **门禁**：287 全绿（+3 SPEC-AR）+ build + E2E 6（8047）。
+
+
+## 2026-11-05 · W56 · SPEC-AS 昊志业务锚点落地轮（Agent B）
+
+Playbook 四层缺口落地第一波（业务锚点：昊志=昊青官方销售商+系统搭建商）。
+**落地**：
+- **AS1 装机台账**：installed_unit 表（CMMS asset 模型：enterprise/product/
+  型号/序列号/安装日/状态机 active→replaced|retired/耗材时钟 JSON）+
+  CRUD API + 情报页「装机设备」tab；**consumable_clock cron 06:20**——
+  密封件 12-24 月/滤芯 2000-4000h 的耗材时钟到期 30 天内 → 自动回访 Todo
+  （open 唯一索引幂等）——"每个装机自带下次采购的闹钟"开始走时
+- **AS2 customer_role**：enterprise 新列（oem/end_user/reseller/integrator），
+  与 is_competitor 正交（爱发科=同行+泵制造商；镀膜机厂=OEM+非同行——
+  打标规则本身语义经复查基本正确，补的是关系维度）
+- **AS3 产品线反向匹配**：Product.application_industries + 昊青四条产品线
+  种子 cron（幂等，06:18）；推荐引擎 _product_match——候选行业 ∈ 产品
+  应用面 → 理由「工艺适配：EVS 油封螺杆适配其食品冻干工序」（销售语言，
+  对齐 Playbook"工程师买不背锅"）
+**坑**：_PRODUCT_MATCH_CACHE 模块级缓存被先跑模块初始化为空表→AS 插产品
+不失效（测试逼出，测试内显式重置）；seed 幂等在共享库下不可依赖表空断言。
+**真库**：迁移 ok + 昊青产品线 4 条已 seed。
+**门禁**：291 全绿（+4 SPEC-AS）+ build + E2E 6（8047）。

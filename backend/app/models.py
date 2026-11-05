@@ -112,6 +112,10 @@ class Enterprise(Base):
     tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON 数组（SPEC-V V2 销售自定义标签）
     poi_id: Mapped[str | None] = mapped_column(Text)
     deleted_at: Mapped[str | None] = mapped_column(Text)  # SPEC-AM AM1 软删除（NULL=正常；回收站 30 天自动清空）
+    # SPEC-AS AS2 客户角色（业务锚点：昊志=昊青销售商+系统搭建商）：
+    # oem=应用设备制造商（买泵装设备）| end_user=终端用户 | reseller=分销 |
+    # integrator=系统工程商 | NULL 未定。与 is_competitor（泵制造商）正交。
+    customer_role: Mapped[str | None] = mapped_column(Text)
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
@@ -607,7 +611,36 @@ class Product(Base):
     spec: Mapped[str | None] = mapped_column(Text)  # 参数摘要
     price: Mapped[float] = mapped_column(REAL, nullable=False, default=0.0)  # 万元
     price_unit: Mapped[str] = mapped_column(Text, nullable=False, default="台")
+    # SPEC-AS AS3 产品→应用行业反向匹配（昊青产品线×客户工艺）
+    application_industries: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     active: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class InstalledUnit(Base):
+    """装机台账（SPEC-AS AS1，CMMS asset 模型移植）。
+
+    每台卖出的泵=一条 15-20 年现金流——耗材时钟（密封 12-24 月/滤芯
+    2000-4000h）驱动回访待办，装机保有量即代理商的资产负债表。
+    """
+
+    __tablename__ = "installed_unit"
+    __table_args__ = (Index("ix_iu_enterprise", "enterprise_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    enterprise_id: Mapped[int] = mapped_column(
+        ForeignKey("enterprise.id", ondelete="CASCADE"), nullable=False
+    )
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("product.id"))
+    model: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    serial: Mapped[str | None] = mapped_column(Text)
+    install_date: Mapped[str | None] = mapped_column(Text)  # YYYY-MM-DD
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    # active|replaced|retired
+    consumable_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    # {"seal_due":"YYYY-MM-DD","filter_due":"YYYY-MM-DD"} 耗材时钟
+    notes: Mapped[str | None] = mapped_column(Text)
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
 
