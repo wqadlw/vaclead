@@ -20,11 +20,11 @@ const DONE_LABELS: Record<string, string> = {
 };
 
 function formatDone(summary: Record<string, unknown> | undefined): string {
-  if (!summary || typeof summary !== "object") return "✅ 任务完成";
+  if (!summary || typeof summary !== "object") return "任务完成";
   const parts = Object.entries(summary)
     .filter(([, v]) => typeof v === "number" && v > 0)
     .map(([k, v]) => `${DONE_LABELS[k] ?? k} ${v}`);
-  return parts.length ? `✅ 任务完成：${parts.join("，")}` : "✅ 任务完成（无新增数据）";
+  return parts.length ? `任务完成：${parts.join("，")}` : "任务完成（无新增数据）";
 }
 
 export default function TasksPage() {
@@ -85,8 +85,8 @@ export default function TasksPage() {
           const summary =
             payload.cancelled || payload.summary === undefined
               ? payload.inserted !== undefined
-                ? `✅ 任务完成：新增 ${payload.inserted} 家，合并 ${payload.merged ?? 0} 家`
-                : "✅ 任务完成"
+                ? `任务完成：新增 ${payload.inserted} 家，合并 ${payload.merged ?? 0} 家`
+                : "任务完成"
               : formatDone(payload.summary as Record<string, unknown>);
           setLogs((prev) => [...prev, summary]);
           es.close();
@@ -99,7 +99,7 @@ export default function TasksPage() {
           setStarting(false);
           setTaskId(null);
         } else if (payload.type === "error") {
-          setLogs((prev) => [...prev, `❌ ${payload.message ?? payload.log ?? "任务失败"}`]);
+          setLogs((prev) => [...prev, `失败：${payload.message ?? payload.log ?? "任务失败"}`]);
           es.close();
           setStarting(false);
           setTaskId(null);
@@ -266,7 +266,7 @@ export default function TasksPage() {
           ? `导入完成：新增 ${res.inserted ?? 0} 家，合并 ${res.merged ?? 0} 家`
           : `解析完成：生成信号 ${res.signals_created ?? 0} 条`,
       );
-      setLogs((prev) => [...prev, `📄 ${file.name} 导入成功`]);
+      setLogs((prev) => [...prev, `导入成功：${file.name}`]);
     } catch (e) {
       Toast.error(e instanceof Error ? e.message : "导入失败");
     }

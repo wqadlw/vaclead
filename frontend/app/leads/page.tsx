@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button, DatePicker, Form, Input, InputNumber, Modal, Select, SideSheet, Table, Tabs, Tag, Timeline, Toast,
 } from "@douyinfe/semi-ui";
-import { KanbanSquare, PhoneCall, Rows3, Settings2 } from "lucide-react";
+import { KanbanSquare, PhoneCall, Rows3, Settings2, Zap } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import LeadCard from "@/components/LeadCard";
 import { api } from "@/lib/api";
@@ -637,7 +637,10 @@ export default function LeadsPage() {
                 key={a.code}
                 className="rounded-lg border border-[#e8c987] bg-[#fdf6e7] px-3 py-2"
               >
-                <div className="text-[13px] font-medium text-[#8a6116]">⚡ {a.title}</div>
+                <div className="flex items-center gap-1 text-[13px] font-medium text-[#8a6116]">
+                  <Zap size={13} className="shrink-0" />
+                  {a.title}
+                </div>
                 <div className="mt-0.5 text-[12.5px] leading-5 text-[#a07f38]">{a.why}</div>
               </div>
             ))}

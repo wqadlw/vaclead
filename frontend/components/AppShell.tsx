@@ -351,7 +351,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         if (now - lastToastAt < 10000) return;
         lastToastAt = now;
         Toast.success({
-          content: `🔔 新信号：${String(first.title ?? "").slice(0, 40)}`,
+          content: `新信号：${String(first.title ?? "").slice(0, 40)}`,
           duration: 4,
         });
       } catch {

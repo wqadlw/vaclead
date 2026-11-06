@@ -8,7 +8,7 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button, Dropdown, Input, Modal, Skeleton, TabPane, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
-import { ArrowLeft, Bell, BellRing, Trash2, UserCheck } from "lucide-react";
+import { ArrowLeft, Bell, BellRing, Phone, Trash2, UserCheck } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { addToCompare, readCompare } from "@/lib/compare";
 import { api } from "@/lib/api";
@@ -67,7 +67,8 @@ function CallResultTag({ result, onChange }: { result: string; onChange: (r: str
       }
     >
       <Tag color={cur.color} type="light" size="small" className="!cursor-pointer">
-        ☎ {cur.label}
+        <Phone size={11} className="mr-1 inline" />
+        {cur.label}
       </Tag>
     </Dropdown>
   );

@@ -408,7 +408,7 @@ export default function OutreachPage() {
             if (p.log) setDispLogs((prev) => [...prev.slice(-100), String(p.log)]);
           } else if (p.type === "done") {
             setDispProgress(100);
-            setDispLogs((prev) => [...prev, p.log ?? "✅ 调度完成"]);
+            setDispLogs((prev) => [...prev, p.log ?? "调度完成"]);
             es.close();
             setDispTaskId(null);
             setDispStarting(false);
@@ -419,7 +419,7 @@ export default function OutreachPage() {
             setDispTaskId(null);
             setDispStarting(false);
           } else if (p.type === "error") {
-            setDispLogs((prev) => [...prev, `❌ ${p.message ?? p.log ?? "调度失败"}`]);
+            setDispLogs((prev) => [...prev, `调度失败：${p.message ?? p.log ?? ""}`]);
             es.close();
             setDispTaskId(null);
             setDispStarting(false);

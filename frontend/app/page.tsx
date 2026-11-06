@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Modal, Table, Tag, Toast } from "@douyinfe/semi-ui";
-import { ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { AreaTrend, BarList, DeltaBadge, FunnelBars, ProvinceBars, SparkBars } from "@/components/charts";
 import { api } from "@/lib/api";
@@ -744,8 +744,9 @@ export default function DashboardPage() {
                   (sum.forecast.receivable_due30 ?? 0) > 0) && (
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-[12.5px]">
                     {(sum.forecast.receivable_overdue ?? 0) > 0 && (
-                      <span className="text-[var(--negative)]">
-                        ⚠ 回款逾期{" "}
+                      <span className="inline-flex items-center gap-1 text-[var(--negative)]">
+                        <AlertTriangle size={12} className="shrink-0" />
+                        回款逾期{" "}
                         <span className="font-semibold tabular-nums">
                           {sum.forecast.receivable_overdue!.toLocaleString()} 万
                         </span>

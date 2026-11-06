@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Button, Input, Select, Tag, Toast } from "@douyinfe/semi-ui";
-import { Bell, Search, UserPlus } from "lucide-react";
+import { Bell, Crosshair, Search, Sprout, Target, UserPlus } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
 import { INDUSTRY_OPTIONS } from "@/lib/constants";
@@ -133,7 +133,8 @@ export default function SignalsPage() {
           }`}
           title="招标公告/竞争性磋商/谈判——采购正在发生，行动窗口"
         >
-          🎯 招标中 · 行动窗口
+          <Target size={12} className="mr-1 inline" />
+          招标中 · 行动窗口
         </button>
         <button
           onClick={toggleProposal}
@@ -144,7 +145,8 @@ export default function SignalsPage() {
           }`}
           title="项目备案公示——扩张前兆，比招标早 1-3 个月（培育线索）"
         >
-          🌱 拟建·备案
+          <Sprout size={12} className="mr-1 inline" />
+          拟建·备案
         </button>
         <button
           onClick={toggleCompetitor}
@@ -155,7 +157,8 @@ export default function SignalsPage() {
           }`}
           title="竞对（设备制造商）中标动态——他们刚拿下谁的订单"
         >
-          🎯 竞对中标动态
+          <Crosshair size={12} className="mr-1 inline" />
+          竞对中标动态
         </button>
       </div>
       {/* 筛选条 */}

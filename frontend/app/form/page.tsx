@@ -8,6 +8,7 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button, Input, Toast } from "@douyinfe/semi-ui";
+import { CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api";
 
 const inputCls =
@@ -53,7 +54,7 @@ function CaptureForm() {
   if (done) {
     return (
       <div className="p-12 text-center">
-        <div className="text-[40px]">✓</div>
+        <CheckCircle2 size={44} className="mx-auto text-[#1b6c80]" strokeWidth={1.6} />
         <h2 className="mt-2 text-[18px] font-medium text-[#1b2a33]">提交成功</h2>
         <p className="mt-2 text-[14px] text-slate-500">我们已收到您的需求，会尽快与您联系。</p>
       </div>
