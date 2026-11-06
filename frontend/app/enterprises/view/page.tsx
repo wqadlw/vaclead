@@ -11,7 +11,7 @@ import { Button, Dropdown, Input, Modal, Skeleton, TabPane, Tabs, Tag, Toast } f
 import { ArrowLeft, Bell, BellRing, Phone, Trash2, UserCheck } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { addToCompare, readCompare } from "@/lib/compare";
-import { api } from "@/lib/api";
+import { api, getToken } from "@/lib/api";
 import type { Enterprise } from "@/lib/api";
 
 interface GraphEdge {
@@ -397,6 +397,7 @@ function IntelInner() {
                   load_factor: roiForm.load_factor,
                   price_per_kwh: roiForm.price_per_kwh,
                   saving_pct: roiForm.saving_pct,
+                  token: getToken(), // 新开页无 localStorage API 包装——AI1 的 ?token= 回退
                 });
                 window.open(`/api/proposal/print?${qs}`, "_blank");
               }}
