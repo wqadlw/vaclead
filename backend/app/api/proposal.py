@@ -204,13 +204,13 @@ ol.cases{{padding-left:20px}}ol.cases li{{margin-bottom:4px;font-size:13px}}
 <h2>二、推荐方案</h2>
 {spec_html}
 {cases_html}
-<h2>{sec4}、为什么选择昊志</h2>
+<h2>{sec4}</h2>
 <ul>
 <li><b>官方销售商</b>：昊青气体装备直接授权，原厂备件与质保可追溯</li>
 <li><b>系统搭建能力</b>：按贵司工艺出具选型计算书——选型与工况不匹配是行业最常见痛点，我们不让客户背这个锅</li>
 <li><b>区域响应</b>：本地服务团队，维保响应快于国际品牌（国产体系平均快 30%）</li>
 </ul>
-<h2>{sec5}、下一步</h2>
+<h2>{sec5}</h2>
 <p>安排现场工况勘测（免费）→ 出具正式选型计算书与报价 → 样机试机验证节能数据。</p>
 <p class="note noprint">打印：浏览器 Ctrl+P / 另存为 PDF。参数可在回链调整重算。</p>
 </body></html>"""

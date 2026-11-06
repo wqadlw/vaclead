@@ -7,7 +7,7 @@ import path from "node:path";
 const require2 = createRequire("E:/AAAA/A-xiaosou/vaclead/frontend/package.json");
 const { chromium } = require2("playwright");
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = process.env.SHOT_BASE || "http://127.0.0.1:8000";
 const OUT = "E:/AAAA/A-xiaosou/vaclead/docs/screenshots/readme";
 fs.mkdirSync(OUT, { recursive: true });
 
