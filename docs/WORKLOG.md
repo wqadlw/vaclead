@@ -1913,3 +1913,22 @@ owner 的必须置 None 或显式建用户**。
 （BB3 补：dup-scan 真库执行——871 万对比对、200 对新入复核队列（累计
 5397）、50 对跳过既有——POI/公告/导入多渠道重复已被 SPEC-Q 引擎捕获，
 按复核流程消化。）
+
+
+## 2026-11-07 · W59 · SPEC-BC Linear 学派亮色重制（Agent B，用户选型）
+
+用户对前端设计不满意 → getdesign.md 调研拉三份标杆规范（Linear/Mercury/
+Vercel DESIGN.md）→ AskUserQuestion 三选一 → **用户选 Linear 学派（暗色）**
+→ 用户再明确"我要亮色的" → **Linear 学派亮色重制**（Linear 也有浅色面）。
+**落地**（全在令牌层，页面结构零改动）：
+- 中性灰阶去青色调：ground #f3f6f8(钢青灰)→#f7f8f8(Linear 纯中性)
+- 主色青蓝 #1b6c80 → **薰衣草蓝紫 #5e6ad2**（Linear signature），
+  hover #4f58c0 / weak #eceefc；13 处硬编码 → var(--accent)
+- charts 调色板青蓝系 → 薰衣草渐变六档
+- selection 青蓝 → lavender；暗色块同步 Linear 暗色令牌（#0f1011 系）
+- **标题负字距 -0.011em**（Linear 密排特征，全局 h1/h2/h3）
+**坑**：CSS 插入位置错误（规则插进 html,body 块内部）→ 括号配对检查脚本
+定位；** Jinja 式教训：改 CSS 先跑配对检查再 build**。
+**验证**：build ✓ + E2E 6 ✓ + 演示截图（readme_shots 对 8011 假数据
+服务重截 16 张——应收行/推荐卡/地图全部上新装）。
+**回退**：改 --accent 一行回青蓝。门禁：305 后端 + 7 E2E 全绿。
