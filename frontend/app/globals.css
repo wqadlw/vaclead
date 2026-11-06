@@ -3,41 +3,44 @@
 @tailwind utilities;
 
 /* ============================================================
-   vaclead · framed-sheet 设计系统
-   依据 taste-skill app-screens 规则（seed 910048657）：
-   浅色 L 框架 + 白纸；扁平无阴影；色彩只给数据与品牌标记。
+   vaclead · framed-sheet v2 · Linear 学派亮色重制（SPEC-BC）
+   依据 getdesign.md Linear DESIGN.md（公开可观测模式分析）：
+   纯中性灰阶 + 发丝边框 + 薰衣草蓝紫唯一彩色点缀 + 负字距精排。
+   扁平无阴影；色彩只给数据与品牌标记。回退：改 --accent 一行。
    ============================================================ */
 :root {
-  /* framed-sheet tokens */
-  --ground: #f3f6f8; /* 钢青灰框架底（工业设备的世界色） */
+  /* framed-sheet tokens · Linear light */
+  --ground: #f7f8f8; /* Linear inverse-surface-1（纯中性，去青色调） */
   --surface: #ffffff;
-  --raised: #f4f6f8;
-  --active: #ebedee;
-  --border: #e8eaec;
+  --raised: #f6f7f7;
+  --active: #ececee;
+  --border: #e6e7e9;
   --rule: #f0f1f2;
-  --control: #cdced1;
-  --ink: #131416;
-  --muted: #5d5f60;
-  --accent: #1b6c80;
-  --positive: #1e7b4f;
-  --negative: #c4242a;
+  --control: #c9cbce;
+  --ink: #17181a;
+  --muted: #62666d;
+  --accent: #5e6ad2; /* Linear signature lavender-blue */
+  --accent-hover: #4f58c0;
+  --accent-weak: #eceefc;
+  --positive: #27a644;
+  --negative: #d14343;
   --warning: #92400e;
 
   /* Semi Design 变量对齐 */
-  --semi-color-primary: #1b6c80;
-  --semi-color-primary-hover: #155a6b;
-  --semi-color-primary-active: #114f5e;
-  --semi-color-text-0: #131416;
-  --semi-color-text-1: #131416;
-  --semi-color-text-2: #5d5f60;
-  --semi-color-text-3: #5d5f60;
-  --semi-color-border: #e8eaec;
-  --semi-color-fill-0: rgba(19, 20, 22, 0.04);
-  --semi-color-fill-1: rgba(19, 20, 22, 0.07);
-  --semi-color-fill-2: rgba(19, 20, 22, 0.1);
+  --semi-color-primary: #5e6ad2;
+  --semi-color-primary-hover: #4f58c0;
+  --semi-color-primary-active: #454db3;
+  --semi-color-text-0: #17181a;
+  --semi-color-text-1: #17181a;
+  --semi-color-text-2: #62666d;
+  --semi-color-text-3: #62666d;
+  --semi-color-border: #e6e7e9;
+  --semi-color-fill-0: rgba(23, 24, 26, 0.04);
+  --semi-color-fill-1: rgba(23, 24, 26, 0.07);
+  --semi-color-fill-2: rgba(23, 24, 26, 0.1);
   --semi-color-bg-0: #ffffff;
-  --semi-color-bg-1: #f4f6f8;
-  --semi-color-link: #1b6c80;
+  --semi-color-bg-1: #f6f7f7;
+  --semi-color-link: #5e6ad2;
   --semi-border-radius-small: 4px;
   --semi-border-radius-medium: 6px;
   --semi-border-radius-large: 8px;
@@ -64,32 +67,32 @@
 [data-theme="dark"] {
   --ground: #131416;
   --surface: #1b1c1e;
-  --raised: #1f2124;
-  --active: #26282b;
-  --border: #2b2d30;
-  --rule: #242628;
-  --control: #4a4d50;
-  --ink: #e3e5e7;
-  --muted: #9a9d9f;
-  --accent: #56a8c0;
-  --positive: #52b483;
-  --negative: #e07a80;
+  --raised: #141516;
+  --active: #18191a;
+  --border: #23252a;
+  --rule: #1a1b1d;
+  --control: #34343a;
+  --ink: #f7f8f8;
+  --muted: #8a8f98;
+  --accent: #7b86e8;
+  --positive: #27a644;
+  --negative: #e5484d;
   --warning: #d6a156;
 
-  --semi-color-primary: #56a8c0;
-  --semi-color-primary-hover: #6cb8cd;
-  --semi-color-primary-active: #7fc6d8;
-  --semi-color-text-0: #e3e5e7;
-  --semi-color-text-1: #e3e5e7;
-  --semi-color-text-2: #9a9d9f;
-  --semi-color-text-3: #9a9d9f;
-  --semi-color-border: #2b2d30;
-  --semi-color-fill-0: rgba(227, 229, 231, 0.05);
-  --semi-color-fill-1: rgba(227, 229, 231, 0.09);
-  --semi-color-fill-2: rgba(227, 229, 231, 0.13);
-  --semi-color-bg-0: #1b1c1e;
-  --semi-color-bg-1: #1f2124;
-  --semi-color-link: #56a8c0;
+  --semi-color-primary: #7b86e8;
+  --semi-color-primary-hover: #8b95ee;
+  --semi-color-primary-active: #828fff;
+  --semi-color-text-0: #f7f8f8;
+  --semi-color-text-1: #f7f8f8;
+  --semi-color-text-2: #8a8f98;
+  --semi-color-text-3: #8a8f98;
+  --semi-color-border: #23252a;
+  --semi-color-fill-0: rgba(247, 248, 248, 0.05);
+  --semi-color-fill-1: rgba(247, 248, 248, 0.09);
+  --semi-color-fill-2: rgba(247, 248, 248, 0.13);
+  --semi-color-bg-0: #0f1011;
+  --semi-color-bg-1: #141516;
+  --semi-color-link: #828fff;
 }
 
 html,
@@ -101,9 +104,16 @@ body {
   font-size: 14px;
 }
 
+/* ---- Linear 学派精排：标题负字距（getdesign.md Linear DESIGN.md）---- */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.011em;
+}
+
 ::selection {
-  background: #cfe3e9;
-  color: #0f2e38;
+  background: #dcdffb;
+  color: #23255c;
 }
 
 /* ---- Semi 扁平化覆盖 ---- */
@@ -289,18 +299,18 @@ a {
    全局映射到暗令牌，页面代码无需逐处改类名。 */
 body[theme-mode="dark"],
 html[theme-mode="dark"] {
-  --semi-color-primary: #56a8c0;
-  --semi-color-text-0: #e3e5e7;
-  --semi-color-text-1: #e3e5e7;
-  --semi-color-text-2: #9a9d9f;
-  --semi-color-text-3: #9a9d9f;
-  --semi-color-bg-0: #1b1c1e;
-  --semi-color-bg-1: #1f2124;
-  --semi-color-border: #2b2d30;
-  --semi-color-fill-0: rgba(227, 229, 231, 0.05);
-  --semi-color-fill-1: rgba(227, 229, 231, 0.09);
-  --semi-color-fill-2: rgba(227, 229, 231, 0.13);
-  --semi-color-link: #56a8c0;
+  --semi-color-primary: #7b86e8;
+  --semi-color-text-0: #f7f8f8;
+  --semi-color-text-1: #f7f8f8;
+  --semi-color-text-2: #8a8f98;
+  --semi-color-text-3: #8a8f98;
+  --semi-color-bg-0: #0f1011;
+  --semi-color-bg-1: #141516;
+  --semi-color-border: #23252a;
+  --semi-color-fill-0: rgba(247, 248, 248, 0.05);
+  --semi-color-fill-1: rgba(247, 248, 248, 0.09);
+  --semi-color-fill-2: rgba(247, 248, 248, 0.13);
+  --semi-color-link: #828fff;
 }
 [data-theme="dark"] .bg-white {
   background: var(--surface) !important;

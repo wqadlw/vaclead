@@ -4,7 +4,7 @@
  * 序列触达（SPEC-J J4）：邮件序列编排 + 触达活动 + 发信账户。
  * 上下分区：邮件序列（listmonk 式变量模板）→ 触达活动（入队/启停/立即调度）→ 发信账户。
  * 静态导出：纯 client 页面，无查询参数；API 失败一律空态 + Toast 兜底（后端可后就绪）。
- * framed-sheet：白纸浅框、扁平、无渐变无阴影，主色青蓝 #1b6c80。
+ * framed-sheet：白纸浅框、扁平、无渐变无阴影，主色 #5e6ad2。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {

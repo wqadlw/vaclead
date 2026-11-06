@@ -95,18 +95,6 @@ def test_proposal_print_includes_cases(client, admin_headers):
                                                   "hours_per_day": 16},
                    headers=admin_headers)
     html = r.text
-    import re as _re
-
-    print("\n[AV debug] h2 节:", _re.findall(r"<h2>([^<]+)</h2>", html))
-    with SessionLocal() as s:
-        from app.models import Signal as _S
-
-        print("[AV debug] signal rows:",
-              [(x.id, x.enterprise_id, x.type) for x in s.query(_S).all()])
-        print("[AV debug] ent rows:",
-              [(x.id, x.industry_key, x.deleted_at) for x in s.query(Enterprise).all()])
-    print("[AV debug] eid:", eid, "| ent:", d["items"][0]["name"],
-          "| ind:", d["items"][0].get("id"))
     assert "同行业公开采购案例" in html, "提案应含同行案例节"
     assert "真空泵采购公告" in html
     # 无案例行业 → 节省段自动消失（编号回退）

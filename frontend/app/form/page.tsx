@@ -12,7 +12,7 @@ import { CheckCircle2 } from "lucide-react";
 import { api } from "@/lib/api";
 
 const inputCls =
-  "w-full rounded-md border border-[var(--border,#e2e8f0)] bg-white px-3 py-2 text-[14px] outline-none focus:border-[#1b6c80]";
+  "w-full rounded-md border border-[var(--border,#e2e8f0)] bg-white px-3 py-2 text-[14px] outline-none focus:border-[var(--accent)]";
 
 function CaptureForm() {
   const sp = useSearchParams();
@@ -54,7 +54,7 @@ function CaptureForm() {
   if (done) {
     return (
       <div className="p-12 text-center">
-        <CheckCircle2 size={44} className="mx-auto text-[#1b6c80]" strokeWidth={1.6} />
+        <CheckCircle2 size={44} className="mx-auto text-[var(--accent)]" strokeWidth={1.6} />
         <h2 className="mt-2 text-[18px] font-medium text-[#1b2a33]">提交成功</h2>
         <p className="mt-2 text-[14px] text-slate-500">我们已收到您的需求，会尽快与您联系。</p>
       </div>
@@ -94,7 +94,7 @@ export default function PublicFormPage() {
         <div className="mx-auto max-w-[440px] px-6">
           <div className="rounded-xl border border-[#e2e8f0] bg-white p-8">
             <div className="mb-6 text-center">
-              <div className="text-[13px] font-semibold tracking-[0.2em] text-[#1b6c80]">VACLEAD</div>
+              <div className="text-[13px] font-semibold tracking-[0.2em] text-[var(--accent)]">VACLEAD</div>
               <h1 className="mt-1 text-[20px] font-medium text-[#1b2a33]">真空设备采购咨询</h1>
               <p className="mt-1 text-[13px] text-slate-500">留下需求，我们为您匹配方案与报价</p>
             </div>

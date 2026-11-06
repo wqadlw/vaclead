@@ -2,7 +2,7 @@
  * 客户地图（SPEC-AJ AJ2）：Leaflet + 高德栅格瓦片。
  * POI 坐标（GCJ-02）与高德瓦片同源——零纠偏。
  * ssr:false 动态导入（Leaflet 依赖 window，静态导出必须 client-only）。
- * framed-sheet：白底浅框、青蓝 #1b6c80 主色，无渐变无阴影。
+ * framed-sheet：白底浅框、青蓝 Linear 主色 #5e6ad2，无渐变无阴影。
  */
 "use client";
 
@@ -106,9 +106,9 @@ export default function MapPage() {
             const ratio = cl.phone / Math.max(cl.count, 1);
             const marker = L.circleMarker([cl.lat, cl.lng], {
               radius: 6 + Math.min(18, Math.sqrt(cl.count) * 1.6),
-              color: "#1b6c80",
+              color: "var(--accent)",
               weight: 1.5,
-              fillColor: ratio > 0.4 ? "#1b6c80" : "#8fb8c2",
+              fillColor: ratio > 0.4 ? "#5e6ad2" : "#b9bfe8",
               fillOpacity: 0.45,
             }).addTo(map);
             marker.bindTooltip(`${cl.count} 家 · 电话 ${cl.phone}`, { permanent: false });
@@ -120,16 +120,16 @@ export default function MapPage() {
             if (p.has_phone) phoneCount += 1;
             const marker = L.circleMarker([p.lat, p.lng], {
               radius: p.has_phone ? 5 : 3.5,
-              color: p.has_phone ? "#1b6c80" : "#9aa5a9",
+              color: p.has_phone ? "#5e6ad2" : "#9aa5a9",
               weight: 1,
-              fillColor: p.has_phone ? "#1b6c80" : "#e8ecee",
+              fillColor: p.has_phone ? "#5e6ad2" : "#e8ecee",
               fillOpacity: p.has_phone ? 0.85 : 0.6,
             }).addTo(map);
             marker.bindPopup(
               `<div style="font-size:13px;min-width:180px">
                  <b>${p.name}</b><br/>
                  <span style="color:#6b7175">${p.industry_name ?? "未分类"} · ${p.district ?? p.city ?? ""}</span><br/>
-                 ${p.has_phone ? '<span style="color:#1b6c80">有公开电话</span>' : '<span style="color:#9aa5a9">无公开电话</span>'}<br/>
+                 ${p.has_phone ? '<span style="color:var(--accent)">有公开电话</span>' : '<span style="color:#9aa5a9">无公开电话</span>'}<br/>
                  <a href="/enterprises/view?id=${p.id}" target="_blank" rel="noreferrer">查看详情 →</a>
                </div>`,
             );

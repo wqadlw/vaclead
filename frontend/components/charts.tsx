@@ -129,7 +129,14 @@ export function BarList({
   onPick?: (name: string) => void;
 }) {
   const max = Math.max(...items.map((i) => i.value), 1);
-  const palette = ["var(--accent)", "#5a8fa3", "#89aab6", "#b8c9d1", "#d8e1e5", "#e8edef"];
+  const palette = [
+    "var(--accent)",
+    "#7b86e8",
+    "#9aa3ef",
+    "#b8bdf4",
+    "#d3d6f9",
+    "#e8eafc",
+  ];
   return (
     <div className="space-y-1.5">
       {items.map((it, i) => (

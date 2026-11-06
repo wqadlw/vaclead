@@ -35,8 +35,8 @@ function PrintBody() {
   }
   return (
     <div className="mx-auto max-w-[760px] p-10 print:p-6">
-      <div className="mb-1 flex items-baseline justify-between border-b-2 border-[#1b6c80] pb-3">
-        <h1 className="text-[22px] font-semibold text-[#1b6c80]">报价单</h1>
+      <div className="mb-1 flex items-baseline justify-between border-b-2 border-[var(--accent)] pb-3">
+        <h1 className="text-[22px] font-semibold text-[var(--accent)]">报价单</h1>
         <span className="text-[13px] text-slate-500">编号 QT-{String(data.id).padStart(5, "0")}</span>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 text-[14px]">
@@ -67,7 +67,7 @@ function PrintBody() {
           ))}
         </tbody>
       </table>
-      <div className="mt-4 text-right text-[18px] font-semibold tabular-nums text-[#1b6c80]">
+      <div className="mt-4 text-right text-[18px] font-semibold tabular-nums text-[var(--accent)]">
         合计：{data.total_wan.toLocaleString()} 万元
       </div>
       {data.remark && <div className="mt-4 text-[13px] text-slate-500">备注：{data.remark}</div>}
