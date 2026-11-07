@@ -250,6 +250,8 @@ export default function DashboardPage() {
   const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [sum, setSum] = useState<SummaryData | null>(null);
+  // SPEC-CC 晨检行：三雷达一数首屏快照
+  const [radarStrip, setRadarStrip] = useState<{ competitor_wins_30d: number; proposals_window_now: number; contact_untouched: number } | null>(null);
   const [health, setHealth] = useState<{ next_action?: { hint?: string } } | null>(null);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   // 今日作战清单（SPEC-G G5）：四源合并排序
@@ -266,6 +268,9 @@ export default function DashboardPage() {
       .catch(() => undefined)
       .finally(() => setLoading(false));
     api.get<SummaryData>("/api/dashboard/summary").then(setSum).catch(() => undefined);
+    api.get<{ competitor_wins_30d: number; proposals_window_now: number; contact_untouched: number }>(
+      "/api/dashboard/radar-strip"
+    ).then(setRadarStrip).catch(() => undefined);
     api.get<HealthData2>("/api/health").then(setHealth).catch(() => undefined);
     api.get<{ items: TodoItem[] }>("/api/todos").then((d) => setTodos(d.items)).catch(() => undefined);
     api
@@ -524,6 +529,46 @@ export default function DashboardPage() {
             </a>
           ))}
         </div>
+      )}
+
+      {/* SPEC-CC 晨检行：雷达产出收口 */}
+
+      {radarStrip && (
+
+        <div className="mb-4 grid grid-cols-1 gap-px overflow-hidden rounded-lg bg-[var(--border)] sm:grid-cols-3">
+
+        {([
+
+          { k: "竞对中标（30 天）", v: radarStrip.competitor_wins_30d, unit: "笔", sub: "谁在抢单", href: "/competitors", cls: "text-[var(--negative)]" },
+
+          { k: "拟建正处招标窗口", v: radarStrip.proposals_window_now, unit: "个", sub: "备案后 1-3 个月", href: "/proposals", cls: "text-[#c2801b]" },
+
+          { k: "未触达联系人", v: radarStrip.contact_untouched, unit: "人", sub: "可拨未拨", href: "/contacts", cls: "text-[var(--ink)]" },
+
+        ] as { k: string; v: number; unit: string; sub: string; href: string; cls: string }[]).map((c) => (
+
+          <a key={c.k} href={c.href} className="flex items-center justify-between bg-white px-4 py-3 transition-colors hover:bg-[var(--raised)]">
+
+            <div>
+
+              <div className="text-[11.5px] text-[var(--muted)]">{c.k}</div>
+
+              <div className={"mt-0.5 text-[20px] font-medium tabular-nums " + c.cls}>
+
+                {c.v} <span className="text-[12px] font-normal text-[var(--muted)]">{c.unit}</span>
+
+              </div>
+
+            </div>
+
+            <span className="text-[11.5px] text-[var(--muted)]">{c.sub} →</span>
+
+          </a>
+
+        ))}
+
+        </div>
+
       )}
 
       {/* KPI 环比条（tremor 模式：值 + Delta 徽标 + 迷你趋势） */}

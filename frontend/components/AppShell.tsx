@@ -119,6 +119,20 @@ function NotificationBell() {
               </button>
             </span>
           </Dropdown.Item>
+          <Dropdown.Item disabled>
+            <span className="flex items-center justify-between">
+              <span className="text-[11.5px] text-[var(--muted)]">未读 {unread}</span>
+              <button
+                className="border-0 bg-transparent p-0 text-[12px] text-[var(--accent)] cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.location.href = "/notifications";
+                }}
+              >
+                查看全部 →
+              </button>
+            </span>
+          </Dropdown.Item>
           <Dropdown.Divider />
           {items.length === 0 && (
             <Dropdown.Item disabled>暂无动态 —— 在企业详情点「关注此企业」后，新中标/新公告会推到这里</Dropdown.Item>

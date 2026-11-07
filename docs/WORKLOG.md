@@ -2199,3 +2199,13 @@ join 必须 aliased（ambiguous column）；Mimosa 源码 Bash 直写被拦改
 ②**E2E 服务的旧 out/ 假阳性**——改前端必须先 build 再跑 E2E（本轮
 mobile 首败即此因，桌面 7 绿是旧产物造成的错觉）。后端零改动。
 **门禁**：build + E2E 8（含移动）全绿。
+
+
+## 2026-11-07 · W59 · SPEC-CC 通知中心与晨检行轮（Agent B）
+
+三雷达产出的首屏收口。**通知中心页**：零新端点（既有 list/已读/全读
+全复用），ref_type→路由映射跳转，铃铛加「查看全部」。**晨检行**：
+radar-strip 端点（全员口径）+工作台首屏三格横条（竞对中标红/招标
+窗口 amber/未触达 neutral 各带直达）。**坑两个**：f-string 嵌 JSX
+花括号转义打架（普通字符串逐行拼接绕行）；铃铛组件作用域无 router
+（location.href）。**门禁**：pytest 333 + build + E2E 8 全绿。

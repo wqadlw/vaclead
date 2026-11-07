@@ -386,6 +386,60 @@ def _json_loads(raw: str) -> dict:
     return _json.loads(raw or "{}")
 
 
+@router.get("/dashboard/radar-strip")
+def radar_strip(
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """工作台晨检行（SPEC-CC CC2）：三雷达一数的首屏快照（全员口径）。"""
+    from datetime import date, timedelta as _td
+
+    from ..phones import load_phones
+
+    today = date.today()
+    d30 = (today - _td(days=30)).isoformat()
+    dwin_lo = (today - _td(days=90)).isoformat()
+    dwin_hi = (today - _td(days=30)).isoformat()
+
+    competitor_wins = (
+        session.query(Signal)
+        .join(Enterprise, Enterprise.id == Signal.enterprise_id)
+        .filter(
+            Signal.type == "tender_win",
+            Enterprise.is_competitor == 1,
+            Enterprise.deleted_at.is_(None),
+            Signal.created_at >= d30,
+        )
+        .count()
+    )
+    pub_rows = (
+        session.query(Signal.pub_date)
+        .join(Enterprise, Enterprise.id == Signal.enterprise_id)
+        .filter(Signal.type == "proposal", Enterprise.deleted_at.is_(None))
+        .limit(5000)
+        .all()
+    )
+    window_now = sum(
+        1 for (d,) in pub_rows if dwin_lo <= (d or "")[:10] <= dwin_hi
+    )
+    pairs = (
+        session.query(Contact.phones_json, Contact.call_result)
+        .join(Enterprise, Enterprise.id == Contact.enterprise_id)
+        .filter(Enterprise.deleted_at.is_(None))
+        .all()
+    )
+    untouched = sum(
+        1
+        for pj, cr in pairs
+        if load_phones(pj) and cr in (None, "pending")
+    )
+    return {
+        "competitor_wins_30d": competitor_wins,
+        "proposals_window_now": window_now,
+        "contact_untouched": untouched,
+    }
+
+
 @router.get("/dashboard/my-day")
 def my_day(
     session: Session = Depends(get_session),
