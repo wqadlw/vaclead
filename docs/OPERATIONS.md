@@ -63,6 +63,16 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 新增定时任务必须走 `_register_cron`，需要 DB 会话的写成自开 SessionLocal 的零参 sweep。
 
 水位查询：`SELECT * FROM sync_watermark`（失败任务 last_status=failed + stats）。
+
+**SPEC-BV 体检增补（2026-11-07）**：
+①水位名必须等于 cron 注册名（_register_cron 第一参数）——曾发生
+owner_signal 注册名与 jobs 读名错位，游标冻结在手动基线、每 30 分钟
+全量重扫（去重兜底未出重复但空转）。新增任务时三处同名：注册名/
+jobs 读名/测试 wrapper 名。
+②看门狗与全部 cron 的前提是**服务进程存活**——2026-11-07 晨 02:00-08:40
+服务未运行，当日 04-06 点日批（gd/hb/backup/watchdog）全部缺席且无法
+自愈。建议：用户把 `启动.bat` 加入开机启动（或任务计划程序每日开机拉起）。
+③新增日内任务四拍错峰：:06 订阅 / :12 竞对 / :30 老户 / :40 轻扫。
 启动补增量：距上次 >26h 或从未跑过（且有数据）→ 后台自动补一轮 daily_incremental（G4）。
 
 ## 4. 备份与恢复

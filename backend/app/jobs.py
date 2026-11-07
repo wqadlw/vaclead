@@ -808,7 +808,8 @@ def owner_signal_sweep() -> dict:
     正文=信号标题+企业名+证据句截断（BM2：不含手机号明文——联系人
     数据在详情页，通知只导流）。
 
-    游标：sync_watermark 'owner_signal_sweep' 的
+    游标：sync_watermark 'owner_signal'（与 cron 注册名一致——体检曾发现
+    读旧名致游标冻结在手动基线，每 30 分钟全量重扫靠去重兜底）的
     stats_json.last_signal_id（_run_job_with_watermark 将返回 dict 写入
     stats）。首跑无水位行 → 基线模式（只记游标不轰炸存量）；失败轮
     游标丢失 → 全量重扫，Notification 唯一约束预查去重，幂等。
@@ -820,7 +821,7 @@ def owner_signal_sweep() -> dict:
     from .notify.channels import notify_dispatch
 
     with SessionLocal() as s:
-        row = s.get(SyncWatermark, "owner_signal_sweep")
+        row = s.get(SyncWatermark, "owner_signal")
         max_id = s.query(func.max(Signal.id)).scalar() or 0
         if row is None:
             # 首跑基线：只记游标，避免对存量信号一次性轰炸

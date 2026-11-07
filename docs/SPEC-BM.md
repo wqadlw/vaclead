@@ -16,7 +16,7 @@
 - 正文 = 信号标题 + 企业名 + 证据句（evidence_claim 截断）
 - **去重**：Notification 唯一约束 (ref_type='owner_signal', ref_id=signal.id,
   user_id=owner) 预查——重扫/多负责人各推一条
-- 水位：sync_watermark 'owner_signal_sweep'（与 daily_incremental 同模式）
+- 水位：sync_watermark 'owner_signal'（=cron 注册名；BV 体检修正旧名错位）
 
 ## BM2 附带修正
 

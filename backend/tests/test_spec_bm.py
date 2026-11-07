@@ -40,9 +40,9 @@ def _isolate_rows():
     with SessionLocal() as s:
         for m in _ISOLATED_MODELS:
             s.query(m).filter(m.id > snap[m.__tablename__]).delete()
-        # 水位表主键是 job_name（非 id）：只清本模块水位，防污染其他模块断言
+        # 水位表主键是 job_name（非 id）：只清本模块水位（注册名=水位名 owner_signal）
         s.query(SyncWatermark).filter(
-            SyncWatermark.job_name == "owner_signal_sweep"
+            SyncWatermark.job_name == "owner_signal"
         ).delete()
         s.commit()
 
@@ -51,9 +51,9 @@ def _run_sweep() -> dict:
     """生产同款路径：_run_job_with_watermark 执行 + 落水位。"""
     from app.main import _run_job_with_watermark
 
-    _run_job_with_watermark("owner_signal_sweep", owner_signal_sweep)
+    _run_job_with_watermark("owner_signal", owner_signal_sweep)  # 注册名=水位名（BV 体检修）
     with SessionLocal() as s:
-        row = s.get(SyncWatermark, "owner_signal_sweep")
+        row = s.get(SyncWatermark, "owner_signal")
         return {"status": row.last_status, **json.loads(row.stats_json or "{}")}
 
 
@@ -69,7 +69,7 @@ def test_bm1_baseline_no_flood():
     """首跑无水位 → 基线模式：不推任何通知，只记游标。"""
     with SessionLocal() as s:
         s.query(SyncWatermark).filter(
-            SyncWatermark.job_name == "owner_signal_sweep"
+            SyncWatermark.job_name == "owner_signal"
         ).delete()
         s.commit()
     before = _count_owner_signal()
@@ -190,7 +190,7 @@ def test_bm1_idempotent_and_cursor_recovery():
 
     # 3) 模拟失败轮：stats 被错误覆盖丢游标 → 全量重扫仍无重复
     with SessionLocal() as s:
-        row = s.get(SyncWatermark, "owner_signal_sweep")
+        row = s.get(SyncWatermark, "owner_signal")
         row.stats_json = json.dumps({"error": "boom"})
         s.commit()
     stats = _run_sweep()
