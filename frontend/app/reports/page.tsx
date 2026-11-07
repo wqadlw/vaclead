@@ -75,7 +75,7 @@ function MyWeekSection() {
   }, []);
   if (!data) return null;
   return (
-    <section className="mt-5 rounded-lg border border-[var(--border)] bg-white p-5">
+    <section className="mt-5 rounded-lg border border-[var(--border)] bg-white p-4">
       <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">
         我的周报（{data.owner}）
       </h2>
@@ -188,7 +188,7 @@ export default function ReportsPage() {
           </div>
 
           {/* 漏斗 */}
-          <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+          <section className="rounded-lg border border-[var(--border)] bg-white p-4">
             <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">线索漏斗（本周动静）</h2>
             <div className="space-y-2">
               {report.funnel.map((f) => (
@@ -209,7 +209,7 @@ export default function ReportsPage() {
 
           {/* Top 两表 */}
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-            <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+            <section className="rounded-lg border border-[var(--border)] bg-white p-4">
               <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">Top 标讯</h2>
               <Table
                 size="small"
@@ -226,11 +226,11 @@ export default function ReportsPage() {
               />
             </section>
             {/* SPEC-X X2：来源转化对比（first-touch 快照） */}
-            <section className="rounded-lg border border-[var(--border)] bg-white p-5 xl:col-span-2">
+            <section className="rounded-lg border border-[var(--border)] bg-white p-4 xl:col-span-2">
               <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">来源转化对比</h2>
               <SourceRoiTable />
             </section>
-            <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+            <section className="rounded-lg border border-[var(--border)] bg-white p-4">
               <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">Top 新客户（综合分）</h2>
               <Table
                 size="small"

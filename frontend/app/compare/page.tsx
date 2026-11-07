@@ -198,7 +198,7 @@ export default function ComparePage() {
         <h1 className="text-[17px] font-semibold text-[var(--ink)]">企业对比</h1>
         <span className="text-[12px] text-[var(--muted)]">最多 4 家 · 最优值高亮 · 链接可分享</span>
       </div>
-      <div className="rounded-xl border border-[var(--border)] bg-white p-5">
+      <div className="rounded-xl border border-[var(--border)] bg-white p-4">
         <Suspense fallback={<Skeleton placeholder={<Skeleton.Paragraph rows={6} />} loading active />}>
           <CompareBody />
         </Suspense>

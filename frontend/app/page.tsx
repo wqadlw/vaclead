@@ -158,7 +158,7 @@ function LeaderboardCard() {
       : `${Number(month.slice(0, 4))}年${Number(month.slice(5, 7))}月业绩榜`;
 
   return (
-    <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+    <section className="rounded-lg border border-[var(--border)] bg-white p-4">
       <div className="mb-2 flex items-baseline justify-between">
         <h2 className="text-[15px] font-medium text-[var(--ink)]">{cardTitle}</h2>
         <div className="flex items-center gap-0.5">
@@ -511,7 +511,7 @@ export default function DashboardPage() {
             <a
               key={s.step}
               href={s.href}
-              className="group rounded-xl border border-[var(--border)] bg-white p-5 transition-colors hover:border-[var(--accent)]"
+              className="group rounded-xl border border-[var(--border)] bg-white p-4 transition-colors hover:border-[var(--accent)]"
             >
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent)] text-[13px] font-medium text-white">
                 {s.step}
@@ -556,7 +556,7 @@ export default function DashboardPage() {
 
       {/* SPEC-AL 今日推荐：可触达性×采购信号的可解释排序 */}
       {vis("recs") && (
-      <section className="mt-5 rounded-lg border border-[var(--border)] bg-white p-5">
+      <section className="mt-5 rounded-lg border border-[var(--border)] bg-white p-4">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="text-[15px] font-medium text-[var(--ink)]">今日推荐 · 先打给谁</h2>
           <span className="text-[12px] text-[var(--muted)]">
@@ -640,7 +640,7 @@ export default function DashboardPage() {
       {/* 主趋势 + 右列（漏斗/来源） */}
       <div className="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
         {vis("trend") && (
-        <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+        <section className="rounded-lg border border-[var(--border)] bg-white p-4">
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="text-[15px] font-medium text-[var(--ink)]">信号趋势 · 近 30 天</h2>
             <span className="text-[12px] text-[var(--muted)]">
@@ -654,7 +654,7 @@ export default function DashboardPage() {
         <div className={`space-y-5 ${vis("trend") ? "" : "xl:col-start-2"}`}>
         {vis("analytics") && (<>
           {/* SPEC-X X3：跟进健康度 */}
-          <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+          <section className="rounded-lg border border-[var(--border)] bg-white p-4">
             <div className="mb-3 flex items-baseline justify-between">
               <h2 className="text-[15px] font-medium text-[var(--ink)]">跟进健康度</h2>
               <span className="text-[12px] text-[var(--muted)]">活跃线索超期未跟进</span>
@@ -691,7 +691,7 @@ export default function DashboardPage() {
             )}
           </section>
           {/* SPEC-J J6：加权管道预测（espocrm Forecasts 思想） */}
-          <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+          <section className="rounded-lg border border-[var(--border)] bg-white p-4">
             <div className="mb-3 flex items-baseline justify-between">
               <h2 className="text-[15px] font-medium text-[var(--ink)]">本月加权预测</h2>
               <span className="text-[12px] text-[var(--muted)]">Σ 金额×赢率</span>
@@ -771,7 +771,7 @@ export default function DashboardPage() {
           </section>
           {/* SPEC-N N4 本月业绩榜 */}
           <LeaderboardCard />
-          <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+          <section className="rounded-lg border border-[var(--border)] bg-white p-4">
             <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">线索漏斗</h2>
             <FunnelBars
               items={sum?.funnel ?? []}
@@ -781,14 +781,14 @@ export default function DashboardPage() {
               }}
             />
           </section>
-          <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+          <section className="rounded-lg border border-[var(--border)] bg-white p-4">
             <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">客户省份分布</h2>
             <ProvinceBars
               items={sum?.geo ?? []}
               onPick={(province) => router.push(`/enterprises?province=${encodeURIComponent(province)}`)}
             />
           </section>
-          <section className="rounded-lg border border-[var(--border)] bg-white p-5">
+          <section className="rounded-lg border border-[var(--border)] bg-white p-4">
             <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">企业来源分布</h2>
             <BarList
               items={(sum?.sources ?? []).map((s) => ({

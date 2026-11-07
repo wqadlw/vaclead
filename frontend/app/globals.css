@@ -65,12 +65,12 @@
    灰阶取自 twenty gray dark 值（gray1=0.09 基底 / gray8=0.4 控件），
    品牌青蓝在暗底提亮保证对比度；framed-sheet 结构不变。 */
 [data-theme="dark"] {
-  --ground: #131416;
-  --surface: #1b1c1e;
+  --ground: #010102; /* Linear canvas（DESIGN.md：带一丝蓝调的近黑，刻意为之） */
+  --surface: #0f1011;
   --raised: #141516;
   --active: #18191a;
   --border: #23252a;
-  --rule: #1a1b1d;
+  --rule: #141516;
   --control: #34343a;
   --ink: #f7f8f8;
   --muted: #8a8f98;
@@ -102,18 +102,65 @@ body {
   font-family: "IBM Plex Sans", -apple-system, "Segoe UI", "PingFang SC",
     "Microsoft YaHei", sans-serif;
   font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* ---- Linear 学派精排：标题负字距（getdesign.md Linear DESIGN.md）---- */
+/* ---- Linear 学派精排：标题负字距（-0.4px@22px ≈ -0.018em；display 抵制 700+）---- */
 h1,
 h2,
 h3 {
-  letter-spacing: -0.011em;
+  letter-spacing: -0.018em;
+  font-weight: 600;
+}
+
+/* ---- 交互态：focus ring = 2px 主色 50%（Linear text-input-focused 规范）---- */
+:focus-visible {
+  outline: 2px solid rgba(94, 106, 210, 0.5);
+  outline-offset: -1px;
+  border-radius: var(--radius-md);
+}
+
+/* ---- 密度：Linear app 紧凑口径（行内边距 10px/表头 500）---- */
+.semi-table-tbody .semi-table-row-cell {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.semi-table-thead .semi-table-row-head {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ---- Semi 组件对齐 Linear 组件规格（button 8px14px/weight500/radius-md）---- */
+.semi-button {
+  font-weight: 500;
+  letter-spacing: 0;
+  border-radius: var(--radius-md);
+}
+.semi-button-primary {
+  box-shadow: none;
+}
+.semi-input-wrapper:focus-within {
+  border-color: rgba(94, 106, 210, 0.5);
+  box-shadow: 0 0 0 2px rgba(94, 106, 210, 0.25);
+}
+
+/* ---- 细滚动条（亮暗通用，8px）---- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--control);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 ::selection {
-  background: #dcdffb;
-  color: #23255c;
+  background: rgba(94, 106, 210, 0.25);
+  color: var(--ink);
 }
 
 /* ---- Semi 扁平化覆盖 ---- */
