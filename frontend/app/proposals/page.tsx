@@ -57,6 +57,10 @@ export default function ProposalsPage() {
   const [converting, setConverting] = useState<number | null>(null);
 
   const [visibleCount, setVisibleCount] = useState(30);
+  const [onlyWindow, setOnlyWindow] = useState(false);
+  const today = new Date().toISOString().slice(0, 10);
+  const d90 = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+  const d30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
   const load = useCallback(() => {
     const p = new URLSearchParams({ days: String(days), limit: "100" });
@@ -106,6 +110,12 @@ export default function ProposalsPage() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
 
+  // SPEC-CF：客户端窗口过滤 + 分页切片（后端已按省份/天数/关键词过滤）
+  const filtered = (data?.items ?? []).filter(
+    (s) => !onlyWindow || (s.pub_date >= d90 && s.pub_date <= d30)
+  );
+  const paged = filtered.slice(0, visibleCount);
+
   return (
     <AppShell>
       {/* KPI 晨检卡 */}
@@ -126,110 +136,109 @@ export default function ProposalsPage() {
         ))}
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* 省份分布 */}
-        <div className="rounded-lg border border-[var(--border)] bg-white p-4 lg:col-span-1">
-          <div className="mb-2 text-[13.5px] font-medium text-[var(--ink)]">备案省份分布</div>
-          {provinceItems.length > 0 ? (
-            <ProvinceBars
-              items={provinceItems}
-              onPick={(p) => { setProvince(province === p ? "" : p); }}
-            />
-          ) : (
-            <div className="py-8 text-center text-[12.5px] text-[var(--muted)]">暂无数据</div>
-          )}
-        </div>
+      {/* SPEC-CF 重构：全宽紧凑列表——省份 chips 行 + 仅窗口内开关 + 单行式卡片 */}
+      {/* 工具条 */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Input
+          size="small"
+          placeholder="搜单位/项目名"
+          value={q}
+          onChange={setQ}
+          showClear
+          className="!w-52"
+        />
+        <Select value={province || undefined} placeholder="全部省份" showClear onChange={(v) => setProvince(String(v ?? ""))} className="!w-28">
+          {provinceItems.map((p) => (
+            <Select.Option key={p.province} value={p.province}>{p.province} ({p.count})</Select.Option>
+          ))}
+        </Select>
+        <Select value={String(days)} onChange={(v) => setDays(Number(v))} className="!w-28">
+          <Select.Option value="30">近 30 天</Select.Option>
+          <Select.Option value="90">近 90 天</Select.Option>
+          <Select.Option value="365">近 1 年</Select.Option>
+          <Select.Option value="0">全部</Select.Option>
+        </Select>
+        <button
+          onClick={() => setOnlyWindow(!onlyWindow)}
+          className={`rounded-full border px-3 py-1 text-[12px] ${
+            onlyWindow
+              ? "border-[#c2801b] bg-[#c2801b] text-white"
+              : "border-[var(--border)] bg-white text-[var(--muted)]"
+          }`}
+          title="备案后 1-3 个月 = 招标前夜，优先看这批"
+        >
+          仅看正处招标窗口
+        </button>
+        <span className="ml-auto text-[12.5px] text-[var(--muted)]">
+          共 {filtered.length ?? 0} 条{onlyWindow ? "（窗口内）" : ""}
+        </span>
+      </div>
 
-        {/* 列表 */}
-        <div className="lg:col-span-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="flex items-center gap-1.5 text-[13.5px] font-medium text-[var(--ink)]">
-              <Sprout size={15} /> 备案动态
-            </span>
-            <Input
-              size="small"
-              placeholder="搜单位/项目名"
-              value={q}
-              onChange={setQ}
-              showClear
-              className="!w-48"
-            />
-            <Select value={province || undefined} placeholder="全部省份" showClear onChange={(v) => setProvince(String(v ?? ""))} className="!w-32">
-              {provinceItems.map((p) => (
-                <Select.Option key={p.province} value={p.province}>{p.province} ({p.count})</Select.Option>
-              ))}
-            </Select>
-            <Select value={String(days)} onChange={(v) => setDays(Number(v))} className="!w-28">
-              <Select.Option value="30">近 30 天</Select.Option>
-              <Select.Option value="90">近 90 天</Select.Option>
-              <Select.Option value="365">近 1 年</Select.Option>
-              <Select.Option value="0">全部</Select.Option>
-            </Select>
-            <span className="ml-auto text-[12.5px] text-[var(--muted)]">共 {data?.total ?? 0} 条</span>
-          </div>
+      {/* 省份 chips（点击筛选，横向一行不占竖空间） */}
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+        {provinceItems.map((p) => (
+          <button
+            key={p.province}
+            onClick={() => setProvince(province === p.province ? "" : p.province)}
+            className={`rounded-full border px-2.5 py-0.5 text-[11.5px] ${
+              province === p.province
+                ? "border-[var(--accent)] bg-[var(--accent-weak,rgba(94,106,210,0.1))] text-[var(--accent)]"
+                : "border-[var(--border)] bg-white text-[var(--muted)] hover:border-[var(--accent)]"
+            }`}
+          >
+            {p.province} {p.count}
+          </button>
+        ))}
+      </div>
 
-          <div className="mt-2.5 space-y-2.5">
-            {(data?.items ?? []).slice(0, visibleCount).map((s) => (
-              <div key={s.id} className="rounded-lg border border-[var(--border)] bg-white px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Tag color={(CHANNEL_META[s.channel] ?? CHANNEL_META.hb).color} type="light" size="small">
-                        {(CHANNEL_META[s.channel] ?? CHANNEL_META.hb).label}
-                      </Tag>
-                      <span className="text-[12px] tabular-nums text-[var(--muted)]">{s.pub_date}</span>
-                      {(s.province || s.city) && (
-                        <span className="text-[12px] text-[var(--muted)]">
-                          {[s.province, s.city].filter(Boolean).join(" · ")}
-                        </span>
-                      )}
-                      {s.industry_name && <span className="text-[12px] text-[var(--muted)]">· {s.industry_name}</span>}
-                    </div>
-                    <div className="mt-1 flex items-center gap-1.5">
-                      <a
-                        href={`/enterprises/view?id=${s.enterprise_id}`}
-                        className="truncate text-[14px] font-medium text-[var(--accent)] hover:underline"
-                      >
-                        {s.name}
-                      </a>
-                      {s.url && (
-                        <a href={s.url} target="_blank" rel="noreferrer" className="shrink-0 text-[11.5px] text-[var(--accent)] hover:underline">
-                          原文 ↗
-                        </a>
-                      )}
-                    </div>
-                    {s.project && (
-                      <div className="mt-0.5 border-l-2 border-[var(--accent)] pl-2 text-[12px] leading-4 text-[var(--muted)]">
-                        项目：{s.project}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 flex-col gap-1.5">
-                    <Button size="small" icon={<Sprout size={13} />} loading={nurturing === s.enterprise_id} onClick={() => nurture(s.enterprise_id)}>
-                      培育回访
-                    </Button>
-                    <Button size="small" theme="solid" icon={<UserPlus size={13} />} loading={converting === s.enterprise_id} onClick={() => toLead(s.enterprise_id)}>
-                      转线索
-                    </Button>
-                  </div>
+      {/* 紧凑列表 */}
+      <div className="mt-2.5 overflow-hidden rounded-lg border border-[var(--border)] bg-white">
+        {paged.map((s) => {
+          const inWindow = s.pub_date >= d90 && s.pub_date <= d30;
+          return (
+            <div key={s.id} className="flex items-start gap-3 border-b border-[var(--rule)] px-4 py-2.5 last:border-b-0 hover:bg-[var(--raised)]">
+              <span className="w-[84px] shrink-0 pt-0.5 text-[12px] tabular-nums text-[var(--muted)]">{s.pub_date}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Tag color={(CHANNEL_META[s.channel] ?? CHANNEL_META.hb).color} type="light" size="small">
+                    {(CHANNEL_META[s.channel] ?? CHANNEL_META.hb).label}
+                  </Tag>
+                  {inWindow && <Tag color="amber" type="light" size="small">窗口内</Tag>}
+                  <a href={`/enterprises/view?id=${s.enterprise_id}`} className="truncate text-[13.5px] font-medium text-[var(--ink)] hover:text-[var(--accent)]">
+                    {s.name}
+                  </a>
+                  {s.industry_name && <span className="text-[11.5px] text-[var(--muted)]">{s.industry_name}</span>}
                 </div>
+                {s.project && (
+                  <div className="mt-0.5 truncate text-[12px] text-[var(--muted)]" title={s.project}>
+                    项目：{s.project}
+                  </div>
+                )}
               </div>
-            ))}
-            {(data?.items ?? []).length === 0 && (
-              <div className="py-16 text-center text-[13px] text-[var(--muted)]">
-                当前筛选下暂无备案公示 —— 广东/湖北通道每日 05:00/05:10 自动采集
-              </div>
-            )}
-            {(data?.items ?? []).length > visibleCount && (
-              <div className="py-3 text-center">
-                <Button size="small" onClick={() => setVisibleCount(visibleCount + 50)}>
-                  加载更多（还有 {(data?.items ?? []).length - visibleCount} 条）
+              <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+                <Button size="small" theme="borderless" icon={<Sprout size={13} />} loading={nurturing === s.enterprise_id} onClick={() => nurture(s.enterprise_id)}>
+                  培育
+                </Button>
+                <Button size="small" icon={<UserPlus size={13} />} loading={converting === s.enterprise_id} onClick={() => toLead(s.enterprise_id)}>
+                  转线索
                 </Button>
               </div>
-            )}
+            </div>
+          );
+        })}
+        {paged.length === 0 && (
+          <div className="py-14 text-center text-[13px] text-[var(--muted)]">
+            {onlyWindow ? "窗口内暂无备案 —— 切回全部时间范围看看" : "当前筛选下暂无备案公示 —— 四省通道每日清晨自动采集"}
           </div>
-        </div>
+        )}
       </div>
+      {filtered.length > visibleCount && (
+        <div className="py-3 text-center">
+          <Button size="small" onClick={() => setVisibleCount(visibleCount + 50)}>
+            加载更多（还有 {filtered.length - visibleCount} 条）
+          </Button>
+        </div>
+      )}
     </AppShell>
   );
 }
