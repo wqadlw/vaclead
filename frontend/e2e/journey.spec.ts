@@ -25,7 +25,7 @@ test("完整销售旅程", async ({ page }) => {
   await login(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "工作台" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "今日作战" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "今日行动" })).toBeVisible();
 
   // 2) 企业页 → 快捷筛选"有联系电话"（seed：2 家有联系人，1 家没有）
   await page.goto("/enterprises");

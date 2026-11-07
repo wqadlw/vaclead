@@ -324,9 +324,7 @@ export default function DashboardPage() {
     { key: "recs", label: "今日推荐" },
     { key: "trend", label: "信号趋势" },
     { key: "analytics", label: "分析列（健康度/预测/漏斗/分布）" },
-    { key: "battle", label: "今日作战" },
-    { key: "todos", label: "我的待办" },
-    { key: "followups", label: "待跟进事项" },
+    { key: "battle", label: "今日行动" },
     { key: "signals", label: "最新信号" },
   ];
   const [dashHidden, setDashHidden] = useState<string[]>([]);
@@ -693,6 +691,69 @@ export default function DashboardPage() {
       </section>
       )}
 
+
+      {/* 今日行动（SPEC-CG CG1：my-day 优先级清单 + 待办勾选 + 快速添加——三清单合一） */}
+          {vis("battle") && (<>
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-[15px] font-medium text-[var(--ink)]">今日行动</h2>
+            <span className="text-[12px] text-[var(--muted)]">
+              {myDay.length > 0 ? `${myDay.length} 项待处理` : "今天没有必须处理的事"}
+            </span>
+          </div>
+          <div className="mb-2 flex gap-2">
+            <input
+              value={newTodo}
+              onChange={(e) => setNewTodo(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void addTodo();
+              }}
+              placeholder="记一件事，如：周三前回访北大设备处…"
+              className="h-8 flex-1 rounded-lg border border-[var(--border)] bg-white px-3 text-[13px] outline-none focus:border-[var(--accent)]"
+            />
+            <Button size="small" theme="outline" onClick={() => void addTodo()}>
+              添加
+            </Button>
+          </div>
+          {myDay.length > 0 ? (
+            <div className="mb-3 space-y-1.5">
+              {myDay.slice(0, 12).map((m) => (
+                <div
+                  key={`${m.kind}-${m.id}`}
+                  className="flex items-center gap-2.5 rounded-lg border border-[var(--border)] bg-white px-3 py-2"
+                >
+                  {(m.kind === "overdue_todo" || m.kind === "due_today") && (
+                    <input
+                      type="checkbox"
+                      checked={false}
+                      onChange={() => void toggleTodo(m.id)}
+                      className="h-4 w-4 shrink-0 cursor-pointer accent-[var(--accent)]"
+                    />
+                  )}
+                  <span
+                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10.5px] font-medium ${
+                      m.priority === 0
+                        ? "bg-[color:var(--negative)]/10 text-[var(--negative)]"
+                        : m.priority === 1
+                          ? "bg-[color:var(--accent)]/10 text-[var(--accent)]"
+                          : "bg-[var(--raised)] text-[var(--muted)]"
+                    }`}
+                  >
+                    {{ overdue_todo: "逾期", due_today: "今日", upcoming_todo: "后续", stale_intent: "久未跟", fresh_lead: "新线索", rule_hits: "自动化", due_soon_followup: "该回访" }[m.kind] ?? m.kind}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--ink)]" title={m.title}>
+                    {m.title}
+                  </span>
+                  <span className="shrink-0 text-[11.5px] text-[var(--muted)]">{m.hint}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mb-3 rounded-lg border border-dashed border-[var(--border)] px-4 py-6 text-center text-[12.5px] text-[var(--muted)]">
+              今天没有必须处理的事 —— 打几个「今日推荐」里的电话，或在上面记一件事
+            </div>
+          )}
+          </>)}
+
       {/* 主趋势 + 右列（漏斗/来源） */}
       <div className="mt-5 grid grid-cols-1 items-start gap-6 xl:grid-cols-[1fr_360px]">
         {vis("trend") && (
@@ -864,143 +925,8 @@ export default function DashboardPage() {
       {/* 待跟进 + 最新信号 */}
       <div className="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
         <div>
-          {/* 今日作战清单（SPEC-G G5：四源合并——逾期/到期/久未跟/高分新线索/规则命中） */}
-          {vis("battle") && (<>
-          <div className="mb-2 flex items-baseline justify-between">
-            <h2 className="text-[15px] font-medium text-[var(--ink)]">今日作战</h2>
-            <span className="text-[12px] text-[var(--muted)]">
-              {myDay.length > 0 ? `${myDay.length} 项待处理` : "今天没有必须处理的事"}
-            </span>
-          </div>
-          {myDay.length > 0 && (
-            <div className="mb-3 space-y-1.5">
-              {myDay.slice(0, 6).map((m) => (
-                <div
-                  key={`${m.kind}-${m.id}`}
-                  className="flex items-center gap-2.5 rounded-lg border border-[var(--border)] bg-white px-3 py-2"
-                >
-                  <span
-                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10.5px] font-medium ${
-                      m.priority === 0
-                        ? "bg-[color:var(--negative)]/10 text-[var(--negative)]"
-                        : m.priority === 1
-                          ? "bg-[color:var(--accent)]/10 text-[var(--accent)]"
-                          : "bg-[var(--raised)] text-[var(--muted)]"
-                    }`}
-                  >
-                    {{ overdue_todo: "逾期", due_today: "今日", stale_intent: "久未跟", fresh_lead: "新线索", rule_hits: "自动化" }[m.kind] ?? m.kind}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--ink)]" title={m.title}>
-                    {m.title}
-                  </span>
-                  <span className="shrink-0 text-[11.5px] text-[var(--muted)]">{m.hint}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          </>)}
 
-          {vis("todos") && (<>
-          <div className="mb-2 flex items-baseline justify-between">
-            <h2 className="text-[15px] font-medium text-[var(--ink)]">我的待办</h2>
-            <span className="text-[12px] text-[var(--muted)]">
-              {overdue.length > 0 && (
-                <span className="mr-2 text-[var(--negative)]">逾期 {overdue.length}</span>
-              )}
-              {dueToday.length > 0 && <span className="mr-2">今日 {dueToday.length}</span>}
-              后续 {upcoming.length}
-            </span>
-          </div>
-          <div className="mb-2 flex gap-2">
-            <input
-              value={newTodo}
-              onChange={(e) => setNewTodo(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void addTodo();
-              }}
-              placeholder="新增待办，如：周三前回访北大设备处…"
-              className="h-8 flex-1 rounded-lg border border-[var(--border)] bg-white px-3 text-[13px] outline-none focus:border-[var(--accent)]"
-            />
-            <Button size="small" theme="outline" onClick={() => void addTodo()}>
-              添加
-            </Button>
-          </div>
-          <div className="mb-5 max-h-[300px] space-y-1.5 overflow-auto">
-            {openTodos.length === 0 && (
-              <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-6 text-center text-[12.5px] text-[var(--muted)]">
-                暂无待办 —— 自动化规则「自动建待办」会在这里出现
-              </div>
-            )}
-            {[...overdue, ...dueToday, ...upcoming].slice(0, 12).map((t) => (
-              <div
-                key={t.id}
-                className="flex items-center gap-2.5 rounded-lg border border-[var(--border)] bg-white px-3 py-2"
-              >
-                <input
-                  type="checkbox"
-                  checked={false}
-                  onChange={() => void toggleTodo(t.id)}
-                  className="h-4 w-4 cursor-pointer accent-[var(--accent)]"
-                />
-                <span className="min-w-0 flex-1 truncate text-[13px] text-[var(--ink)]" title={t.title}>
-                  {t.title}
-                </span>
-                {t.source === "automation" && (
-                  <span className="shrink-0 rounded bg-[color:var(--accent)]/10 px-1.5 py-0.5 text-[10.5px] text-[var(--accent)]">
-                    自动
-                  </span>
-                )}
-                {t.due_date && (
-                  <span
-                    className={`shrink-0 text-[11.5px] tabular-nums ${
-                      t.due_date < todayStr ? "font-medium text-[var(--negative)]" : "text-[var(--muted)]"
-                    }`}
-                  >
-                    {t.due_date.slice(5)}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-          </>)}
 
-          {vis("followups") && (<>
-          <div className="mb-2 flex items-baseline justify-between">
-            <h2 className="text-[15px] font-medium text-[var(--ink)]">待跟进事项</h2>
-            <button
-              onClick={() => router.push("/leads")}
-              className="flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-[13px] text-[var(--accent)] hover:underline"
-            >
-              全部线索 <ArrowRight size={12} />
-            </button>
-          </div>
-          <Table<DashboardData["pending_followups"][number]>
-            rowKey="lead_id"
-            size="middle"
-            loading={loading}
-            dataSource={data?.pending_followups ?? []}
-            pagination={false}
-            empty="暂无待跟进 —— 从企业筛选页把高分客户转为线索"
-            columns={[
-              {
-                title: "企业",
-                dataIndex: "enterprise_name",
-                render: (v: string) => <span className="font-medium text-[var(--ink)]">{v}</span>,
-              },
-              {
-                title: "下一步",
-                dataIndex: "next_action",
-                render: (v: string) => v || <span className="text-[#9ca0a3]">待规划</span>,
-              },
-              {
-                title: "约定时间",
-                dataIndex: "next_time",
-                width: 150,
-                render: (v: string) => (v ? String(v).slice(0, 16).replace("T", " ") : "—"),
-              },
-            ]}
-          />
-          </>)}
         </div>
 
         {vis("signals") && (

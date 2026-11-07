@@ -537,5 +537,39 @@ def my_day(
             "title": f"今日自动化命中 {rule_hits} 次", "hint": "去通知铃铛看明细",
         })
 
+    # ⑥ 7 天内待办（SPEC-CG CG1：并入统一清单，替代独立"我的待办"卡）
+    week_later = (date.today() + timedelta(days=7)).isoformat()
+    upcoming = (
+        session.query(Todo)
+        .filter(Todo.done == 0, Todo.due_date > today, Todo.due_date <= week_later)
+        .order_by(Todo.due_date.asc())
+        .all()
+    )
+    for t in upcoming:
+        items.append({
+            "priority": 2, "kind": "upcoming_todo", "id": t.id,
+            "title": t.title, "hint": f"{t.due_date} 到期",
+        })
+
+    # ⑦ 约定回访到期（有 next_time 的线索，3 天内=该行动了）
+    soon = (date.today() + timedelta(days=3)).isoformat()
+    followups = (
+        session.query(Lead, Enterprise.name)
+        .join(Enterprise, Enterprise.id == Lead.enterprise_id)
+        .filter(
+            Lead.status.in_(("following", "intent")),
+            Lead.next_time.is_not(None),
+            Lead.next_time <= soon,
+        )
+        .limit(20)
+        .all()
+    )
+    for ld, ename in followups:
+        items.append({
+            "priority": 1, "kind": "due_soon_followup", "id": ld.id,
+            "title": f"回访 {ename}（{ld.next_action or '待规划'}）",
+            "hint": f"约定 {str(ld.next_time or '')[:10]}",
+        })
+
     items.sort(key=lambda x: x["priority"])
     return {"items": items[:20], "today": today}

@@ -34,18 +34,23 @@ import { api, getToken, logout } from "@/lib/api";
 import { useRouter as useNextRouter } from "next/navigation";
 import { BRAND, PAGE_TITLES } from "@/lib/theme";
 
-const NAV = [
-  { href: "/", label: "工作台", icon: Gauge },
-  { href: "/signals", label: "标讯中心", icon: Megaphone },
-  { href: "/enterprises", label: "企业筛选", icon: Search },
-  { href: "/map", label: "客户地图", icon: Map },
-  { href: "/competitors", label: "竞对雷达", icon: Crosshair },
-  { href: "/proposals", label: "拟建雷达", icon: Sprout },
+// SPEC-CG 导航分组：按"销售一天的使用顺序"组织——任务在先，情报在后
+const NAV = [{ href: "/", label: "工作台", icon: Gauge }];
+const DAILY_NAV = [
   { href: "/contacts", label: "联系人中心", icon: PhoneCall },
   { href: "/leads", label: "线索看板", icon: Radar },
   { href: "/quotes", label: "报价单", icon: FileText },
-  { href: "/products", label: "产品目录", icon: Package },
 ];
+const FIND_NAV = [
+  { href: "/signals", label: "标讯中心", icon: Megaphone },
+  { href: "/enterprises", label: "企业筛选", icon: Search },
+  { href: "/map", label: "客户地图", icon: Map },
+];
+const RADAR_NAV = [
+  { href: "/competitors", label: "竞对雷达", icon: Crosshair },
+  { href: "/proposals", label: "拟建雷达", icon: Sprout },
+];
+const TOOL_NAV = [{ href: "/products", label: "产品目录", icon: Package }];
 
 /** SPEC-J J4 触达组 */
 const OUTREACH_NAV = [
@@ -438,7 +443,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const navSections: { label: string | null; items: typeof NAV }[] = [
     { label: null, items: NAV },
+    { label: "每日行动", items: DAILY_NAV },
+    { label: "找客户", items: FIND_NAV },
+    { label: "情报雷达", items: RADAR_NAV },
     { label: "触达", items: OUTREACH_NAV },
+    { label: "工具", items: TOOL_NAV },
   ];
   if (role === "admin") navSections.push({ label: null, items: ADMIN_NAV });
 

@@ -11,7 +11,7 @@ test("推荐卡快标转线索日活流", async ({ page }) => {
   await page.waitForURL("**/");
 
   // 推荐卡可见（种子企业有电话+未在管 → 进推荐）
-  const recSection = page.locator("text=今日推荐");
+  const recSection = page.getByRole("heading", { name: /今日推荐/ });
   await expect(recSection).toBeVisible({ timeout: 10000 });
 
   // 快标「接通」（种子推荐项应有快标按钮或状态 Tag）
