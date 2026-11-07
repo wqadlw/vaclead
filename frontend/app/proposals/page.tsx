@@ -56,12 +56,14 @@ export default function ProposalsPage() {
   const [nurturing, setNurturing] = useState<number | null>(null);
   const [converting, setConverting] = useState<number | null>(null);
 
+  const [visibleCount, setVisibleCount] = useState(30);
+
   const load = useCallback(() => {
     const p = new URLSearchParams({ days: String(days), limit: "100" });
     if (province) p.set("province", province);
     if (q.trim()) p.set("q", q.trim());
     api.get<CenterData>(`/api/proposals/center?${p}`)
-      .then(setData)
+      .then((d) => { setData(d); setVisibleCount(30); })
       .catch(() => undefined);
   }, [days, province, q]);
   useEffect(load, [load]);
@@ -167,7 +169,7 @@ export default function ProposalsPage() {
           </div>
 
           <div className="mt-2.5 space-y-2.5">
-            {(data?.items ?? []).map((s) => (
+            {(data?.items ?? []).slice(0, visibleCount).map((s) => (
               <div key={s.id} className="rounded-lg border border-[var(--border)] bg-white px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
@@ -216,6 +218,13 @@ export default function ProposalsPage() {
             {(data?.items ?? []).length === 0 && (
               <div className="py-16 text-center text-[13px] text-[var(--muted)]">
                 当前筛选下暂无备案公示 —— 广东/湖北通道每日 05:00/05:10 自动采集
+              </div>
+            )}
+            {(data?.items ?? []).length > visibleCount && (
+              <div className="py-3 text-center">
+                <Button size="small" onClick={() => setVisibleCount(visibleCount + 50)}>
+                  加载更多（还有 {(data?.items ?? []).length - visibleCount} 条）
+                </Button>
               </div>
             )}
           </div>

@@ -60,6 +60,8 @@ export default function ContactsPage() {
   const [q, setQ] = useState("");
   const [marking, setMarking] = useState<number | null>(null);
 
+  const [visibleCount, setVisibleCount] = useState(30);
+
   const load = useCallback(() => {
     const p = new URLSearchParams({ has_phone: "1", limit: "100" });
     if (callStatus) p.set("call_status", callStatus);
@@ -67,7 +69,7 @@ export default function ContactsPage() {
     if (province) p.set("province", province);
     if (q.trim()) p.set("q", q.trim());
     api.get<Worklist>(`/api/contacts?${p}`)
-      .then(setData)
+      .then((d) => { setData(d); setVisibleCount(30); })
       .catch(() => undefined);
   }, [callStatus, decisionRole, province, q]);
   useEffect(load, [load]);
@@ -158,7 +160,7 @@ export default function ContactsPage() {
 
       {/* 拨打名单 */}
       <div className="mt-2.5 space-y-2">
-        {(data?.items ?? []).map((c) => (
+        {(data?.items ?? []).slice(0, visibleCount).map((c) => (
           <div key={c.id} className="rounded-lg border border-[var(--border)] bg-white px-4 py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
@@ -228,6 +230,13 @@ export default function ContactsPage() {
         {(data?.items ?? []).length === 0 && (
           <div className="py-16 text-center text-[13px] text-[var(--muted)]">
             当前筛选下没有可拨联系人 —— 换个状态/省份，或去「标讯中心」让 04:08 回填任务补号码
+          </div>
+        )}
+        {(data?.items ?? []).length > visibleCount && (
+          <div className="py-3 text-center">
+            <Button size="small" onClick={() => setVisibleCount(visibleCount + 50)}>
+              加载更多（还有 {(data?.items ?? []).length - visibleCount} 人）
+            </Button>
           </div>
         )}
       </div>

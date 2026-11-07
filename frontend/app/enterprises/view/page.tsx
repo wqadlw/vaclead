@@ -538,7 +538,7 @@ function IntelInner() {
                   ["行业", detail.industry_name || "未分类"],
                   ["所在区域", [detail.province, detail.city, detail.district].filter(Boolean).join(" / ") || "—"],
                   ["地址", detail.address || "—"],
-                  ["经营范围", detail.business_scope || "待工商补全"],
+                  ["经营范围", detail.business_scope || "—"],
                 ].map(([k, v]) => (
                   <div key={k as string} className="flex gap-2 border-b border-[var(--rule)] py-1">
                     <span className="w-24 shrink-0 text-[var(--muted)]">{k}</span>

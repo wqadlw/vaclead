@@ -66,6 +66,8 @@ export default function CompetitorsPage() {
   const [marking, setMarking] = useState<number | null>(null);
   const [searchName, setSearchName] = useState("");
   const [hits, setHits] = useState<{ id: number; name: string; is_competitor: number }[]>([]);
+  // SPEC-CF 细节审查：榜单默认只看有动态（零动态竞对折叠）
+  const [onlyActive, setOnlyActive] = useState(true);
 
   useEffect(() => {
     setRole(localStorage.getItem("vaclead_role") || "sales");
@@ -139,6 +141,16 @@ export default function CompetitorsPage() {
         <div className="flex flex-wrap items-center gap-2 border-b border-[var(--rule)] px-4 py-3">
           <span className="text-[13.5px] font-medium text-[var(--ink)]">竞对榜单</span>
           <span className="text-[12px] text-[var(--muted)]">按 30 天中标数排序</span>
+          <button
+            onClick={() => setOnlyActive(!onlyActive)}
+            className={`ml-2 rounded-full border px-2.5 py-0.5 text-[11.5px] ${
+              onlyActive
+                ? "border-[var(--accent)] bg-[var(--accent-weak,rgba(94,106,210,0.1))] text-[var(--accent)]"
+                : "border-[var(--border)] bg-white text-[var(--muted)]"
+            }`}
+          >
+            只看有动态
+          </button>
           {role === "admin" && (
             <div className="ml-auto flex items-center gap-2">
               <Input
@@ -173,9 +185,9 @@ export default function CompetitorsPage() {
             ))}
           </div>
         )}
-        <div className="overflow-x-auto">
+        <div className="max-h-[560px] overflow-auto">
           <table className="w-full text-[13px]">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-white">
               <tr className="text-left text-[12.5px] font-normal text-[var(--muted)]">
                 <th className="px-4 py-2.5 font-normal">竞对</th>
                 <th className="px-4 py-2.5 text-right font-normal">30 天中标</th>
@@ -187,7 +199,7 @@ export default function CompetitorsPage() {
               </tr>
             </thead>
             <tbody>
-              {ranks.map((r) => (
+              {ranks.filter((r) => !onlyActive || r.wins_30d > 0 || r.signal_count > 0).map((r) => (
                 <tr key={r.id} className="border-t border-[var(--rule)] hover:bg-[var(--raised)]">
                   <td className="px-4 py-2.5">
                     <a href={`/enterprises/view?id=${r.id}`} className="font-medium text-[var(--accent)] hover:underline">{r.name}</a>

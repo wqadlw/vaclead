@@ -694,7 +694,7 @@ export default function DashboardPage() {
       )}
 
       {/* 主趋势 + 右列（漏斗/来源） */}
-      <div className="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
+      <div className="mt-5 grid grid-cols-1 items-start gap-6 xl:grid-cols-[1fr_360px]">
         {vis("trend") && (
         <section className="rounded-lg border border-[var(--border)] bg-white p-4">
           <div className="mb-3 flex items-baseline justify-between">

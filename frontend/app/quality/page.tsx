@@ -129,7 +129,7 @@ export default function QualityPage() {
       {/* 缺口卡 */}
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { k: "省份文本缺失", v: g ? g.province_missing.toLocaleString() : "—", note: "POI 地理在坐标列；city→省 确定性回填是下一个动作", href: "/tasks" },
+          { k: "省份文本缺失", v: g ? g.province_missing.toLocaleString() : "—", note: "多为无 city 来源（地址清洗/坐标反查 P2）", href: "/tasks" },
           { k: "行业未分类", v: g ? g.industry_missing.toLocaleString() : "—", note: "backfill-icp 幂等任务可补", href: "/tasks" },
           { k: "查重待复核", v: g ? g.dup_open.toLocaleString() : "—", note: "去「设置 → 数据复核」消化", href: "/settings" },
           { k: "回收站在押", v: g ? g.trash_count.toLocaleString() : "—", note: "30 天保留期后自动清空", href: "/enterprises" },
@@ -139,9 +139,16 @@ export default function QualityPage() {
             <div className="mt-0.5 text-[20px] font-medium tabular-nums text-[var(--ink)]">{c.v}</div>
             <div className="mt-0.5 flex items-center justify-between gap-2">
               <span className="min-w-0 flex-1 text-[11px] leading-3.5 text-[var(--muted)]">{c.note}</span>
-              <Button size="small" theme="borderless" onClick={() => { window.location.href = c.href; }}>
-                去处理
-              </Button>
+              {(() => {
+                const zero = c.k === "回收站在押" && g && g.trash_count === 0;
+                return zero ? (
+                  <span className="shrink-0 text-[11px] text-[var(--positive)]">已清空</span>
+                ) : (
+                  <Button size="small" theme="borderless" onClick={() => { window.location.href = c.href; }}>
+                    去处理
+                  </Button>
+                );
+              })()}
             </div>
           </div>
         ))}
