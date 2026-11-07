@@ -951,7 +951,8 @@ def competitor_alert_sweep() -> dict:
         notified = 0
         seen: set[tuple[int, int]] = set()
         for sig, comp_name in rows:
-            m = _AMOUNT_RE.search(sig.title + " " + (sig.raw_excerpt or ""))
+            haystack = f"{sig.title} {sig.raw_excerpt or ''}"
+            m = _AMOUNT_RE.search(haystack)
             amount_txt = f"成交价 {m.group(1)} 万" if m else ""
             mb = _BUYER_RE.search(sig.evidence_claim or "")
             buyer_txt = f"（卖给了 {mb.group(1)}）" if mb else ""

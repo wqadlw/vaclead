@@ -189,7 +189,7 @@ def _radar_section(session: Session) -> dict:
     )
     amount = 0.0
     for sig in win_rows:
-        m = _AMOUNT_RE.search(sig.title + " " + (sig.raw_excerpt or ""))
+        m = _AMOUNT_RE.search(f"{sig.title} {sig.raw_excerpt or ''}")
         if m:
             try:
                 amount += float(m.group(1))
