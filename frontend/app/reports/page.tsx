@@ -11,6 +11,16 @@ import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
 
 interface Kpi { key: string; label: string; value: number; prev: number; delta: number | null }
+interface RadarSection {
+  competitor_wins_30d: number;
+  competitor_wins_amount_wan: number;
+  proposals_total: number;
+  proposals_window_now: number;
+  contact_with_phone: number;
+  contact_dialed: number;
+  contact_interested: number;
+}
+
 interface FunnelRow { status: string; label: string; value: number }
 interface TopSignal { title: string; ent_name: string; type: string; amount_wan: number | null; pub_date: string | null; base_score: number }
 interface TopCustomer { ent_name: string; industry: string | null; grade: string | null; composite: number }
@@ -54,6 +64,7 @@ interface WeeklyReport {
   top_signals: TopSignal[];
   top_customers: TopCustomer[];
   highlights: string[];
+  radar?: RadarSection;
 }
 interface MyWeekReport {
   period: { start: string; end: string; label: string };
@@ -186,6 +197,31 @@ export default function ReportsPage() {
               </div>
             ))}
           </div>
+
+          {/* SPEC-BU BU2：雷达动态（三雷达+触达漏斗快照） */}
+          {report.radar && (
+            <section className="rounded-lg border border-[var(--border)] bg-white p-4">
+              <h2 className="mb-3 text-[15px] font-medium text-[var(--ink)]">雷达动态</h2>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                {[
+                  { k: "竞对中标（30天）", v: `${report.radar.competitor_wins_30d} 笔`, sub: `${Math.round(report.radar.competitor_wins_amount_wan).toLocaleString()} 万`, red: true },
+                  { k: "拟建池深度", v: String(report.radar.proposals_total), sub: "四省备案在池" },
+                  { k: "正处招标窗口", v: String(report.radar.proposals_window_now), sub: "备案后 1-3 个月", amber: true },
+                  { k: "可拨联系人", v: report.radar.contact_with_phone.toLocaleString(), sub: "全局口径" },
+                  { k: "已拨", v: report.radar.contact_dialed.toLocaleString(), sub: "触达覆盖" },
+                  { k: "有意向", v: report.radar.contact_interested.toLocaleString(), sub: "立即转线索", green: true },
+                ].map((c) => (
+                  <div key={c.k} className="rounded-lg border border-[var(--border)] px-3 py-2.5">
+                    <div className="text-[11.5px] text-[var(--muted)]">{c.k}</div>
+                    <div className={`mt-0.5 text-[17px] font-medium tabular-nums ${c.red ? "text-[var(--negative)]" : c.amber ? "text-[#c2801b]" : c.green ? "text-[var(--positive)]" : "text-[var(--ink)]"}`}>
+                      {c.v}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-[var(--muted)]">{c.sub}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* 漏斗 */}
           <section className="rounded-lg border border-[var(--border)] bg-white p-4">

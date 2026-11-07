@@ -440,6 +440,14 @@ async def lifespan(app: FastAPI):
         # （won=老户新动向 / intent=意向客户新信号 / following=跟进客户新信号）
         _register_cron("owner_signal", _owner_signal_sweep, "*", "*/30")
 
+        def _competitor_alert_sweep() -> dict:
+            from .jobs import competitor_alert_sweep
+
+            return competitor_alert_sweep()
+
+        # SPEC-BU BU1：每小时 :12 竞对中标推送 admin（管理层情报，剑鱼对位收口）
+        _register_cron("competitor_alert", _competitor_alert_sweep, "*", 12)
+
         # SPEC-AP AP1：Meili 可用性预热——冷启动首击的 2.5s 探测在启动期消化，
         # 不让第一个倒霉请求吃（探测结果随后走 30s 缓存）
         def _meili_probe_safe() -> None:

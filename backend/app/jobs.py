@@ -901,6 +901,92 @@ def owner_signal_sweep() -> dict:
                 "last_signal_id": max_id}
 
 
+def competitor_alert_sweep() -> dict:
+    """竞对中标即时推送（SPEC-BU BU1，每小时 :12）。
+
+    剑鱼"竞对监测"付费点的核心是推送不是视图——竞对中标=我们丢单的
+    直接情报，必须主动推给管理层（role=admin，watchdog 同款查询）。
+    正文一句话情报：「标题」成交价 X 万（卖给了 Y）——金额/买家从公告
+    文本回抽。游标=水位 stats_json.last_signal_id（与老户雷达同模式）；
+    首跑基线不轰炸；失败轮丢游标全量重扫唯一约束去重兜底。
+    不入看门狗：日内推送任务非关键日批，缺失下一小时自愈。
+    """
+    from .api.competitors import _AMOUNT_RE, _BUYER_RE
+    from .db import SessionLocal
+    from .models import Notification, User
+    from .notify.channels import notify_dispatch
+
+    with SessionLocal() as s:
+        row = s.get(SyncWatermark, "competitor_alert")
+        max_id = s.query(func.max(Signal.id)).scalar() or 0
+        if row is None:
+            # 首跑基线：只记游标
+            return {"baseline": True, "scanned": 0, "notified": 0,
+                    "last_signal_id": max_id}
+        try:
+            since_id = int(
+                json.loads(row.stats_json or "{}").get("last_signal_id", 0)
+            )
+        except ValueError:
+            since_id = 0
+        if max_id <= since_id:
+            return {"scanned": 0, "notified": 0, "last_signal_id": since_id}
+
+        rows = s.execute(
+            select(Signal, Enterprise.name)
+            .join(Enterprise, Enterprise.id == Signal.enterprise_id)
+            .where(
+                Signal.id > since_id,
+                Signal.type == "tender_win",
+                Enterprise.is_competitor == 1,
+                Enterprise.deleted_at.is_(None),
+            )
+            .order_by(Signal.id.asc())
+            .limit(500)
+        ).all()
+
+        admin_ids = [
+            r[0] for r in s.execute(select(User.id).where(User.role == "admin")).all()
+        ]
+        notified = 0
+        seen: set[tuple[int, int]] = set()
+        for sig, comp_name in rows:
+            m = _AMOUNT_RE.search(sig.title + " " + (sig.raw_excerpt or ""))
+            amount_txt = f"成交价 {m.group(1)} 万" if m else ""
+            mb = _BUYER_RE.search(sig.evidence_claim or "")
+            buyer_txt = f"（卖给了 {mb.group(1)}）" if mb else ""
+            sep = " " if amount_txt and buyer_txt else ""
+            body = f"「{sig.title}」{sep}{amount_txt}{buyer_txt}"
+            for uid in admin_ids:
+                key = (sig.id, uid)
+                if key in seen:
+                    continue
+                seen.add(key)
+                dup = (
+                    s.query(Notification)
+                    .filter(
+                        Notification.ref_type == "competitor_win",
+                        Notification.ref_id == sig.id,
+                        Notification.user_id == uid,
+                    )
+                    .first()
+                )
+                if dup is not None:
+                    continue
+                notify_dispatch(
+                    s, uid,
+                    kind="signal",
+                    title=f"竞对中标：{comp_name}",
+                    body=body,
+                    ref_type="competitor_win",
+                    ref_id=sig.id,
+                )
+                notified += 1
+        s.commit()
+        return {"scanned": max_id - since_id, "notified": notified,
+                "last_signal_id": max_id}
+
+
 # ---------------------------------------------------------------------------
 # B3 备份
 # ---------------------------------------------------------------------------

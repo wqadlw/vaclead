@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import admin_only, current_user
 from ..db import get_session
-from ..models import Enterprise, Followup, Lead, Signal, User
+from ..models import Contact, Enterprise, Followup, Lead, Signal, User
 
 router = APIRouter(tags=["reports"])
 
@@ -164,6 +164,76 @@ def _highlights(kpis: list[dict], won_amount: float) -> list[str]:
     return out
 
 
+def _radar_section(session: Session) -> dict:
+    """雷达动态节（SPEC-BU BU2）：三雷达+触达漏斗的周报快照（全局口径）。"""
+    from datetime import timedelta as _td
+
+    from ..phones import load_phones
+
+    today = date.today()
+    d30 = (today - _td(days=30)).isoformat()
+    dwin_lo = (today - _td(days=90)).isoformat()
+    dwin_hi = (today - _td(days=30)).isoformat()
+
+    win_rows = (
+        session.query(Signal)
+        .join(Enterprise, Enterprise.id == Signal.enterprise_id)
+        .filter(
+            Signal.type == "tender_win",
+            Enterprise.is_competitor == 1,
+            Enterprise.deleted_at.is_(None),
+            Signal.created_at >= d30,
+        )
+        .limit(500)
+        .all()
+    )
+    amount = 0.0
+    for sig in win_rows:
+        m = _AMOUNT_RE.search(sig.title + " " + (sig.raw_excerpt or ""))
+        if m:
+            try:
+                amount += float(m.group(1))
+            except ValueError:
+                pass
+
+    pub_rows = (
+        session.query(Signal.pub_date)
+        .join(Enterprise, Enterprise.id == Signal.enterprise_id)
+        .filter(Signal.type == "proposal", Enterprise.deleted_at.is_(None))
+        .limit(5000)
+        .all()
+    )
+    pub_dates = [(r[0] or "")[:10] for r in pub_rows]
+    prop_total = len(pub_dates)
+    window_now = len([d for d in pub_dates if dwin_lo <= d <= dwin_hi])
+
+    pairs = (
+        session.query(Contact.phones_json, Contact.call_result)
+        .join(Enterprise, Enterprise.id == Contact.enterprise_id)
+        .filter(Enterprise.deleted_at.is_(None))
+        .all()
+    )
+    with_phone = dialed = interested = 0
+    for pj, cr in pairs:
+        if not load_phones(pj):
+            continue
+        with_phone += 1
+        if cr not in (None, "pending"):
+            dialed += 1
+            if cr == "interested":
+                interested += 1
+
+    return {
+        "competitor_wins_30d": len(win_rows),
+        "competitor_wins_amount_wan": round(amount, 1),
+        "proposals_total": prop_total,
+        "proposals_window_now": window_now,
+        "contact_with_phone": with_phone,
+        "contact_dialed": dialed,
+        "contact_interested": interested,
+    }
+
+
 def build_weekly(session: Session, offset: int = 0) -> dict:
     """周报单一数据源（页面/CSV/邮件共用）。
 
@@ -185,6 +255,7 @@ def build_weekly(session: Session, offset: int = 0) -> dict:
         "top_signals": _top_signals(session, p_lo, p_hi),
         "top_customers": _top_customers(session, p_lo, p_hi),
         "highlights": _highlights(kpis, float(won_amount)),
+        "radar": _radar_section(session),
     }
 
 
@@ -196,12 +267,20 @@ def _email_text(report: dict) -> str:
         for k in report["kpis"]
     )
     funnel_line = " → ".join(f"{f['label']} {f['value']}" for f in report["funnel"] if f["value"])
+    radar = report.get("radar") or {}
+    radar_line = (
+        f"竞对中标（30天）{radar.get('competitor_wins_30d', 0)} 笔/"
+        f"{radar.get('competitor_wins_amount_wan', 0)} 万；拟建窗口 "
+        f"{radar.get('proposals_window_now', 0)} 个；触达：已拨 "
+        f"{radar.get('contact_dialed', 0)}/有意向 {radar.get('contact_interested', 0)}"
+    )
     hl = "\n".join(f"· {h}" for h in report["highlights"])
     return (
         f"【{report['period']['label']}】\n\n"
         f"{report['highlights'][0] if report['highlights'] else ''}\n\n"
         f"核心指标：\n{kpi_lines}\n\n"
         f"线索漏斗：{funnel_line or '本周无动静'}\n\n"
+        f"雷达动态：{radar_line}\n\n"
         f"亮点与风险：\n{hl}\n\n"
         f"完整报表（含 Top 标讯/Top 新客户）：登录平台 → 报表中心；支持 CSV 导出。\n"
     )
