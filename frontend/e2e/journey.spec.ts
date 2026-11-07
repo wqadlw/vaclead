@@ -86,8 +86,8 @@ test("完整销售旅程", async ({ page }) => {
   await page.keyboard.press("2");
   await expect(page).toHaveURL(/enterprises/);
 
-  // 10) 命令面板 Ctrl+K 搜企业
+  // 10) 命令面板 Ctrl+K 全局搜索（SPEC-BZ：企业命中直达详情页）
   await page.keyboard.press("Control+k");
-  await page.getByPlaceholder(/页面名或企业关键词/).fill("长晶");
+  await page.getByPlaceholder(/搜企业 \/ 联系人 \/ 标讯/).fill("长晶");
   await expect(page.getByText("苏州长晶半导体有限公司").first()).toBeVisible();
 });

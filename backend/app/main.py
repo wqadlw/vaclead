@@ -588,6 +588,9 @@ app.include_router(timeline.router, prefix="/api")
 from .api import quality  # noqa: E402
 
 app.include_router(quality.router, prefix="/api")
+from .api import search  # noqa: E402
+
+app.include_router(search.router, prefix="/api")
 from .api import automation  # noqa: E402
 
 app.include_router(automation.router, prefix="/api")

@@ -200,11 +200,16 @@ function ThemeToggle() {
 }
 
 /** Ctrl+K 全局命令面板（亮点 C）：页面跳转 + 企业即时搜索 */
+interface PaletteEnt { id: number; name: string; industry_name: string | null; province: string | null; city: string | null; is_competitor: number }
+interface PaletteContact { id: number; name: string; title: string | null; enterprise_id: number; enterprise_name: string }
+interface PaletteSignal { id: number; title: string; type: string; ent_name: string }
+interface PaletteResults { enterprises: PaletteEnt[]; contacts: PaletteContact[]; signals: PaletteSignal[] }
+
 function CommandPalette() {
   const router = useNextRouter();
   const [visible, setVisible] = useState(false);
   const [q, setQ] = useState("");
-  const [hits, setHits] = useState<{ id: number; name: string }[]>([]);
+  const [res, setRes] = useState<PaletteResults | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -221,15 +226,13 @@ function CommandPalette() {
   useEffect(() => {
     const kw = q.trim();
     if (!kw) {
-      setHits([]);
+      setRes(null);
       return;
     }
     const t = setTimeout(() => {
       api
-        .get<{ items: { id: number; name: string }[] }>(
-          `/api/enterprises?q=${encodeURIComponent(kw)}&page_size=6`,
-        )
-        .then((d) => setHits(d.items))
+        .get<PaletteResults>(`/api/search?q=${encodeURIComponent(kw)}`)
+        .then(setRes)
         .catch(() => undefined);
     }, 250);
     return () => clearTimeout(t);
@@ -253,7 +256,7 @@ function CommandPalette() {
 
   return (
     <Modal
-      title="快速跳转 / 搜企业"
+      title="全局搜索"
       visible={visible}
       onCancel={() => setVisible(false)}
       footer={null}
@@ -265,7 +268,7 @@ function CommandPalette() {
         autoFocus
         value={q}
         onChange={setQ}
-        placeholder="输入页面名或企业关键词…"
+        placeholder="搜企业 / 联系人 / 标讯，或输入页面名…"
         size="large"
       />
       <div className="mt-3 max-h-[320px] overflow-auto">
@@ -283,17 +286,53 @@ function CommandPalette() {
             ))}
           </div>
         )}
-        {hits.length > 0 && (
-          <div>
+        {res && res.enterprises.length > 0 && (
+          <div className="mb-2">
             <div className="px-1 pb-1 text-[11px] text-[var(--muted)]">企业</div>
-            {hits.map((h) => (
+            {res.enterprises.map((h) => (
               <button
                 key={h.id}
-                onClick={() => go(`/enterprises?q=${encodeURIComponent(h.name)}`)}
+                onClick={() => go(`/enterprises/view?id=${h.id}`)}
                 className="block w-full cursor-pointer truncate rounded px-2 py-1.5 text-left text-[13px] text-[var(--ink)] hover:bg-[rgba(27,108,128,0.06)]"
                 title={h.name}
               >
                 {h.name}
+                <span className="ml-1.5 text-[11px] text-[var(--muted)]">
+                  {[h.industry_name, h.province && h.city ? `${h.province}${h.city}` : h.city].filter(Boolean).join(" · ")}
+                </span>
+                {h.is_competitor === 1 && <span className="ml-1 text-[11px] text-[var(--negative)]">同行</span>}
+              </button>
+            ))}
+          </div>
+        )}
+        {res && res.contacts.length > 0 && (
+          <div className="mb-2">
+            <div className="px-1 pb-1 text-[11px] text-[var(--muted)]">联系人</div>
+            {res.contacts.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => go(`/enterprises/view?id=${c.enterprise_id}`)}
+                className="block w-full cursor-pointer truncate rounded px-2 py-1.5 text-left text-[13px] text-[var(--ink)] hover:bg-[rgba(27,108,128,0.06)]"
+                title={c.name}
+              >
+                {c.name}
+                <span className="ml-1.5 text-[11px] text-[var(--muted)]">{c.enterprise_name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {res && res.signals.length > 0 && (
+          <div>
+            <div className="px-1 pb-1 text-[11px] text-[var(--muted)]">标讯</div>
+            {res.signals.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => go(`/signals?q=${encodeURIComponent(s.title.slice(0, 18))}`)}
+                className="block w-full cursor-pointer truncate rounded px-2 py-1.5 text-left text-[13px] text-[var(--ink)] hover:bg-[rgba(27,108,128,0.06)]"
+                title={s.title}
+              >
+                {s.title}
+                <span className="ml-1.5 text-[11px] text-[var(--muted)]">{s.ent_name}</span>
               </button>
             ))}
           </div>
