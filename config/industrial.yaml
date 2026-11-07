@@ -189,7 +189,7 @@ downstream_industries:
     name: 医疗卫生
     tier: 1
     industry_codes: ["Q84"]
-    keywords: [医院, 卫生院, 体检, 康复, 疗养, 医疗集团, 卫生健康, 血站, 保健院]
+    keywords: [医院, 卫生院, 体检, 康复, 疗养, 医疗集团, 卫生健康, 血站, 保健院, 诊所, 门诊部, 卫生室, 卫生站, 卫生服务]
   - key: semiconductor
     name: 半导体/集成电路
     tier: 1
@@ -269,7 +269,7 @@ downstream_industries:
     name: 暖通/机电安装
     tier: 2
     industry_codes: ["E49", "C346"]
-    keywords: [机电安装, 暖通, 制冷科技, 空调工程, 净化工程, 建筑科技, 通风, 风管]
+    keywords: [机电安装, 暖通, 制冷科技, 空调工程, 净化工程, 建筑科技, 通风, 风管, 制冷, 冷气, 白铁]
   - key: mining_metallurgy
     name: 矿冶建材
     tier: 3
