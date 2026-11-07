@@ -555,6 +555,9 @@ app.include_router(competitors.router, prefix="/api")
 from .api import proposals  # noqa: E402
 
 app.include_router(proposals.router, prefix="/api")
+from .api import contacts  # noqa: E402
+
+app.include_router(contacts.router, prefix="/api")
 from .api import automation  # noqa: E402
 
 app.include_router(automation.router, prefix="/api")
