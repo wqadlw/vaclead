@@ -1363,6 +1363,20 @@ class BackfillIcpIn(BaseModel):
     limit: int = 3000  # 单轮处理上限
 
 
+@router.post("/tasks/backfill-province")
+def backfill_province(
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """省份文本回填（SPEC-BX）：city→省 确定性映射，幂等只填空省。
+
+    纯内存映射无网络，同步执行；新采集批次后可重跑增量补齐。
+    """
+    from ..jobs import backfill_province_geo
+
+    return backfill_province_geo()
+
+
 @router.post("/tasks/backfill-icp")
 def start_backfill_icp(
     body: BackfillIcpIn,

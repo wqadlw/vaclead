@@ -268,6 +268,37 @@ def backfill_proposal_geo() -> dict:
     return {"updated": updated}
 
 
+def backfill_province_geo() -> dict:
+    """省份文本回填（SPEC-BX，幂等）：city 归一映射，只填空省不覆盖。
+
+    数据事实：city 覆盖 93.8% 而省份文本仅 0.7%（POI 地理在 lat/lng 列）；
+    city→省 为确定性映射（geoutil 静态表可评审），脏值/未知地名不发明。
+    未来 POI 新批次采集后重跑本函数即可增量补齐。
+    """
+    from .db import SessionLocal
+    from .geoutil import province_from_locality
+
+    by_rule = {"city_map": 0, "skipped": 0}
+    with SessionLocal() as s:
+        rows = (
+            s.query(Enterprise)
+            .filter(
+                Enterprise.deleted_at.is_(None),
+                Enterprise.province.is_(None) | (Enterprise.province == ""),
+            )
+            .all()
+        )
+        for e in rows:
+            prov = province_from_locality(e.city)
+            if prov:
+                e.province = prov
+                by_rule["city_map"] += 1
+            else:
+                by_rule["skipped"] += 1
+        s.commit()
+    return {"scanned": len(rows), **by_rule}
+
+
 def run_proposal_gd_scan(max_pages: int = 5) -> dict:
     """广东备案公示扫描：单位级拟建信号（proposal），幂等可重扫。
 

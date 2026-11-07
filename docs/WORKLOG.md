@@ -2133,3 +2133,16 @@ api/quality.py（单遍企业扫描+联系人级两遍回填 O(n)；ReviewQueue 
 204/27,369——POI 地理在坐标列，city→省映射回填是下一个免费扩池动作
 （确定性映射非发明，BP0 同思路）。侧栏：ADMIN_NAV「数据质量」。
 **门禁**：pytest 327 + build + E2E 7 全绿。
+
+
+## 2026-11-07 · W59 · SPEC-BX 省份回填轮（Agent B）
+
+/quality 缺口卡的第一个可行动项落地。**侦察定案**：city 覆盖 93.8%
+vs 省份文本 0.7%，且无 city 者 address 也为空——city 归一化是唯一
+大规模确定性路径（bbox 因边界误差 P2）。**实现**：geoutil 三件套
+（PROVINCES/CITY_TO_PROVINCE 含县级市代管/DISTRICT_TO_PROVINCE 小表
++ province_from_locality 脏值规则）+ backfill_province_geo（幂等只填
+空省）+ POST /tasks/backfill-province。**真库战果：204→23,820
+（87%）**，Top 省与 POI 城市分布吻合=自洽交叉验证。映射表只收真库
+出现过的地名（可评审静态事实，YAGNI 不做全国表）。
+**门禁**：pytest 329 + E2E 7 全绿（前端零改动）。
