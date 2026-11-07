@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.0.49（2026-11-07）
+
+客户旅程时间线轮（SPEC-BT）：全源合流——客户资产账本的载体落地。
+
+### 详情页「客户旅程」页签（BT1-BT2）
+- **八源合流**：信号/电话/跟进/备注/报价/合同/回款/装机按时间降序统一排布——打开客户即见完整故事（HubSpot engagements/twenty timeline 对位形态）
+- 左轨色点+图标时间线（framed-sheet 无阴影八色映射，信号保留原文链+类型徽标）
+- GET /api/enterprises/{eid}/timeline 统一条目结构（id=type:数字/ts/title/detail/meta）；每源 40-80 条上限+全局 limit
+- Todo 刻意不入线（待办是未来不是历史）；已删企业 404 零泄露
+
+
 ## v1.0.48（2026-11-07）
 
 浙江办理结果公示通道轮（SPEC-BS）：第四省+独有事项维度。

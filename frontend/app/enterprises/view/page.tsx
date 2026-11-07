@@ -10,6 +10,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Button, Dropdown, Input, Modal, Skeleton, TabPane, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
 import { ArrowLeft, Bell, BellRing, Phone, Trash2, UserCheck } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import JourneyTimeline, { type JourneyItem } from "@/components/JourneyTimeline";
 import CallResultTag from "@/components/CallResultTag";
 import { addToCompare, readCompare } from "@/lib/compare";
 import { api, getToken } from "@/lib/api";
@@ -163,6 +164,8 @@ function IntelInner() {
   // SPEC-V V1 备注态
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [noteDraft, setNoteDraft] = useState("");
+  // SPEC-BT 客户旅程（八源合流时间线）
+  const [journey, setJourney] = useState<JourneyItem[] | null>(null);
 
   const load = useCallback(() => {
     if (!eid) return;
@@ -176,6 +179,7 @@ function IntelInner() {
     api.get<{ items: ContactRow[] }>(`/api/enterprises/${eid}/contacts`).then((d) => setContacts(d.items)).catch(() => undefined);
     api.get<{ items: UnitRow[] }>(`/api/enterprises/${eid}/units`).then((d) => setUnits(d.items)).catch(() => undefined);
     api.get<{ items: NoteRow[] }>(`/api/enterprises/${eid}/notes`).then((d) => setNotes(d.items)).catch(() => undefined);
+    api.get<{ items: JourneyItem[] }>(`/api/enterprises/${eid}/timeline?limit=120`).then((d) => setJourney(d.items)).catch(() => undefined);
   }, [eid]);
 
   useEffect(() => load(), [load]);
@@ -801,40 +805,12 @@ function IntelInner() {
             )}
           </TabPane>
 
-          <TabPane tab="信号时间线" itemKey="signals" className="p-5">
-            {(detail.signals ?? []).length === 0 ? (
-              <div className="py-8 text-center text-[13px] text-[var(--muted)]">暂无信号</div>
+          {/* SPEC-BT：信号时间线升级为客户旅程（八源合流） */}
+          <TabPane tab="客户旅程" itemKey="signals" className="p-5">
+            {journey === null ? (
+              <div className="py-8 text-center text-[13px] text-[var(--muted)]">加载中…</div>
             ) : (
-              <div className="space-y-3">
-                {detail.signals!.map((s) => (
-                  <div key={s.id} className="rounded-lg border border-[var(--border)] px-4 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-[var(--ink)]" title={s.title}>
-                        {s.url ? (
-                          <a href={s.url} target="_blank" rel="noreferrer" className="hover:text-[var(--accent)]">{s.title}</a>
-                        ) : (
-                          s.title
-                        )}
-                      </span>
-                      <span className="shrink-0 text-[12px] tabular-nums text-[var(--muted)]">{s.pub_date || "日期未知"}</span>
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      {s.type === "tender_win" && <Tag color="cyan" type="light" size="small">中标</Tag>}
-                      {s.type === "tender_buy" && <Tag color="green" type="light" size="small">公开采购</Tag>}
-                      {s.type === "tender" && <Tag color="blue" type="light" size="small">政采公告</Tag>}
-                      <Tag color="red" type="light" size="small">{s.base_score} 分</Tag>
-                      {s.matched_terms.map((t) => (
-                        <Tag key={t} color="orange" type="light" size="small">{t}</Tag>
-                      ))}
-                    </div>
-                    {s.evidence_claim && (
-                      <div className="mt-1.5 border-l-2 border-[var(--accent)] pl-2.5 text-[12.5px] leading-5 text-[var(--ink)]">
-                        {s.evidence_claim}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <JourneyTimeline items={journey} />
             )}
           </TabPane>
         </Tabs>

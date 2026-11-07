@@ -2075,3 +2075,17 @@ POST itemList 即得 {itemList, counts}；**站点验证码逻辑在 JS 里是�
 检索字段的文体：主体名库用品类细词，项目名库用品类宽词。**
 文号前缀坑：项目名带"富政工出【2025】16号"出让文号——剥离后再抽单位。
 **门禁**：pytest 321 + build + E2E 7 全绿；探针临时文件已清。
+
+
+## 2026-11-07 · W59 · SPEC-BT 客户旅程时间线轮（Agent B）
+
+详情页「信号时间线」只有信号单源——升级为**八源合流「客户旅程」**：
+信号/电话/跟进/备注/报价/合同/回款/装机按 ts 降序，打开客户即见完整
+故事（HubSpot engagements/twenty timeline 对位；Playbook"客户资产
+账本"载体）。**实现**：api/timeline.py（线索族经 lead_ids or_ 链挂接
+企业；Todo 刻意不入线=待办是未来不是历史）+ components/JourneyTimeline
+左轨色点时间线（禁紫约束下八色映射）+ 详情页页签升级（itemKey 保持
+signals 连续，数据独立 fetch）。
+**测试坑（AX 教训二次命中）**：seed=False 下 enterprise_note.user_id
+FK 撞——user 表空时 user_id=0 也炸；显式建 User+隔离清单补 User。
+**门禁**：pytest 323 + build + E2E 7 全绿。
