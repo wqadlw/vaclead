@@ -7,6 +7,7 @@ import {
   BarChart3,
   ClipboardList,
   Crosshair,
+  Database,
   FileText,
   Gauge,
   Inbox,
@@ -51,6 +52,7 @@ const OUTREACH_NAV = [
 ];
 
 const ADMIN_NAV = [
+  { href: "/quality", label: "数据质量", icon: Database },
   { href: "/tasks", label: "拓客任务", icon: Rocket },
   { href: "/forms", label: "留资表单", icon: ClipboardList },
   { href: "/reports", label: "报表中心", icon: BarChart3 },

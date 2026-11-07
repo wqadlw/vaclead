@@ -17,6 +17,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/competitors": "竞对雷达",
   "/proposals": "拟建雷达",
   "/contacts": "联系人中心",
+  "/quality": "数据质量",
 };
 
 export const BRAND = {
