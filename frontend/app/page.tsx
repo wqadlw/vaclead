@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Modal, Table, Tag, Toast } from "@douyinfe/semi-ui";
-import { AlertTriangle, ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, ArrowRight, ChevronLeft, ChevronRight, Phone, SlidersHorizontal } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { AreaTrend, BarList, DeltaBadge, FunnelBars, ProvinceBars, SparkBars } from "@/components/charts";
 import { api } from "@/lib/api";
@@ -579,8 +579,19 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-1.5">
                     <span className="truncate text-[13.5px] font-medium text-[var(--ink)]">{r.name}</span>
                     {r.phone && (
-                      <span className="shrink-0 rounded bg-[color:var(--accent)]/10 px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-[var(--accent)]">
-                        {r.phone}
+                      <span className="inline-flex shrink-0 items-center gap-0.5">
+                        <span className="rounded bg-[color:var(--accent)]/10 px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-[var(--accent)]">
+                          {r.phone}
+                        </span>
+                        {/* SPEC-BO：tel: 拨打（stopPropagation 防卡片跳转） */}
+                        <a
+                          href={`tel:${r.phone}`}
+                          title="点击拨打"
+                          className="text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+                          onClick={(ev) => ev.stopPropagation()}
+                        >
+                          <Phone size={11} />
+                        </a>
                       </span>
                     )}
                   </div>

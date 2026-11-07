@@ -328,7 +328,16 @@ async def lifespan(app: FastAPI):
             with _SL() as s:
                 return run_subscription_rules(s)
 
-        _register_cron("subscription_rules", _subscription_rules_sweep, "*/2", 6)  # SPEC-AA AA3：每 2 小时（订阅命中即时化）
+        _register_cron("subscription_rules", _subscription_rules_sweep, "*", 6)  # SPEC-BO：每小时（与小时级数据到达对齐；原每 2 小时 AA3）
+
+        def _hourly_tender_sweep() -> dict:
+            from .jobs import run_hourly_tender_scan
+
+            return run_hourly_tender_scan()
+
+        # SPEC-BO BO1：工作时段每 2 小时 ccgp 轻扫（12 细词×1 页×days=2 摊平，
+        # 不触碰限流实测线；拦截页 resilience 自动熔断）——"7-21/2" 区间步进语法
+        _register_cron("hourly_tender", _hourly_tender_sweep, "7-21/2", 40)
 
         def _proposal_gd_sweep() -> dict:
             from .jobs import run_proposal_gd_scan

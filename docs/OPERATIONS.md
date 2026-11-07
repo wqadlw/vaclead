@@ -50,7 +50,8 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | 01:07 周一 | oem_touch | OEM 季度关系维护：90 天未触达 → 维护待办（SPEC-AU） |
 | 09:30 / 14:30 | outreach_dispatch | 邮件触达：收件同步+预算内发送（SPEC-J J4） |
 | 每 30 分钟 | owner_signal | 老户雷达：在管客户新信号 → 负责人零配置推送（won/intent/following 语义分层；SPEC-BM） |
-| 每 2 小时 | subscription_rules | 订阅规则扫播（hour="*/2"，SPEC-AA 提频；日批 04:06 起改） |
+| 每 2 小时（工作时段 07-21） | hourly_tender | ccgp 轻扫：12 细词×1 页×days=2 摊平——小时级行动窗口到达，不触碰限流实测线；拦截页 resilience 熔断（SPEC-BO） |
+| 每小时 | subscription_rules | 订阅规则扫播（SPEC-BO 由每 2 小时提频，与小时级数据到达对齐） |
 | 每 10 分钟 | webhook_flush (interval) | SPEC-P 出站 webhook 投递引擎（指数退避，唯一 interval 任务） |
 | 按需 | backfill-icp | 存量未分类企业补 ICP 分类（POST /api/tasks/backfill-icp，幂等，采集打标不被覆盖；SPEC-W） |
 

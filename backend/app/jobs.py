@@ -754,12 +754,80 @@ def backup_sqlite(backup_dir: str | Path, keep: int = 7) -> dict:
 # ---------------------------------------------------------------------------
 # B3 每日增量
 # ---------------------------------------------------------------------------
+def _scan_ccgp_words(stats: dict, days: int, max_pages: int) -> None:
+    """ccgp 强词增量入库（SPEC-BO 抽出共用）：buyer 抽取→建档分类→去重→tender 信号。
+
+    日批（days=7）与小时轻扫（days=2）同语义逐字一致；拦截页由
+    resilience 域级积分制熔断兜底，不硬冲。
+    """
+    from .api.imports import extract_enterprise_name
+    from .collectors.ccgp import search_ccgp_all
+    from .db import SessionLocal
+    from .normalize import resolve_enterprise
+    from .vertical import device_strong_terms as _dst
+
+    for kw in _dst()[:12]:
+        for item in search_ccgp_all(kw, days=days, max_pages=max_pages):
+            if not any(
+                t in item["title"] or t in item["summary"]
+                for t in _dst()
+            ):
+                continue
+            buyer = item.get("buyer") or extract_enterprise_name(item["title"], item["summary"])
+            if not buyer or len(buyer) < 4:
+                continue
+            with SessionLocal() as s:
+                ent, _ = resolve_enterprise(s, buyer, source="ccgp_buyer")
+                # SPEC-W W1：采购人建档同语义补 ICP 分类
+                if ent.industry_key is None:
+                    from .api.imports import apply_icp
+
+                    apply_icp(ent)
+                exists = (
+                    s.query(Signal)
+                    .filter(
+                        Signal.enterprise_id == ent.id,
+                        Signal.url == item["url"],
+                        Signal.title == item["title"],
+                    )
+                    .first()
+                )
+                if exists is None:
+                    s.add(Signal(
+                        enterprise_id=ent.id,
+                        type="tender",
+                        title=item["title"],
+                        url=item["url"],
+                        pub_date=item["pub_date"],
+                        matched_terms="[]",
+                        hit_part="title",
+                        raw_excerpt=item["summary"][:200],
+                        evidence_claim=f"政采网{item['notice_type'] or '公告'}：该单位就「{item['title'][:40]}」发布公告",
+                        base_score=50.0,
+                    ))
+                    stats["ccgp_signals"] += 1
+                s.commit()
+
+
+def run_hourly_tender_scan() -> dict:
+    """小时级轻增量（SPEC-BO BO1，工作时段每 2 小时）：
+
+    招标中"行动窗口"数据全部出自 ccgp（ggzy 只出中标=事后语义）。
+    12 细词 × days=2 × 1 页轻扫摊平——增量约 96 请求/日摊在 8 个时点，
+    对齐"小时级到达"而不触碰 ccgp 限流实测线（密集 400+/日出拦截页）；
+    resilience 遇拦截页自动熔断，日批 03:30 全量不动。
+    一周实测无拦截页 → 提频只改注册参数（"7-21/2" → "7-21"）。
+    """
+    stats = {"scanned_words": 12, "ccgp_signals": 0}
+    _scan_ccgp_words(stats, days=2, max_pages=1)
+    return stats
+
+
 def run_daily_incremental() -> dict:
     """每日增量：ggzy 宽词近 7 天 + ccgp 强词近 7 天（同步小批次，失败记水位）。
 
     采集器自带限速与去重，重复词安全；时长可控（分钟级）。
     """
-    from .collectors.ccgp import search_ccgp_all
     from .db import SessionLocal
     from .normalize import resolve_enterprise
     from .vertical import device_strong_terms, ggzy_name_terms
@@ -853,50 +921,8 @@ def run_daily_incremental() -> dict:
                     exc_info=True,
                 )
 
-    # --- ccgp 强词增量（近 7 天，只扫第一页）---
-    from .vertical import device_strong_terms as _dst
-
-    for kw in _dst()[:12]:
-        for item in search_ccgp_all(kw, days=7, max_pages=1):
-            if not any(
-                t in item["title"] or t in item["summary"]
-                for t in _dst()
-            ):
-                continue
-            buyer = item.get("buyer") or extract_enterprise_name(item["title"], item["summary"])
-            if not buyer or len(buyer) < 4:
-                continue
-            with SessionLocal() as s:
-                ent, _ = resolve_enterprise(s, buyer, source="ccgp_buyer")
-                # SPEC-W W1：采购人建档同语义补 ICP 分类
-                if ent.industry_key is None:
-                    from .api.imports import apply_icp
-
-                    apply_icp(ent)
-                exists = (
-                    s.query(Signal)
-                    .filter(
-                        Signal.enterprise_id == ent.id,
-                        Signal.url == item["url"],
-                        Signal.title == item["title"],
-                    )
-                    .first()
-                )
-                if exists is None:
-                    s.add(Signal(
-                        enterprise_id=ent.id,
-                        type="tender",
-                        title=item["title"],
-                        url=item["url"],
-                        pub_date=item["pub_date"],
-                        matched_terms="[]",
-                        hit_part="title",
-                        raw_excerpt=item["summary"][:200],
-                        evidence_claim=f"政采网{item['notice_type'] or '公告'}：该单位就「{item['title'][:40]}」发布公告",
-                        base_score=50.0,
-                    ))
-                    stats["ccgp_signals"] += 1
-                s.commit()
+    # --- ccgp 强词增量（近 7 天，只扫第一页；SPEC-BO 抽出 _scan_ccgp_words 共用）---
+    _scan_ccgp_words(stats, days=7, max_pages=1)
 
     # 意图/画像/检索投影收尾
     from .api.imports import recompute_intent

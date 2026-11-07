@@ -723,20 +723,30 @@ function IntelInner() {
                         <Tag color="cyan" type="light" size="small">{ROLE_CN[c.role] ?? c.role}</Tag>
                       </span>
                     </div>
-                    {/* SPEC-AH AH3：规范化可拨号码 chips（可复制）+ SPEC-AN AN1 触达结果标记 */}
+                    {/* SPEC-AH AH3：规范化可拨号码 chips（可复制）+ SPEC-BO tel: 拨打 + SPEC-AN AN1 触达结果标记 */}
                     {((c.phones ?? []).length > 0 || c.call_result) && (
                       <div className="mt-1.5 flex flex-wrap items-center gap-1">
                         {(c.phones ?? []).map((p) => (
-                          <span
-                            key={p}
-                            className="cursor-pointer rounded border border-[var(--border)] bg-[var(--raised)] px-1.5 py-0.5 font-mono text-[12.5px] tabular-nums text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
-                            title="点击复制号码"
-                            onClick={() => {
-                              void navigator.clipboard?.writeText(p);
-                              Toast.success(`已复制 ${p}`);
-                            }}
-                          >
-                            {p}
+                          <span key={p} className="inline-flex items-center gap-0.5">
+                            <span
+                              className="cursor-pointer rounded border border-[var(--border)] bg-[var(--raised)] px-1.5 py-0.5 font-mono text-[12.5px] tabular-nums text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
+                              title="点击复制号码"
+                              onClick={() => {
+                                void navigator.clipboard?.writeText(p);
+                                Toast.success(`已复制 ${p}`);
+                              }}
+                            >
+                              {p}
+                            </span>
+                            {/* SPEC-BO：tel: 拨打——桌面唤起外呼软抖，手机唤起拨号盘 */}
+                            <a
+                              href={`tel:${p}`}
+                              title="点击拨打"
+                              className="text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+                              onClick={(ev) => ev.stopPropagation()}
+                            >
+                              <Phone size={11} />
+                            </a>
                           </span>
                         ))}
                         <CallResultTag

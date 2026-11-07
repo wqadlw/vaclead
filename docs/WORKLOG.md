@@ -1974,3 +1974,21 @@ top_buyer 回抽/动态流 stolen_from 高亮"被抢走的机会点"/admin 搜�
 **Mimosa 规避**：Signal.enterprise_id or_/== 链（不用 .in_）；聚合
 纯 Python（竞对几十级无需物化）。
 **门禁**：pytest 309 + build + E2E 7 全绿（E2E 套件从 6 涨到 7）。
+
+
+## 2026-11-07 · W59 · SPEC-BO 实时性与拨号轮（Agent B）
+
+缺口 #2（剑鱼对位"实时推送"）+ 第七次复查"外呼 80 分方案"最后一米。
+**调研定案（诚实边界）**：招标中行动数据全部出自 ccgp（ggzy 只出中标
+=事后语义）；ccgp 限流实测密集 400+ 请求/日拦截页——**小时级方案取
+"轻扫摊平"而非全量提频**：每 2 小时（工作时段 7-21）×12 细词×1 页×
+days=2 ≈ 增量 96 请求/日摊 8 时点；resilience 域级积分制遇拦截自动
+熔断；日批 03:30 全量不动。一周无拦截页 → 提频只改注册参数一行。
+**实现**：ccgp 段从 run_daily_incremental 抽出 `_scan_ccgp_words`
+共用（test_spec_i 锁日批零变化）+ run_hourly_tender_scan + 注册
+"7-21/2"（APScheduler 区间步进语法）:40 错峰 + subscription_rules
+提频每小时。**tel: 拨号**：情报页联系人 chips+推荐卡号码徽标旁
+lucide Phone 链接（桌面唤软抖/手机唤拨号盘，复制交互不变，
+stopPropagation 防卡片跳转）——打完电话快标回写既有，闭环收口。
+**门禁**：pytest 311 + build + E2E 7 全绿。观察项：一周内盯拦截页
+告警与水位（入 OPERATIONS 观察项）。
