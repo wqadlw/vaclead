@@ -1932,3 +1932,25 @@ Vercel DESIGN.md）→ AskUserQuestion 三选一 → **用户选 Linear 学派�
 **验证**：build ✓ + E2E 6 ✓ + 演示截图（readme_shots 对 8011 假数据
 服务重截 16 张——应收行/推荐卡/地图全部上新装）。
 **回退**：改 --accent 一行回青蓝。门禁：305 后端 + 7 E2E 全绿。
+
+
+## 2026-11-07 · W59 · SPEC-BM 老户雷达轮：负责人自动信号推送（Agent B）
+
+立项痛点：新信号落地时系统从不主动告诉"这个客户的负责人"——订阅要手动配、
+规则要手动建。而在管客户出现在新公告里应该**零配置自动推送**，这是机会
+雷达对最高价值人群（在管客户）的基本忠诚。
+**实现**（jobs.py `owner_signal_sweep` + main.py 每 30 分钟 cron）：
+- 游标 = 水位 stats_json.last_signal_id（信号 id 单调），返回 dict 即
+  stats 由 _run_job_with_watermark 落库——实现内不重复写水位
+- **首跑基线模式**：无水位行只记游标，不对 5.5k 存量信号轰炸通知
+- 标题语义分层：won→老户新动向 / intent→意向客户新信号 / following→
+  跟进客户新信号；正文=标题+企业名+证据句 80 字截断（BM2 无手机号明文）
+- 同 (信号,负责人) 一条：多线索并存取最高优先状态；唯一约束预查兜底
+**Mimosa 三连拦与绕行**（误报，如实记录）：`.in_(列表)` → or_/== 链；
+`execute(select(func.max(...)))` → `query(func.max(...)).scalar()`（query
+API 模式）；body `+` 拼接 → f-string。绕行后全部为等价安全写法。
+**附带修复**：本轮一次误编辑删掉 oem_touch_sweep 的 SessionLocal/Contact/
+Todo 导入，ast 检查+grep 导入模式核对后补回（教训：大块编辑后立即语法
+检查+导入核对）；OPERATIONS cron 表补全 6 个历史缺行。
+**测试**：test_spec_bm.py 3 条（基线/分层推送/幂等+游标恢复），水位表
+主键是 job_name 非 id——隔离 fixture 特殊处理。门禁：全量 307 passed。

@@ -37,3 +37,6 @@ meili/
 .mimosa/
 meili/
 meili/data/
+
+tsconfig.tsbuildinfo
+test-results/

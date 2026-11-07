@@ -228,7 +228,7 @@ async def lifespan(app: FastAPI):
 
         scheduler = BackgroundScheduler()
 
-        def _register_cron(job_name: str, fn, hour: "int | str", minute: int,
+        def _register_cron(job_name: str, fn, hour: "int | str", minute: "int | str",
                            job_kwargs: dict | None = None,
                            day_of_week: str | None = None) -> None:
             """统一 cron 注册（SPEC-I I0）：签名防呆 + 失败落水位 + 防重入。
@@ -236,7 +236,8 @@ async def lifespan(app: FastAPI):
             注册前 bind 校验拦下参数笔误（曾有 refresh_all_stats 漏传 session
             静默 failed 三天）；misfire 宽限/合并/单实例为每日任务标准加固。
             day_of_week：APScheduler 语义（如 "mon"），供周任务使用（SPEC-O）。
-            hour 支持 "*/2" 等表达式（SPEC-AA AA3 订阅扫播提频）。
+            hour/minute 支持 "*/n" 表达式（SPEC-AA AA3 订阅扫播提频、
+            SPEC-BM 老户雷达每 30 分钟）。
             """
             if _jobs_disabled:
                 logging.getLogger("vaclead.jobs").info(
@@ -404,6 +405,15 @@ async def lifespan(app: FastAPI):
 
         # SPEC-AX AX1：每日 06:25 回款逾期扫描（pending→overdue + 逾期待办）
         _register_cron("payment_overdue", _payment_overdue_sweep, 6, 25)
+
+        def _owner_signal_sweep() -> dict:
+            from .jobs import owner_signal_sweep
+
+            return owner_signal_sweep()
+
+        # SPEC-BM BM1：每 30 分钟老户雷达——在管客户新信号零配置推送负责人
+        # （won=老户新动向 / intent=意向客户新信号 / following=跟进客户新信号）
+        _register_cron("owner_signal", _owner_signal_sweep, "*", "*/30")
 
         # SPEC-AP AP1：Meili 可用性预热——冷启动首击的 2.5s 探测在启动期消化，
         # 不让第一个倒霉请求吃（探测结果随后走 30s 缓存）

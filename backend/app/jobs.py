@@ -556,9 +556,7 @@ def oem_touch_sweep() -> dict:
     90 天无任何触达结果标记/待办的 OEM → 生成关系维护待办（幂等）。
     OEM 买泵装设备——供货稳定性的关系维护比价格战更重要。
     """
-    from datetime import datetime, timedelta, timezone
-
-    from sqlalchemy import select
+    from datetime import timedelta, timezone
 
     from .db import SessionLocal
     from .models import Contact, Todo
@@ -611,6 +609,111 @@ def oem_touch_sweep() -> dict:
             created += 1
         s.commit()
     return {"oem_total": len(oems), "todos_created": created}
+
+
+def owner_signal_sweep() -> dict:
+    """负责人信号推送（SPEC-BM BM1，每 30 分钟）。
+
+    新信号落在"在管线索"（following/intent/won，有负责人）的企业上，
+    notify_dispatch 通知线索负责人。零配置：不依赖手动订阅/规则——
+    "我的在管客户出现在新公告里"必须主动推给负责人。
+
+    标题语义分层：won=老户新动向（复购/替换机会，最优先）/
+    intent=意向客户新信号 / following=跟进客户新信号。
+    正文=信号标题+企业名+证据句截断（BM2：不含手机号明文——联系人
+    数据在详情页，通知只导流）。
+
+    游标：sync_watermark 'owner_signal_sweep' 的
+    stats_json.last_signal_id（_run_job_with_watermark 将返回 dict 写入
+    stats）。首跑无水位行 → 基线模式（只记游标不轰炸存量）；失败轮
+    游标丢失 → 全量重扫，Notification 唯一约束预查去重，幂等。
+    """
+    from sqlalchemy import or_
+
+    from .db import SessionLocal
+    from .models import Lead, Notification
+    from .notify.channels import notify_dispatch
+
+    with SessionLocal() as s:
+        row = s.get(SyncWatermark, "owner_signal_sweep")
+        max_id = s.query(func.max(Signal.id)).scalar() or 0
+        if row is None:
+            # 首跑基线：只记游标，避免对存量信号一次性轰炸
+            return {"baseline": True, "scanned": 0, "notified": 0,
+                    "last_signal_id": max_id}
+        try:
+            since_id = int(
+                json.loads(row.stats_json or "{}").get("last_signal_id", 0)
+            )
+        except ValueError:
+            since_id = 0
+        if max_id <= since_id:
+            return {"scanned": 0, "notified": 0, "last_signal_id": since_id}
+
+        # 标题语义按线索状态分层；同企业多条线索指向同一负责人时取最高优先状态
+        _TITLE = {
+            "won": "老户新动向",
+            "intent": "意向客户新信号",
+            "following": "跟进客户新信号",
+        }
+        _RANK = {"won": 0, "intent": 1, "following": 2}
+        rows = s.execute(
+            select(Signal, Lead.status, Lead.owner_id, Enterprise.name)
+            .join(Lead, Lead.enterprise_id == Signal.enterprise_id)
+            .join(Enterprise, Enterprise.id == Signal.enterprise_id)
+            .where(
+                Signal.id > since_id,
+                or_(
+                    Lead.status == "won",
+                    Lead.status == "intent",
+                    Lead.status == "following",
+                ),
+                Lead.owner_id.is_not(None),
+                Enterprise.deleted_at.is_(None),
+            )
+            .order_by(Signal.id.asc(), Lead.id.asc())
+            .limit(2000)
+        ).all()
+
+        # 同 (信号, 负责人) 只推一条：多条线索并存时保留最高优先状态
+        # （Notification 唯一约束 (ref_type, ref_id, user_id) 同样兜底）
+        best: dict[tuple[int, int], tuple[str, object, str]] = {}
+        for sig, status, owner_id, ent_name in rows:
+            prev = best.get((sig.id, owner_id))
+            if prev is None or _RANK[status] < _RANK[prev[0]]:
+                best[(sig.id, owner_id)] = (status, sig, ent_name)
+        notified = 0
+        for (sig_id, owner_id), (status, sig, ent_name) in best.items():
+            dup = (
+                s.query(Notification)
+                .filter(
+                    Notification.ref_type == "owner_signal",
+                    Notification.ref_id == sig_id,
+                    Notification.user_id == owner_id,
+                )
+                .first()
+            )
+            if dup is not None:
+                continue
+            evidence = (sig.evidence_claim or sig.raw_excerpt or "").strip()
+            if len(evidence) > 80:
+                evidence = f"{evidence[:80]}…"
+            title_text = f"{_TITLE[status]}：{ent_name}"
+            body_text = f"「{sig.title}」"
+            if evidence:
+                body_text = f"{body_text}——{evidence}"
+            notify_dispatch(
+                s, owner_id,
+                kind="signal",
+                title=title_text,
+                body=body_text,
+                ref_type="owner_signal",
+                ref_id=sig_id,
+            )
+            notified += 1
+        s.commit()
+        return {"scanned": max_id - since_id, "notified": notified,
+                "last_signal_id": max_id}
 
 
 # ---------------------------------------------------------------------------

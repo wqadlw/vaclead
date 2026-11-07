@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.0.42（2026-11-07）
+
+老户雷达轮（SPEC-BM）：在管客户新信号零配置推送负责人。
+
+### 负责人信号推送（BM1）
+- **owner_signal_sweep 每 30 分钟**：新信号落在在管线索（following/intent/won）企业上 → 自动通知线索负责人——"我的客户出现在新公告里"不再依赖手动订阅
+- **标题语义分层**：won→「老户新动向」（复购/替换机会）/ intent→「意向客户新信号」/ following→「跟进客户新信号」；正文=信号标题+企业名+证据句截断（80 字）
+- **首跑基线模式**：只记游标不轰炸存量；失败轮游标丢失全量重扫，Notification 唯一约束去重兜底
+- 公海（无 owner）/已删企业不推；每信号每负责人一条
+- 附带：OPERATIONS cron 表补全 6 个历史缺行（purge_deleted/product_seed/consumable_clock/payment_overdue/watermark_watchdog/oem_touch）
+
 ## v1.0.41（2026-11-06）
 
 触达覆盖与私有案例轮（SPEC-AZ）+ 前端应收补显（AY）。

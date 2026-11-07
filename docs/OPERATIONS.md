@@ -30,6 +30,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | 时刻 | 水位名 | 说明 |
 |---|---|---|
 | 02:00 | recycle_leads | 公海回收：超 N 天未跟进退回公海 |
+| 03:00 | purge_deleted | 回收站 30 天保留期清空（SPEC-AM） |
 | 03:30 | daily_incremental | ggzy 宽词 + ccgp 细词，近 7 天 |
 | 04:00 | refresh_enterprise_stats | 中标画像：enterprise_stat 全量聚合 |
 | 04:05 | notify_sweep | 订阅企业新信号 → 站内通知 |
@@ -40,9 +41,15 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | 05:10 | proposal_hb | 湖北备案查询直采（tzxm.hubei.gov.cn，项目级，extoken 时间签名见 collectors/proposal_hb.py；SPEC-AG） |
 | 06:10 | contract_renewals | active 合同 end_date ≤ 30 天 → 自动续约 Todo（查重；SPEC-AD） |
 | 06:15 | health_refresh | 客户健康分+生命周期批量刷新（<30 降 at_risk，≥60 回升；SPEC-AE） |
+| 06:18 | product_seed | 昊青四条产品线种子（幂等；SPEC-AS） |
+| 06:20 | consumable_clock | 装机耗材时钟扫描 → 回访待办（SPEC-AS） |
+| 06:25 | payment_overdue | 回款逾期：pending 过期 → overdue + 待办（owner=合同负责人；SPEC-AX） |
+| 06:30 | watermark_watchdog | 水位看门狗：关键日批未执行自动补跑 + 通知 admin（SPEC-AR） |
 | 08:05 | digest_flush | 静默期通知聚合出舱（SPEC-G） |
 | 08:30 周一 | reports_weekly | 经营周报生成+通知（SPEC-O，day_of_week 参数已扩展 _register_cron） |
+| 01:07 周一 | oem_touch | OEM 季度关系维护：90 天未触达 → 维护待办（SPEC-AU） |
 | 09:30 / 14:30 | outreach_dispatch | 邮件触达：收件同步+预算内发送（SPEC-J J4） |
+| 每 30 分钟 | owner_signal | 老户雷达：在管客户新信号 → 负责人零配置推送（won/intent/following 语义分层；SPEC-BM） |
 | 每 2 小时 | subscription_rules | 订阅规则扫播（hour="*/2"，SPEC-AA 提频；日批 04:06 起改） |
 | 每 10 分钟 | webhook_flush (interval) | SPEC-P 出站 webhook 投递引擎（指数退避，唯一 interval 任务） |
 | 按需 | backfill-icp | 存量未分类企业补 ICP 分类（POST /api/tasks/backfill-icp，幂等，采集打标不被覆盖；SPEC-W） |
