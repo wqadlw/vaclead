@@ -14,6 +14,7 @@ import {
   LogOut,
   Map,
   Megaphone,
+  Menu,
   Package,
   PhoneCall,
   Radar,
@@ -23,6 +24,7 @@ import {
   Settings,
   Sprout,
   UserRound,
+  X,
   Bell,
   Moon,
   Sun,
@@ -349,6 +351,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [role, setRole] = useState("sales");
   const [user, setUser] = useState("");
+  // SPEC-CB 移动端抽屉
+  const [mobileNav, setMobileNav] = useState(false);
 
   useEffect(() => {
     const token = getToken();
@@ -427,7 +431,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[var(--ground)]">
       {/* 侧栏：浅色框架，与顶栏同底无界线（L 框架） */}
-      <aside className="fixed inset-y-0 left-0 z-30 flex w-[228px] flex-col">
+      {/* SPEC-CB：移动抽屉（<md 滑入），桌面常驻不变 */}
+      {mobileNav && (
+        <div
+          className="fixed inset-0 z-30 bg-black/30 md:hidden"
+          onClick={() => setMobileNav(false)}
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex w-[228px] flex-col transition-transform duration-200 ${
+          mobileNav ? "translate-x-0" : "-translate-x-full"
+        } md:translate-x-0`}
+      >
         <div className="flex items-center gap-2.5 px-5 pt-5">
           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--accent)]">
             <Radar className="h-[16px] w-[16px] text-white" strokeWidth={2.2} />
@@ -452,7 +467,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   <button
                     key={href}
                     data-nav={href}
-                    onClick={() => router.push(href)}
+                    onClick={() => { router.push(href); setMobileNav(false); }}
                     className={`nav-item flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-[7px] text-left text-[13.5px] ${
                       active
                         ? "nav-pill font-medium"
@@ -474,9 +489,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* 主列：顶栏 + 白纸 */}
-      <div className="ml-[228px] flex min-h-screen flex-col">
+      <div className="flex min-h-screen flex-col md:ml-[228px]">
         <header className="sticky top-0 z-20 flex h-12 items-center justify-between bg-[var(--ground)] px-6">
           <div className="flex items-center gap-3">
+            <button
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-white text-[var(--muted)] md:hidden"
+              title="菜单"
+              onClick={() => setMobileNav(true)}
+            >
+              <Menu size={15} />
+            </button>
             <button
               onClick={() => {
                 const ev = new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true });
