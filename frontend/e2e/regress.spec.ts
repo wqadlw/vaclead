@@ -23,6 +23,20 @@ test.beforeEach(async ({ page }) => {
 
 test("行内编辑注册资本", async ({ page }) => {
   await page.goto("/enterprises");
+  // SPEC-CI：注册资本默认收进列显隐——先恢复再编辑
+  await page.evaluate(() => {
+    const v2 = localStorage.getItem("vaclead_views_v2");
+    if (v2) {
+      try {
+        const views = JSON.parse(v2);
+        localStorage.setItem(
+          "vaclead_views_v2",
+          JSON.stringify(views.map((x: { hiddenCols: string[] }) => ({ ...x, hiddenCols: [] }))),
+        );
+      } catch {}
+    }
+  });
+  await page.reload();
   // 找含长晶的行的资本格（title=点击编辑）
   const cell = page.locator('span[title="点击编辑"]').first();
   await cell.scrollIntoViewIfNeeded();

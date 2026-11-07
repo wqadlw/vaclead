@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Checkbox, Dropdown, Input, InputNumber, Modal, Popover, Select, Table, Tag, Tabs, Toast } from "@douyinfe/semi-ui";
-import { Pencil, Save, Search, Settings2, RotateCcw, X } from "lucide-react";
+import { ChevronDown, Pencil, Save, Search, Settings2, RotateCcw, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import EnterprisePeek from "@/components/EnterprisePeek";
 import { AGG_OPS, AdvancedFilterModal, QuickPicks, SummaryBar } from "@/components/EnterprisesWidgets";
@@ -200,7 +200,17 @@ export default function EnterprisesPage() {
   const [tagDraft, setTagDraft] = useState("");
   const [poolConfirm, setPoolConfirm] = useState(false);
   // Pro 表格（ant-design-pro 模式）：列显隐 / 密度 / 保存视图
-  const [hiddenCols, setHiddenCols] = useState<string[]>([]);
+  // SPEC-CI：更多筛选展开态 + 激活计数
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreCount = [
+    filters.city, filters.district, filters.capital_min, filters.capital_max,
+    filters.signal_days, filters.score_min, filters.established_within_years,
+    filters.bid_min, filters.bid_amount_min, filters.tag,
+    filters.is_competitor !== undefined && filters.is_competitor !== -1 ? 1 : null,
+    filters.source,
+  ].filter((v) => v !== null && v !== undefined && v !== "").length;
+  // SPEC-CI：默认销售视角——地址/注册资本默认收进列显隐
+  const [hiddenCols, setHiddenCols] = useState<string[]>(["address"]);
   const [dense, setDense] = useState(false);
   // 视图 = 完整工作区快照（吸收 twenty View：筛选+列配置+密度+聚合全打包）
   const [views, setViews] = useState<
@@ -326,7 +336,7 @@ export default function EnterprisesPage() {
   };
 
   const COLUMN_LABELS: Record<string, string> = {
-    industry_name: "行业", region: "地区", registered_capital_wan: "注册资本",
+    industry_name: "行业", region: "地区", phone: "电话", registered_capital_wan: "注册资本",
     icp_score: "ICP", intent_score: "意图", signal_count: "信号", source: "来源", address: "地址",
   };
 
@@ -594,6 +604,28 @@ export default function EnterprisesPage() {
       width: 120,
       render: (_: unknown, r: Enterprise) => <span className="text-[var(--muted)]">{regionOf(r)}</span>,
     },
+
+    {
+      title: "电话",
+      dataIndex: "phone",
+      width: 170,
+      render: (_: unknown, r: Enterprise) =>
+        r.phone ? (
+          <span
+            className="inline-flex cursor-pointer items-center rounded border border-[var(--border)] bg-[var(--raised)] px-1.5 py-0.5 font-mono text-[12.5px] tabular-nums text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
+            title="点击复制"
+            onClick={(e) => {
+              e.stopPropagation();
+              void navigator.clipboard?.writeText(r.phone ?? "");
+              Toast.success(`已复制 ${r.phone}`);
+            }}
+          >
+            {r.phone}
+          </span>
+        ) : (
+          <span className="text-[var(--control)]">—</span>
+        ),
+    },
     {
       title: "地址",
       dataIndex: "address",
@@ -736,7 +768,7 @@ export default function EnterprisesPage() {
         <div>
           <h1 className="text-[22px] font-semibold leading-7 text-[var(--ink)]">企业筛选</h1>
           <p className="mt-1 text-[13.5px] text-[var(--muted)]">
-            共 {data?.total ?? 0} 家 · 疑似同行已置灰 · 点击企业名查看评分理由与信号
+            {loading ? "加载中…" : `共 ${data?.total ?? 0} 家 · 疑似同行已置灰 · 点击企业名查看评分理由与信号`}
           </p>
         </div>
         {typeof window !== "undefined" && localStorage.getItem("vaclead_role") === "admin" && (
@@ -899,35 +931,12 @@ export default function EnterprisesPage() {
         </div>
       </Modal>
 
-      {/* 工具行：左侧筛选+搜索，右侧重置 */}
+      {/* SPEC-CI 工具行收敛：搜索先行，11 个次要维度收进「更多筛选」展开行 */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Select style={ctl} optionList={INDUSTRY_SELECT} placeholder="全部行业" filter showClear value={filters.industry_key} onChange={(v) => set({ industry_key: (v as string) || undefined })} />
-        <Select style={ctl} optionList={PROVINCE_OPTIONS} placeholder="全部省份" filter showClear value={filters.province} onChange={(v) => set({ province: (v as string) || undefined })} />
-        <Input style={{ width: 104 }} placeholder="城市" value={filters.city} onChange={(v) => set({ city: v })} />
-        <Input style={{ width: 104 }} placeholder="区县" value={filters.district} onChange={(v) => set({ district: v })} />
-        <div className="flex items-center gap-1">
-          <InputNumber style={{ width: 84 }} placeholder="资本≥" min={0} value={filters.capital_min ?? undefined} onChange={(v) => set({ capital_min: typeof v === "number" ? v : null })} />
-          <span className="text-[var(--control)]">—</span>
-          <InputNumber style={{ width: 84 }} placeholder="≤" min={0} value={filters.capital_max ?? undefined} onChange={(v) => set({ capital_max: typeof v === "number" ? v : null })} />
-        </div>
-        <Select style={ctl} optionList={SIGNAL_DAY_OPTIONS} placeholder="信号不限" showClear value={filters.signal_days ?? undefined} onChange={(v) => set({ signal_days: typeof v === "number" ? v : null })} />
-        <Select style={ctl} optionList={SCORE_MIN_OPTIONS} placeholder="评分不限" showClear value={filters.score_min ?? undefined} onChange={(v) => set({ score_min: typeof v === "number" ? v : null })} />
-        <Select style={ctl} optionList={ESTABLISHED_OPTIONS} placeholder="成立年限不限" showClear value={filters.established_within_years ?? undefined} onChange={(v) => set({ established_within_years: typeof v === "number" ? v : null })} />
-        <Select style={ctl} optionList={BID_MIN_OPTIONS} placeholder="中标次数不限" showClear value={filters.bid_min ?? undefined} onChange={(v) => set({ bid_min: typeof v === "number" ? v : null })} />
-        <Select style={ctl} optionList={BID_AMOUNT_OPTIONS} placeholder="中标额不限" showClear value={filters.bid_amount_min ?? undefined} onChange={(v) => set({ bid_amount_min: typeof v === "number" ? v : null })} />
-        <Select style={ctl} placeholder="标签不限" showClear filter value={filters.tag ?? undefined} onChange={(v) => set({ tag: (v as string) || undefined })}>
-          {tagOptions.map((t) => (
-            <Select.Option key={t.tag} value={t.tag}>
-              {t.tag} ({t.count})
-            </Select.Option>
-          ))}
-        </Select>
-        <Select style={ctl} optionList={COMPETITOR_OPTIONS} value={filters.is_competitor} onChange={(v) => set({ is_competitor: (v as number) ?? -1 })} />
-        <Select style={ctl} optionList={SOURCE_OPTIONS} placeholder="全部来源" showClear value={filters.source ?? undefined} onChange={(v) => set({ source: (v as string) || undefined })} />
         <Input
-          style={{ width: 210 }}
+          style={{ width: 250 }}
           prefix={<Search size={13} className="text-[#9ca0a3]" />}
-          placeholder="名称 / 经营范围关键词"
+          placeholder="名称 / 经营范围关键词，回车查"
           value={filters.q}
           onChange={(v) => set({ q: v })}
           onKeyDown={(e) => {
@@ -937,8 +946,19 @@ export default function EnterprisesPage() {
             }
           }}
         />
+        <Select style={ctl} optionList={INDUSTRY_SELECT} placeholder="全部行业" filter showClear value={filters.industry_key} onChange={(v) => set({ industry_key: (v as string) || undefined })} />
+        <Select style={ctl} optionList={PROVINCE_OPTIONS} placeholder="全部省份" filter showClear value={filters.province} onChange={(v) => set({ province: (v as string) || undefined })} />
         <Button theme="solid" className="!h-8" onClick={() => { setPage(1); setApplied(filters); }}>
           查询
+        </Button>
+        <Button
+          theme="borderless"
+          type="tertiary"
+          className="!h-8 !px-2 text-[12.5px]"
+          icon={<ChevronDown size={13} className={moreOpen ? "rotate-180 transition-transform" : "transition-transform"} />}
+          onClick={() => setMoreOpen(!moreOpen)}
+        >
+          更多筛选{moreCount > 0 ? ` · ${moreCount}` : ""}
         </Button>
         <a href={exportUrl()} target="_blank" rel="noreferrer" className="no-underline">
           <Button theme="outline" className="!h-8">导出 CSV</Button>
@@ -991,6 +1011,33 @@ export default function EnterprisesPage() {
         />
       </div>
 
+      {moreOpen && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-3 py-2.5">
+          <Input style={{ width: 104 }} placeholder="城市" value={filters.city} onChange={(v) => set({ city: v })} />
+          <Input style={{ width: 104 }} placeholder="区县" value={filters.district} onChange={(v) => set({ district: v })} />
+          <div className="flex items-center gap-1">
+            <InputNumber style={{ width: 84 }} placeholder="资本≥" min={0} value={filters.capital_min ?? undefined} onChange={(v) => set({ capital_min: typeof v === "number" ? v : null })} />
+            <span className="text-[var(--control)]">—</span>
+            <InputNumber style={{ width: 84 }} placeholder="≤" min={0} value={filters.capital_max ?? undefined} onChange={(v) => set({ capital_max: typeof v === "number" ? v : null })} />
+          </div>
+          <Select style={ctl} optionList={SIGNAL_DAY_OPTIONS} placeholder="信号不限" showClear value={filters.signal_days ?? undefined} onChange={(v) => set({ signal_days: typeof v === "number" ? v : null })} />
+          <Select style={ctl} optionList={SCORE_MIN_OPTIONS} placeholder="评分不限" showClear value={filters.score_min ?? undefined} onChange={(v) => set({ score_min: typeof v === "number" ? v : null })} />
+          <Select style={ctl} optionList={ESTABLISHED_OPTIONS} placeholder="成立年限不限" showClear value={filters.established_within_years ?? undefined} onChange={(v) => set({ established_within_years: typeof v === "number" ? v : null })} />
+          <Select style={ctl} optionList={BID_MIN_OPTIONS} placeholder="中标次数不限" showClear value={filters.bid_min ?? undefined} onChange={(v) => set({ bid_min: typeof v === "number" ? v : null })} />
+          <Select style={ctl} optionList={BID_AMOUNT_OPTIONS} placeholder="中标额不限" showClear value={filters.bid_amount_min ?? undefined} onChange={(v) => set({ bid_amount_min: typeof v === "number" ? v : null })} />
+          <Select style={ctl} placeholder="标签不限" showClear filter value={filters.tag ?? undefined} onChange={(v) => set({ tag: (v as string) || undefined })}>
+            {tagOptions.map((t) => (
+              <Select.Option key={t.tag} value={t.tag}>
+                {t.tag} ({t.count})
+              </Select.Option>
+            ))}
+          </Select>
+          <Select style={ctl} optionList={COMPETITOR_OPTIONS} value={filters.is_competitor} onChange={(v) => set({ is_competitor: (v as number) ?? -1 })} />
+          <Select style={ctl} optionList={SOURCE_OPTIONS} placeholder="全部来源" showClear value={filters.source ?? undefined} onChange={(v) => set({ source: (v as string) || undefined })} />
+          <Button size="small" theme="outline" onClick={() => { setPage(1); setApplied(filters); }}>应用</Button>
+        </div>
+      )}
+
       {/* 表格直接落在纸上 */}
       <div className="mt-4">
         <Table<Enterprise>
@@ -1005,7 +1052,7 @@ export default function EnterprisesPage() {
           dataSource={data?.items ?? []}
           loading={loading}
           size={dense ? "small" : "middle"}
-          empty="没有匹配的企业 —— 放宽筛选条件，或先去「拓客任务」采集数据"
+          empty={loading ? " " : "没有匹配的企业 —— 放宽筛选条件，或先去「拓客任务」采集数据"}
           onRow={(r) => ({ className: r?.is_competitor === 1 ? "opacity-45 saturate-50" : "" })}
           pagination={{
             currentPage: page,

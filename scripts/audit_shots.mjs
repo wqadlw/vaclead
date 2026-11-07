@@ -43,7 +43,7 @@ const pages = [
 
 for (const [name, route] of pages) {
   await page.goto(`${BASE}${route}`, { waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(1600);
   await page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage: true });
   console.log("shot", name);
 }

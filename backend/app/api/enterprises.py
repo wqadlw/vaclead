@@ -154,7 +154,7 @@ def list_enterprises(
                 out = {"items": items, "total": r["total"], "page": page, "page_size": page_size}
                 if r.get("facets") is not None:
                     out["facets"] = r["facets"]
-                return out
+                return _attach_primary_phones(session, out)
         except Exception:  # noqa: BLE001 — Meili 异常一律回退 SQLite
             pass
 
@@ -296,7 +296,9 @@ def list_enterprises(
                 "tags": _tags_of(e),
             }
         )
-    return {"items": items, "total": total, "page": page, "page_size": page_size}
+    return _attach_primary_phones(
+        session, {"items": items, "total": total, "page": page, "page_size": page_size}
+    )
 
 
 
@@ -534,6 +536,34 @@ def enterprises_geo(
             for e in rows
         ],
     }
+
+
+def _attach_primary_phones(session: Session, out: dict) -> dict:
+    """列表 items 补 phone 字段（SPEC-CI）：每企业首个可拨号码。
+
+    一次查询（phones_json 非空），销售列可直接拨打——电话是找客户的
+    第一行动作，不该藏在详情页。
+    """
+    items = out.get("items") or []
+    ids = [i["id"] for i in items]
+    if not ids:
+        return out
+    from ..models import Contact as _CT
+    from ..phones import load_phones as _lp
+
+    cond = [_CT.enterprise_id == i for i in ids]
+    best: dict[int, str] = {}
+    for eid, pj in session.query(_CT.enterprise_id, _CT.phones_json).filter(
+        _CT.phones_json != "[]", or_(*cond)
+    ).order_by(_CT.id.asc()).all():
+        if eid in best:
+            continue
+        phones = _lp(pj)
+        if phones:
+            best[eid] = phones[0]
+    for i in items:
+        i["phone"] = best.get(i["id"])
+    return out
 
 
 @router.get("/enterprises/export")

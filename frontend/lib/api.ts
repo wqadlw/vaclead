@@ -132,6 +132,7 @@ export interface Enterprise {
   established_at?: string | null;
   completeness?: number;
   tags?: string[];
+  phone?: string | null;
   status?: string;
   source?: string;
   province: string | null;
