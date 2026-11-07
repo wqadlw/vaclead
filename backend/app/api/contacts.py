@@ -46,21 +46,32 @@ def contacts_worklist(
         .limit(2000)
         .all()
     )
+    # KPI 统计走全局口径（独立轻查询），不吃工作列表的 2000 条采样——
+    # 否则"可拨/未触达"卡显示的是最近 2000 条的样本数而非全局真值
+    stat_pairs = (
+        session.query(Contact.phones_json, Contact.call_result)
+        .join(Enterprise, Enterprise.id == Contact.enterprise_id)
+        .filter(Enterprise.deleted_at.is_(None))
+        .all()
+    )
+    stats = {"with_phone": 0, "untouched": 0, "touched": 0, "interested": 0}
+    for phones_json, call_result in stat_pairs:
+        dialable = bool(load_phones(phones_json))
+        if not dialable:
+            continue
+        stats["with_phone"] += 1
+        if call_result in _UNTOUCHED:
+            stats["untouched"] += 1
+        else:
+            stats["touched"] += 1
+            if call_result == "interested":
+                stats["interested"] += 1
     qq = q.strip()
     items: list[dict] = []
-    stats = {"with_phone": 0, "untouched": 0, "touched": 0, "interested": 0}
     for c, e in rows:
         phones = load_phones(c.phones_json)
         dialable = len(phones) > 0
         untouched = dialable and c.call_result in _UNTOUCHED
-        if dialable:
-            stats["with_phone"] += 1
-            if untouched:
-                stats["untouched"] += 1
-            elif c.call_result == "interested":
-                stats["interested"] += 1
-            if not untouched:
-                stats["touched"] += 1
         if has_phone and not dialable:
             continue
         if call_status == "untouched" and not untouched:
