@@ -6,8 +6,10 @@ merge 语义：candidate 的别名与信号全部迁到 target，删除 candidat
 from __future__ import annotations
 
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -163,3 +165,110 @@ def reject_review(
     r.updated_at = utcnow()
     session.commit()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# SPEC-CA 查重治理：确定性自动拒绝 + 对照表导出 + 批量回写
+# ---------------------------------------------------------------------------
+_STORE_RE = re.compile(r"[（(]([^()（）]*店)[)）]\s*$")
+
+
+@router.post("/tasks/review-auto-dismiss")
+def review_auto_dismiss(
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """确定性自动拒绝（SPEC-CA CA1）：唯一安全规则 poi_store。
+
+    两侧括号内容都以"店"结尾 = POI 按门店建档的设计行为——不同店是
+    不同到访点，合并即错。其余子群一律留人工（去括号同名≠同一主体：
+    安世(中国)/友嘉(绍兴)是独立法人——用数据否决过更激进的规则）。
+    """
+    rows = session.query(ReviewQueue).filter(ReviewQueue.status == "pending").all()
+    dismissed = 0
+    for rq in rows:
+        c = session.get(Enterprise, rq.candidate_id) if rq.candidate_id else None
+        t = session.get(Enterprise, rq.target_id)
+        if c is None or t is None:
+            continue
+        mc, mt = _STORE_RE.search(c.name or ""), _STORE_RE.search(t.name or "")
+        if mc and mt:
+            rq.status = "rejected"
+            rq.reason = "auto_poi_store"
+            rq.updated_at = utcnow()
+            dismissed += 1
+    session.commit()
+    return {"scanned": len(rows), "dismissed": dismissed}
+
+
+@router.get("/review-queue/export")
+def export_review_queue(
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """复核对照表 CSV（SPEC-CA CA2）：线下 Excel 快过，标好贴回 bulk。"""
+    import csv as _csv
+    import io as _io
+
+    from fastapi.responses import StreamingResponse
+
+    from sqlalchemy.orm import aliased
+
+    cand_e = aliased(Enterprise)
+    tgt_e = aliased(Enterprise)
+    rows = (
+        session.query(ReviewQueue, cand_e, tgt_e)
+        .join(cand_e, cand_e.id == ReviewQueue.candidate_id)
+        .join(tgt_e, tgt_e.id == ReviewQueue.target_id)
+        .filter(ReviewQueue.status == "pending")
+        .limit(20000)
+        .all()
+    )
+    buf = _io.StringIO()
+    w = _csv.writer(buf)
+    w.writerow(["rid", "score", "candidate", "candidate_source", "target", "target_source", "decision"])
+    for rq, c, t in rows:
+        w.writerow([rq.id, rq.score, c.name, c.source, t.name, t.source, ""])
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=review_queue.csv"},
+    )
+
+
+class BulkReviewIn(BaseModel):
+    items: list[dict]
+
+
+@router.post("/review-queue/bulk")
+def bulk_review(
+    body: BulkReviewIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """批量回写（SPEC-CA CA2）：逐条复用既有 merge/reject 语义。
+
+    Excel 对照表标记后粘贴回写；返回逐条成败（一条失败不中断整批）。
+    """
+    ok = 0
+    errors: list[dict] = []
+    for item in body.items[:1000]:
+        rid = int(item.get("id") or 0)
+        action = str(item.get("action") or "")
+        if action not in ("merge", "reject"):
+            errors.append({"id": rid, "error": "非法 action"})
+            continue
+        try:
+            if action == "merge":
+                merge_review(rid=rid, session=session, user=user)
+            else:
+                reject_review(rid=rid, session=session, user=user)
+            ok += 1
+        except HTTPException as exc:
+            session.rollback()
+            errors.append({"id": rid, "error": str(exc.detail)})
+        except Exception as exc:  # noqa: BLE001
+            session.rollback()
+            errors.append({"id": rid, "error": str(exc)})
+    return {"ok": ok, "failed": len(errors), "errors": errors[:20]}

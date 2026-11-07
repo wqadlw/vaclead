@@ -1253,6 +1253,9 @@ export default function SettingsPage() {
   const [reviewItems, setReviewItems] = useState<ReviewRow[]>([]);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [actingId, setActingId] = useState<number | null>(null);
+  // SPEC-CA 查重治理：批量复核
+  const [reviewSel, setReviewSel] = useState<number[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const loadReview = useCallback(() => {
     setReviewLoading(true);
@@ -1288,6 +1291,24 @@ export default function SettingsPage() {
       Toast.error(e instanceof Error ? e.message : "操作失败");
     } finally {
       setActingId(null);
+    }
+  };
+
+  // SPEC-CA：批量拒绝（安全动作；合并保持逐条单人确认）
+  const bulkReject = async () => {
+    if (reviewSel.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const r = await api.post<{ ok: number; failed: number }>("/api/review-queue/bulk", {
+        items: reviewSel.map((id) => ({ id, action: "reject" })),
+      });
+      Toast.success(`批量拒绝完成：成功 ${r.ok}，失败 ${r.failed}`);
+      setReviewSel([]);
+      loadReview();
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "批量失败");
+    } finally {
+      setBulkBusy(false);
     }
   };
 
@@ -1523,6 +1544,22 @@ export default function SettingsPage() {
               <Button theme="borderless" type="tertiary" loading={scanStarting} onClick={startDupScan}>
                 查重扫描
               </Button>
+              <Button
+                theme="borderless"
+                type="tertiary"
+                onClick={() => window.open("/api/review-queue/export", "_blank")}
+              >
+                导出对照表
+              </Button>
+              <Button
+                theme="borderless"
+                type="danger"
+                disabled={reviewSel.length === 0}
+                loading={bulkBusy}
+                onClick={bulkReject}
+              >
+                批量拒绝所选（{reviewSel.length}）
+              </Button>
               <Button theme="borderless" type="tertiary" loading={reviewLoading} onClick={loadReview}>
                 刷新
               </Button>
@@ -1531,6 +1568,10 @@ export default function SettingsPage() {
               rowKey="id"
               size="small"
               loading={reviewLoading}
+              rowSelection={{
+                selectedRowKeys: reviewSel,
+                onChange: (keys) => setReviewSel((keys ?? []).map(Number)),
+              }}
               dataSource={reviewItems}
               empty="暂无待复核项 —— 采集/导入触发归一时，80-89 分的疑似重复会出现在这里"
               pagination={{ pageSize: 10 }}
