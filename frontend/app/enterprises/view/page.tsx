@@ -11,6 +11,16 @@ import { Button, Dropdown, Input, Modal, Skeleton, TabPane, Tabs, Tag, Toast } f
 import { ArrowLeft, Bell, BellRing, Phone, Trash2, UserCheck } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import JourneyTimeline, { type JourneyItem } from "@/components/JourneyTimeline";
+
+interface SimilarItem {
+  id: number;
+  name: string;
+  industry_name: string | null;
+  province: string | null;
+  city: string | null;
+  intent_score: number;
+  reasons: string[];
+}
 import CallResultTag from "@/components/CallResultTag";
 import { addToCompare, readCompare } from "@/lib/compare";
 import { api, getToken } from "@/lib/api";
@@ -166,6 +176,9 @@ function IntelInner() {
   const [noteDraft, setNoteDraft] = useState("");
   // SPEC-BT 客户旅程（八源合流时间线）
   const [journey, setJourney] = useState<JourneyItem[] | null>(null);
+  // SPEC-CD 找相似（look-alike 可解释榜）
+  const [similar, setSimilar] = useState<SimilarItem[] | null>(null);
+  const [simConverting, setSimConverting] = useState<number | null>(null);
 
   const load = useCallback(() => {
     if (!eid) return;
@@ -180,6 +193,7 @@ function IntelInner() {
     api.get<{ items: UnitRow[] }>(`/api/enterprises/${eid}/units`).then((d) => setUnits(d.items)).catch(() => undefined);
     api.get<{ items: NoteRow[] }>(`/api/enterprises/${eid}/notes`).then((d) => setNotes(d.items)).catch(() => undefined);
     api.get<{ items: JourneyItem[] }>(`/api/enterprises/${eid}/timeline?limit=120`).then((d) => setJourney(d.items)).catch(() => undefined);
+    api.get<{ items: SimilarItem[] }>(`/api/enterprises/${eid}/similar`).then((d) => setSimilar(d.items)).catch(() => undefined);
   }, [eid]);
 
   useEffect(() => load(), [load]);
@@ -811,6 +825,58 @@ function IntelInner() {
               <div className="py-8 text-center text-[13px] text-[var(--muted)]">加载中…</div>
             ) : (
               <JourneyTimeline items={journey} />
+            )}
+          </TabPane>
+
+          {/* SPEC-CD：找相似（look-alike 可解释榜） */}
+          <TabPane tab="找相似" itemKey="similar" className="p-5">
+            {similar === null ? (
+              <div className="py-8 text-center text-[13px] text-[var(--muted)]">加载中…</div>
+            ) : similar.length === 0 ? (
+              <div className="py-8 text-center text-[13px] text-[var(--muted)]">
+                暂无相似企业 —— 给本企业补行业/地区数据后，同类客户会出现在这里
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                <div className="text-[12.5px] text-[var(--muted)]">
+                  从这一个好客户，找到一群同类客户（同行业 &gt; 同省 &gt; 同市 &gt; 可拨 &gt; 近期有信号；已排除在管与同行）
+                </div>
+                {similar.map((s) => (
+                  <div key={s.id} className="flex items-start justify-between gap-3 rounded-lg border border-[var(--border)] px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <a href={`/enterprises/view?id=${s.id}`} className="truncate text-[14px] font-medium text-[var(--accent)] hover:underline">
+                          {s.name}
+                        </a>
+                        {s.reasons.map((r) => (
+                          <Tag key={r} color="cyan" type="light" size="small">{r}</Tag>
+                        ))}
+                      </div>
+                      <div className="mt-0.5 text-[12.5px] text-[var(--muted)]">
+                        {[s.industry_name, s.province, s.city].filter(Boolean).join(" · ") || "—"} · 意图 {s.intent_score}
+                      </div>
+                    </div>
+                    <Button
+                      size="small"
+                      theme="solid"
+                      loading={simConverting === s.id}
+                      onClick={async () => {
+                        setSimConverting(s.id);
+                        try {
+                          await api.post(`/api/enterprises/${s.id}/lead`, {});
+                          Toast.success("已转线索");
+                        } catch (e) {
+                          Toast.error(e instanceof Error ? e.message : "转线索失败");
+                        } finally {
+                          setSimConverting(null);
+                        }
+                      }}
+                    >
+                      转线索
+                    </Button>
+                  </div>
+                ))}
+              </div>
             )}
           </TabPane>
         </Tabs>

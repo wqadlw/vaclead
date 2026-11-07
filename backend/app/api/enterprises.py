@@ -1143,7 +1143,12 @@ def similar_enterprises(
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    """相似企业推荐（SPEC-C F3）：同行业优先 > 同省 > 意图近邻，排除同行与自身。"""
+    """相似企业推荐 v2（SPEC-CD）：look-alike 可解释排序。
+
+    同行业 > 同省 > 同市 > 可拨 > 近 90 天有信号 > 意图近邻；
+    排除同行/自身/**在管**（已有线索=已拿下）；BX 轮省份 87% 覆盖
+    让"同省"维度从形同虚设变可用。每条带 reasons 理由链。
+    """
     e = session.get(Enterprise, eid)
     if e is None:
         raise HTTPException(404, "企业不存在")
@@ -1151,22 +1156,70 @@ def similar_enterprises(
         select(Enterprise)
         .where(Enterprise.id != eid, Enterprise.is_competitor == 0)
         .order_by(Enterprise.intent_score.desc())
-        .limit(500)
+        .limit(800)
     )
     cands = session.scalars(stmt).all()
+    # 排除在管（已有线索）
+    managed_ids = {
+        r[0] for r in session.query(Lead.enterprise_id).all()
+    }
+    cands = [c for c in cands if c.id not in managed_ids]
+    cand_ids = [c.id for c in cands]
+
+    dial_ids: set[int] = set()
+    recent_ids: set[int] = set()
+    if cand_ids:
+        cond = [Enterprise.id == i for i in cand_ids]
+        dial_rows = (
+            session.query(Contact.enterprise_id, Contact.phones_json)
+            .join(Enterprise, Enterprise.id == Contact.enterprise_id)
+            .filter(or_(*cond))
+            .all()
+        )
+        from ..phones import load_phones
+
+        dial_ids = {eid for eid, pj in dial_rows if load_phones(pj)}
+        d90 = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+        sig_rows = (
+            session.query(Signal.enterprise_id)
+            .filter(
+                or_(*[Signal.enterprise_id == i for i in cand_ids]),
+                Signal.created_at >= d90,
+            )
+            .all()
+        )
+        recent_ids = {r[0] for r in sig_rows}
 
     def rank(c: Enterprise) -> tuple:
         return (
             1 if (c.industry_key and c.industry_key == e.industry_key) else 0,
             1 if (c.province and c.province == e.province) else 0,
+            1 if (c.city and c.city == e.city) else 0,
+            1 if c.id in dial_ids else 0,
+            1 if c.id in recent_ids else 0,
             -abs((c.intent_score or 0) - (e.intent_score or 0)),
         )
 
-    top = sorted(cands, key=rank, reverse=True)[:5]
+    def reasons(c: Enterprise) -> list[str]:
+        out = []
+        if c.industry_key and c.industry_key == e.industry_key:
+            out.append("同行业")
+        if c.province and c.province == e.province:
+            out.append("同省")
+        if c.city and c.city == e.city:
+            out.append("同市")
+        if c.id in dial_ids:
+            out.append("可拨")
+        if c.id in recent_ids:
+            out.append("近期有信号")
+        return out
+
+    top = sorted(cands, key=rank, reverse=True)[:8]
     return {
         "items": [
             {"id": c.id, "name": c.name, "industry_name": c.industry_name,
-             "province": c.province, "intent_score": c.intent_score}
+             "province": c.province, "city": c.city,
+             "intent_score": c.intent_score, "reasons": reasons(c)}
             for c in top
         ]
     }

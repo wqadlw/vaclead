@@ -108,9 +108,10 @@ def test_similar_enterprises(client, admin_headers):
     r = client.get(f"/api/enterprises/{a}/similar", headers=admin_headers)
     assert r.status_code == 200
     items = r.json()["items"]
-    # 启发式推荐：全量共享库下 top-5 被同分企业占满是合法行为，只断言可用性与排除自身
-    assert len(items) <= 5
+    # SPEC-CD v2：全量共享库下 top-8 被占满是合法行为，只断言可用性与排除自身
+    assert len(items) <= 8
     assert all(it["id"] != a for it in items)
+    assert all("reasons" in it for it in items)  # v2 可解释理由链
     # 语义抽查：池内候选必须全部非同行且非自身
     for it in items:
         assert it["name"] != "相似基准半导体有限公司"
