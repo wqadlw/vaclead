@@ -2040,3 +2040,22 @@ chips 复制/tel: 拨打+7 态快标+证据句）；**CallResultTag 抽共享组
 而非全局）——修为独立全局轻查询（14k 行两列采样 Python 计数），
 真库 13,914 可拨/0 已拨与差距调研数字吻合。**素养：KPI 卡的数字
 必须是全局口径，采样统计要显式声明**。
+
+
+## 2026-11-07 · W59 · SPEC-BR 江苏备案通道轮（Agent B）
+
+缺口 #1 剩余项第一站选江苏（苏州/无锡/常州=昊志腹地）。**侦察实证**：
+tzxm.fzggw.jiangsu.gov.cn 与粤鄂完全不同的形态——传统 jQuery 表单站
+（非 SPA），POST /portalopenPublicInformation.do 即得 HTML 列表，
+**服务端关键词过滤+日期倒序**（第 1 页=昨天），比粤鄂"全量再筛"更省；
+全库 4 万页≈80 万项目。「真空」召回即金矿：干式真空泵扩产/真空镀膜机
+研发中心/真空钛金加工线——昊青下游直读。
+**实现**：collectors/proposal_js.py（.do POST+行解析+噪音复用湖北
+is_residential_noise+1.5s 限速+client 注入）+ run_proposal_js_scan
+（12 强词同 ccgp 口径+单位抽取自项目名+建档即补省江苏+apply_icp+
+幂等）+ cron 05:20 错峰 + 看门狗纳入 + 前端三通道徽章。
+**真库首扫**：12 词全通/15 新企业/20 新信号/70 无单位如实跳过。
+**测试教训（规矩固化）**：watchdog_jobs 加一行任务，test_spec_ar 的
+stub 就必须同步加一行——本次漏 stub run_proposal_js_scan，缺水位
+触发真实网络（测试 58s→打桩后 2.4s）。
+**门禁**：pytest 319 + build + E2E 7 全绿。

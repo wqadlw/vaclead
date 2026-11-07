@@ -65,6 +65,7 @@ def test_watchdog_recovers_stale_jobs(monkeypatch):
     monkeypatch.setattr(jobs_mod, "run_daily_incremental", noop)
     monkeypatch.setattr(jobs_mod, "run_proposal_gd_scan", noop)
     monkeypatch.setattr(jobs_mod, "run_proposal_hb_scan", noop)
+    monkeypatch.setattr(jobs_mod, "run_proposal_js_scan", noop)  # SPEC-BR：新任务必须打桩防真网络
     monkeypatch.setattr(jobs_mod, "backup_sqlite", noop)
 
     with SessionLocal() as s:
@@ -86,7 +87,7 @@ def test_watchdog_recovers_stale_jobs(monkeypatch):
         s.commit()
 
     stats = run_watermark_watchdog()
-    assert stats["checked"] == 5
+    assert stats["checked"] == 6  # SPEC-BR：proposal_js 纳入关键日批看门狗
     assert stats["results"]["proposal_hb"] in ("recovered", "recover-failed")
     assert stats["results"]["health_refresh"] == "ok-today", "当日任务应跳过"
 

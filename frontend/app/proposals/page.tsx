@@ -34,12 +34,18 @@ interface ProposalItem {
   province: string | null;
   city: string | null;
   industry_name: string | null;
-  channel: "gd" | "hb";
+  channel: "gd" | "hb" | "js";
   pub_date: string;
   title: string;
   project: string;
   url: string;
 }
+
+const CHANNEL_META: Record<string, { label: string; color: "blue" | "green" | "cyan" }> = {
+  gd: { label: "广东备案", color: "blue" },
+  hb: { label: "湖北备案", color: "green" },
+  js: { label: "江苏备案", color: "cyan" },
+};
 
 export default function ProposalsPage() {
   const [data, setData] = useState<CenterData | null>(null);
@@ -165,8 +171,8 @@ export default function ProposalsPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Tag color={s.channel === "gd" ? "blue" : "green"} type="light" size="small">
-                        {s.channel === "gd" ? "广东备案" : "湖北备案"}
+                      <Tag color={(CHANNEL_META[s.channel] ?? CHANNEL_META.hb).color} type="light" size="small">
+                        {(CHANNEL_META[s.channel] ?? CHANNEL_META.hb).label}
                       </Tag>
                       <span className="text-[12px] tabular-nums text-[var(--muted)]">{s.pub_date}</span>
                       {(s.province || s.city) && (

@@ -408,6 +408,80 @@ def run_proposal_hb_scan(max_pages: int = 5) -> dict:
     return stats
 
 
+def run_proposal_js_scan(max_pages: int = 1) -> dict:
+    """江苏备案公示扫描（SPEC-BR，每日 05:20）：昊志腹地第三省。
+
+    站点形态=传统表单站：POST .do 即得列表，服务端关键词过滤+日期倒序
+    （第 1 页=最新），比粤鄂"全量再筛"更省——词表与 ccgp 增量同口径
+    （device_strong_terms[:12]，12 请求/日）。光伏使用侧噪音采集端滤除
+    （湖北同款实测）；单位抽取自项目名（江苏命名习惯=企业名开头），
+    抽不到如实计数跳过不发明归属。
+    """
+    from .api.imports import apply_icp, extract_enterprise_name
+    from .collectors.proposal_js import JS_LIST_URL, fetch_js_beian
+    from .db import SessionLocal
+    from .normalize import resolve_enterprise
+    from .vertical import device_strong_terms
+
+    stats = {"pages": 0, "records": 0, "new_ents": 0, "new_signals": 0,
+             "no_unit_skipped": 0}
+    for kw in device_strong_terms()[:12]:
+        for page_no in range(1, max_pages + 1):
+            records = fetch_js_beian(kw, page_no=page_no)
+            if not records:
+                break
+            stats["pages"] += 1
+            stats["records"] += len(records)
+            with SessionLocal() as s:
+                for rec in records:
+                    unit = extract_enterprise_name(rec["project"], "")
+                    if not unit or len(unit) < 4:
+                        stats["no_unit_skipped"] += 1
+                        continue
+                    ent, is_new = resolve_enterprise(s, unit, source="proposal_js")
+                    # SPEC-BP BP0 同款：来源通道→省份确定性映射
+                    if not ent.province:
+                        ent.province = "江苏省"
+                    if is_new:
+                        stats["new_ents"] += 1
+                        if ent.industry_key is None:
+                            apply_icp(ent)
+                    title = f"江苏项目备案：{rec['project'][:60]}"
+                    exists = (
+                        s.query(Signal)
+                        .filter(
+                            Signal.enterprise_id == ent.id,
+                            Signal.url == JS_LIST_URL,
+                            Signal.title == title,
+                        )
+                        .first()
+                    )
+                    if exists is None:
+                        s.add(Signal(
+                            enterprise_id=ent.id,
+                            type="proposal",
+                            title=title,
+                            url=JS_LIST_URL,
+                            pub_date=rec.get("ba_date"),
+                            matched_terms="[]",
+                            hit_part="title",
+                            raw_excerpt=(
+                                f"项目备案 {rec.get('beian_no') or '—'}｜"
+                                f"{rec.get('approve_org') or '—'}"
+                            ),
+                            evidence_claim=(
+                                f"该单位在江苏省投资项目在线审批监管平台完成"
+                                f"「{rec['project']}」项目备案（编号 "
+                                f"{rec.get('beian_no') or '—'}，审批部门 "
+                                f"{rec.get('approve_org') or '—'}）"
+                            ),
+                            base_score=40.0,
+                        ))
+                        stats["new_signals"] += 1
+                s.commit()
+    return stats
+
+
 # ---------------------------------------------------------------------------
 # 回收站清空（SPEC-AM AM1）
 # ---------------------------------------------------------------------------
@@ -480,6 +554,7 @@ def run_watermark_watchdog() -> dict:
         ("daily_incremental", run_daily_incremental),
         ("proposal_gd", lambda: run_proposal_gd_scan(max_pages=5)),
         ("proposal_hb", lambda: run_proposal_hb_scan(max_pages=5)),
+        ("proposal_js", lambda: run_proposal_js_scan(max_pages=1)),
         ("health_refresh", lambda: _watchdog_health()),
         ("backup_sqlite", lambda: backup_sqlite("data/backups")),
     ]
