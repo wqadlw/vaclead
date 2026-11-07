@@ -131,3 +131,71 @@ def contacts_worklist(
         "items": items[offset:offset + limit],
         "total": total,
     }
+
+
+@router.get("/contacts/export")
+def contacts_export(
+    call_status: str = "",
+    decision_role: str = "",
+    province: str = "",
+    q: str = "",
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """拨打名单 CSV（SPEC-CE）：当前筛选全量（上限 5000）——外勤场景导出。
+
+    号码明文仅限内部自用（W52 定调）；同步流式响应无超时。
+    """
+    import csv as _csv
+    import io as _io
+
+    from fastapi.responses import StreamingResponse
+
+    rows = (
+        session.query(Contact, Enterprise)
+        .join(Enterprise, Enterprise.id == Contact.enterprise_id)
+        .filter(Enterprise.deleted_at.is_(None))
+        .order_by(Contact.id.desc())
+        .limit(5000)
+        .all()
+    )
+    qq = q.strip()
+    buf = _io.StringIO()
+    w = _csv.writer(buf)
+    w.writerow(["联系人", "角色", "职务", "企业", "行业", "省份", "城市",
+                "号码", "触达结果", "证据"])
+    role_cn = {
+        "legal_rep": "法人", "buyer_contact": "采购联系人",
+        "project_contact": "项目联系人", "map_phone": "地图公开电话",
+        "proxy": "代理机构",
+    }
+    for c, e in rows:
+        phones = load_phones(c.phones_json)
+        if not phones:
+            continue
+        untouched = c.call_result in (None, "pending")
+        if call_status == "untouched" and not untouched:
+            continue
+        if call_status == "touched" and untouched:
+            continue
+        if (call_status not in ("", "untouched", "touched")
+                and c.call_result != call_status):
+            continue
+        if decision_role and (c.decision_role or "") != decision_role:
+            continue
+        if province and (e.province or "") != province:
+            continue
+        if qq and qq not in (c.name or "") and qq not in (e.name or ""):
+            continue
+        w.writerow([
+            c.name, role_cn.get(c.role, c.role), c.title or "",
+            e.name, e.industry_name or "", e.province or "", e.city or "",
+            ";".join(phones), c.call_result or "pending",
+            (c.evidence_claim or "")[:80],
+        ])
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=dial_list.csv"},
+    )

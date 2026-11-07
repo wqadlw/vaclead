@@ -130,3 +130,16 @@ def test_bq_worklist_filters_and_order(client, admin_headers, seeded):
     r = client.get("/api/contacts?q=BQ低意图&has_phone=0&limit=200", headers=admin_headers)
     mine = [i["name"] for i in r.json()["items"] if i["name"].startswith("BQ")]
     assert set(mine) == {"BQ赵老板", "BQ无名氏"}
+
+
+def test_bq_export_csv(client, admin_headers, seeded):
+    """导出 CSV：表头+行+筛选联动。"""
+    r = client.get("/api/contacts/export", headers=admin_headers)
+    assert r.status_code == 200
+    text = r.text
+    assert text.startswith("联系人,角色")
+    assert "BQ王工" in text and "13800000011" in text
+
+    # untouched 过滤联动
+    r = client.get("/api/contacts/export?call_status=untouched", headers=admin_headers)
+    assert "BQ王工" in r.text

@@ -6,8 +6,8 @@
  * 头部平台（Apollo/Revenue.io）daily call list 的对位形态。
  */
 import { useCallback, useEffect, useState } from "react";
-import { Input, Select, Tag, Toast } from "@douyinfe/semi-ui";
-import { Phone } from "lucide-react";
+import { Button, Input, Select, Tag, Toast } from "@douyinfe/semi-ui";
+import { Download, Phone } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import CallResultTag from "@/components/CallResultTag";
 import { api } from "@/lib/api";
@@ -137,6 +137,20 @@ export default function ContactsPage() {
           showClear
           className="!w-56"
         />
+        <Button
+          size="small"
+          icon={<Download size={13} />}
+          onClick={() => {
+            const p = new URLSearchParams({ has_phone: "1", limit: "5000" });
+            if (callStatus) p.set("call_status", callStatus);
+            if (decisionRole) p.set("decision_role", decisionRole);
+            if (province) p.set("province", province);
+            if (q.trim()) p.set("q", q.trim());
+            window.open(`/api/contacts/export?${p}`, "_blank");
+          }}
+        >
+          导出名单
+        </Button>
         <span className="ml-auto text-[12.5px] text-[var(--muted)]">
           共 {data?.total ?? 0} 人 · 排序：可拨优先 → 意图分 → 未拨优先
         </span>
