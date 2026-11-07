@@ -242,6 +242,32 @@ def refresh_all_stats(session: Session) -> dict:
 # ---------------------------------------------------------------------------
 # SPEC-AB：广东拟建/备案单位采集（比招标早 1-3 个月的采购前兆信号）
 # ---------------------------------------------------------------------------
+def backfill_proposal_geo() -> dict:
+    """存量拟建企业省份回填（SPEC-BP BP0，幂等一次性）。
+
+    来源通道→省份确定性映射：proposal_gd→广东省 / proposal_hb→湖北省。
+    只填 province 为空的行，不覆盖任何已有值（回滚=清空对应行重跑）。
+    """
+    from .db import SessionLocal
+
+    updated = 0
+    with SessionLocal() as s:
+        for source, province in (("proposal_gd", "广东省"), ("proposal_hb", "湖北省")):
+            rows = (
+                s.query(Enterprise)
+                .filter(
+                    Enterprise.source == source,
+                    Enterprise.province.is_(None) | (Enterprise.province == ""),
+                )
+                .all()
+            )
+            for e in rows:
+                e.province = province
+                updated += 1
+        s.commit()
+    return {"updated": updated}
+
+
 def run_proposal_gd_scan(max_pages: int = 5) -> dict:
     """广东备案公示扫描：单位级拟建信号（proposal），幂等可重扫。
 
@@ -261,6 +287,9 @@ def run_proposal_gd_scan(max_pages: int = 5) -> dict:
         with SessionLocal() as s:
             for rec in records:
                 ent, is_new = resolve_enterprise(s, rec["name"], source="proposal_gd")
+                # SPEC-BP BP0：来源通道→省份是确定性映射（非发明数据）
+                if not ent.province:
+                    ent.province = "广东省"
                 if is_new:
                     stats["new_ents"] += 1
                     # W40 同款：GD 链路建档即分类（首轮漏接，AG 补齐）
@@ -329,6 +358,9 @@ def run_proposal_hb_scan(max_pages: int = 5) -> dict:
         with SessionLocal() as s:
             for rec in records:
                 ent, is_new = resolve_enterprise(s, rec["unit"], source="proposal_hb")
+                # SPEC-BP BP0：来源通道→省份是确定性映射（非发明数据）
+                if not ent.province:
+                    ent.province = "湖北省"
                 if is_new:
                     stats["new_ents"] += 1
                     # W40 教训在湖北链路的预防性接线：建档即分类

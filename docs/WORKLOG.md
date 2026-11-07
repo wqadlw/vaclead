@@ -2005,3 +2005,20 @@ stopPropagation 防卡片跳转）——打完电话快标回写既有，闭环�
 检索更新：探迹官方价 16,800/年（SalesGBN+DeepSeek 拓客 Agent）；
 剑鱼拟建提前 3-7 天预告+非法定盘扩张；Apollo $49 透明价+waterfall
 标配化；11x/Artisan 从"替代"退守"增强"——反向印证规则+人工快标路线。
+
+
+## 2026-11-07 · W59 · SPEC-BP 拟建雷达轮（Agent B）
+
+立项前调研改道两次（都是"先摸代码/数据"的直接收益，如实记录）：
+①原选官网级 waterfall——查库发现企业池**无 website 字段（0 覆盖）**，
+官网发现依赖搜索引擎=ToS 灰线，如实搁置（补列待 Provider/用户提供）；
+②备选批量操作轮——摸底发现 **SPEC-Y 已交付四件套**（batch-lead/tags/
+pool/cleanup），避免重复造轮。最终定案：缺口 #1 的视图层——拟建雷达。
+**实现**：BP0 省份地基（粤/鄂扫描建档即补省=来源确定性映射非发明 +
+backfill_proposal_geo 真库回填 96 家幂等）；api/proposals.py center
+（30/90 天+window_now"正处招标窗口"语义+省份行业分布+过滤列表）+
+nurture（60 天回访 Todo 幂等，exists 预查+uq_todo_open_dedup 双保险）；
+前端 /proposals（KPI 四卡+ProvinceBars 点击筛选+粤/鄂徽章+项目名
+证据句「…」回抽+培育/转线索双动作）；侧栏「拟建雷达」。
+**门禁**：pytest 314 + build + E2E 7 全绿。缺口 #1 剩余=更多省份通道
+复制（P1，模板已固化两省）。

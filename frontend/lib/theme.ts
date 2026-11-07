@@ -15,6 +15,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/compare": "企业对比",
   "/map": "客户地图",
   "/competitors": "竞对雷达",
+  "/proposals": "拟建雷达",
 };
 
 export const BRAND = {
