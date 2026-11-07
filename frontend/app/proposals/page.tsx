@@ -34,17 +34,18 @@ interface ProposalItem {
   province: string | null;
   city: string | null;
   industry_name: string | null;
-  channel: "gd" | "hb" | "js";
+  channel: "gd" | "hb" | "js" | "zj";
   pub_date: string;
   title: string;
   project: string;
   url: string;
 }
 
-const CHANNEL_META: Record<string, { label: string; color: "blue" | "green" | "cyan" }> = {
+const CHANNEL_META: Record<string, { label: string; color: "blue" | "green" | "cyan" | "amber" }> = {
   gd: { label: "广东备案", color: "blue" },
   hb: { label: "湖北备案", color: "green" },
   js: { label: "江苏备案", color: "cyan" },
+  zj: { label: "浙江办理", color: "amber" },
 };
 
 export default function ProposalsPage() {

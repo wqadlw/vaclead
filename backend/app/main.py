@@ -363,6 +363,14 @@ async def lifespan(app: FastAPI):
         # SPEC-BR：江苏备案公示（昊志腹地；服务端关键词过滤，12 请求/日；错峰 05:20）
         _register_cron("proposal_js", _proposal_js_sweep, 5, 20)
 
+        def _proposal_zj_sweep() -> dict:
+            from .jobs import run_proposal_zj_scan
+
+            return run_proposal_zj_scan(max_pages=2)
+
+        # SPEC-BS：浙江办理结果公示（JSON+事项维度；ggzy 宽词 12 请求/日；错峰 05:30）
+        _register_cron("proposal_zj", _proposal_zj_sweep, 5, 30)
+
         def _contract_renewals_sweep() -> dict:
             from .api.contracts import check_contract_renewals
             from .db import SessionLocal as _SL

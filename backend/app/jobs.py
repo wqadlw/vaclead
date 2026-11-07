@@ -482,6 +482,83 @@ def run_proposal_js_scan(max_pages: int = 1) -> dict:
     return stats
 
 
+def run_proposal_zj_scan(max_pages: int = 1) -> dict:
+    """浙江办理结果公示扫描（SPEC-BS，每日 05:30）：第四省+事项维度。
+
+    与江苏同为服务端关键词过滤（JSON，固定 10 行/页）；独有事项名维度
+    （备案=扩张前兆 / 规划许可·水保=项目推进中），evidence 如实带事项名
+    供销售分辨。文号前缀（富政工出【2025】16号）剥离后再抽单位。
+    词表=ggzy 宽词前 12（**项目名检索口径**——首扫实测：ggzy 主体用的
+    泵品类细词在浙江项目名召回≈0，宽词「真空」counts=255）；平台已是
+    工业多行业定位（SPEC-L），电梯/水泵等宽词买家同样在射程。
+    """
+    from .api.imports import apply_icp, extract_enterprise_name
+    from .collectors.proposal_zj import ZJ_LIST_URL, fetch_zj_items
+    from .db import SessionLocal
+    from .normalize import resolve_enterprise
+    from .vertical import ggzy_name_terms
+
+    stats = {"pages": 0, "records": 0, "new_ents": 0, "new_signals": 0,
+             "no_unit_skipped": 0}
+    for kw in ggzy_name_terms()[:12]:
+        for page_no in range(1, max_pages + 1):
+            records = fetch_zj_items(kw, page_no=page_no)
+            if not records:
+                break
+            stats["pages"] += 1
+            stats["records"] += len(records)
+            with SessionLocal() as s:
+                for rec in records:
+                    unit = extract_enterprise_name(rec["project"], "")
+                    if not unit or len(unit) < 4:
+                        stats["no_unit_skipped"] += 1
+                        continue
+                    ent, is_new = resolve_enterprise(s, unit, source="proposal_zj")
+                    # SPEC-BP BP0 同款：来源通道→省份确定性映射
+                    if not ent.province:
+                        ent.province = "浙江省"
+                    if is_new:
+                        stats["new_ents"] += 1
+                        if ent.industry_key is None:
+                            apply_icp(ent)
+                    # 事项名全量放前段：同项目不同审批节点（备案/规划许可/水保）
+                    # 各自成信号=项目推进被分段跟踪；截断只落在项目名上
+                    title = f"浙江办理公示：{rec['item_name']}｜{rec['project'][:42]}"
+                    exists = (
+                        s.query(Signal)
+                        .filter(
+                            Signal.enterprise_id == ent.id,
+                            Signal.url == ZJ_LIST_URL,
+                            Signal.title == title,
+                        )
+                        .first()
+                    )
+                    if exists is None:
+                        s.add(Signal(
+                            enterprise_id=ent.id,
+                            type="proposal",
+                            title=title,
+                            url=ZJ_LIST_URL,
+                            pub_date=rec.get("deal_time"),
+                            matched_terms="[]",
+                            hit_part="title",
+                            raw_excerpt=(
+                                f"{rec.get('item_name') or '审批事项'}｜"
+                                f"{rec.get('deal_name') or '—'}｜{rec.get('dept_name') or '—'}"
+                            ),
+                            evidence_claim=(
+                                f"该单位「{rec['project']}」项目在浙江省投资项目在线"
+                                f"审批监管平台完成「{rec.get('item_name') or '审批事项'}」"
+                                f"（状态：{rec.get('deal_name') or '—'}，"
+                                f"办理部门 {rec.get('dept_name') or '—'}）"
+                            ),
+                            base_score=40.0,
+                        ))
+                        stats["new_signals"] += 1
+                s.commit()
+    return stats
+
+
 # ---------------------------------------------------------------------------
 # 回收站清空（SPEC-AM AM1）
 # ---------------------------------------------------------------------------
@@ -555,6 +632,7 @@ def run_watermark_watchdog() -> dict:
         ("proposal_gd", lambda: run_proposal_gd_scan(max_pages=5)),
         ("proposal_hb", lambda: run_proposal_hb_scan(max_pages=5)),
         ("proposal_js", lambda: run_proposal_js_scan(max_pages=1)),
+        ("proposal_zj", lambda: run_proposal_zj_scan(max_pages=1)),
         ("health_refresh", lambda: _watchdog_health()),
         ("backup_sqlite", lambda: backup_sqlite("data/backups")),
     ]

@@ -84,8 +84,8 @@ def proposals_center(
         m = _PROJECT_RE.search(sig.evidence_claim or "")
         if m:
             project = m.group(1)
-        # SPEC-BR：三通道徽章（粤=单位级/鄂=项目级/苏=项目级服务端过滤）
-        channel = {"proposal_gd": "gd", "proposal_hb": "hb"}.get(e.source, "js")
+        # SPEC-BR/BS：四通道徽章（粤=单位级/鄂=项目级/苏=表单站/浙=事项流）
+        channel = {"proposal_gd": "gd", "proposal_hb": "hb", "proposal_zj": "zj"}.get(e.source, "js")
         if qq and qq not in (e.name or "") and qq not in (sig.title or "") and qq not in project:
             continue
         items.append({
