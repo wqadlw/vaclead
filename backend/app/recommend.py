@@ -64,11 +64,12 @@ def _tier_of(industry_key: str) -> int:
     return _TIER_CACHE.get(industry_key, 3)
 
 
-def score_candidates(session: Session, limit: int = 50) -> list[dict]:
+def score_candidates(session: Session, limit: int = 50, product: str | None = None) -> list[dict]:
     """返回 Top N 推荐候选（带理由）。
 
     打分：电话+30 / 近30天信号+25 / 意图×0.2 / tier 加成 /
     未在管+15 / 近90天 proposal+15；阈值 45 起推。
+    product（SPEC-CH CH3）：产品名过滤——只推应用面覆盖的行业候选。
     """
     ent_rows = session.execute(
         select(Enterprise, Contact.id, Contact.call_result)
@@ -78,6 +79,19 @@ def score_candidates(session: Session, limit: int = 50) -> list[dict]:
             Enterprise.is_competitor == 0,
         )
     ).all()
+
+    product_industries: set[str] | None = None
+    if product:
+        from .models import Product as _P
+
+        prod = session.query(_P).filter(_P.name.contains(product)).first()
+        if prod is not None:
+            try:
+                inds = json.loads(prod.application_industries or "[]")
+                if isinstance(inds, list):
+                    product_industries = {str(i) for i in inds}
+            except json.JSONDecodeError:
+                pass
 
     now = datetime.now(timezone.utc)
     cutoff_30d = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
@@ -125,6 +139,10 @@ def score_candidates(session: Session, limit: int = 50) -> list[dict]:
         if ent.id in seen_ent:
             continue  # 一企业多联系人多行——只评一次
         seen_ent.add(ent.id)
+
+        # SPEC-CH CH3：产品线过滤——行业不在该产品应用面则跳过
+        if product_industries is not None and ent.industry_key not in product_industries:
+            continue
 
         # AN2：触达结果前置过滤——全部号码 invalid 的企业排除（数据卫生）
         states = call_states.get(ent.id) or []

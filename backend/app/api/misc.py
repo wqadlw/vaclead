@@ -368,13 +368,22 @@ def read_all_notifications(
 @router.get("/recommendations")
 def get_recommendations(
     limit: int = 50,
+    product: str | None = None,
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    """今日推荐（SPEC-AL）：可触达性×采购信号的可解释排序，全员可用。"""
+    """今日推荐（SPEC-AL）：可触达性×采购信号的可解释排序，全员可用。
+
+    product（SPEC-CH CH3）：按产品线过滤（应用面行业集）。
+    """
     from ..recommend import score_candidates
 
-    return {"items": score_candidates(session, limit=max(1, min(limit, 100)))}
+    return {
+        "items": score_candidates(
+            session, limit=max(1, min(limit, 100)),
+            product=(product or None) or None,
+        )
+    }
 
 
 # ---------------- 私有成交案例库（SPEC-AZ AZ2） ----------------

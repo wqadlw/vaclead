@@ -114,7 +114,16 @@ export default function ProposalsPage() {
   const filtered = (data?.items ?? []).filter(
     (s) => !onlyWindow || (s.pub_date >= d90 && s.pub_date <= d30)
   );
-  const paged = filtered.slice(0, visibleCount);
+  // SPEC-CH CH4：按单位聚合——同一单位多条公示（审批节点流）合并一行
+  const entCount = new Map<number, number>();
+  for (const s of filtered) entCount.set(s.enterprise_id, (entCount.get(s.enterprise_id) ?? 0) + 1);
+  const seenEnt = new Set<number>();
+  const grouped = filtered.filter((s) => {
+    if (seenEnt.has(s.enterprise_id)) return false;
+    seenEnt.add(s.enterprise_id);
+    return true;
+  });
+  const paged = grouped.slice(0, visibleCount);
 
   return (
     <AppShell>
@@ -170,7 +179,7 @@ export default function ProposalsPage() {
           仅看正处招标窗口
         </button>
         <span className="ml-auto text-[12.5px] text-[var(--muted)]">
-          共 {filtered.length ?? 0} 条{onlyWindow ? "（窗口内）" : ""}
+          共 {grouped.length} 家单位{onlyWindow ? "（窗口内）" : ""}
         </span>
       </div>
 
@@ -204,6 +213,9 @@ export default function ProposalsPage() {
                     {(CHANNEL_META[s.channel] ?? CHANNEL_META.hb).label}
                   </Tag>
                   {inWindow && <Tag color="amber" type="light" size="small">窗口内</Tag>}
+                  {(entCount.get(s.enterprise_id) ?? 0) > 1 && (
+                    <Tag color="grey" type="light" size="small">共 {entCount.get(s.enterprise_id)} 条公示</Tag>
+                  )}
                   <a href={`/enterprises/view?id=${s.enterprise_id}`} className="truncate text-[13.5px] font-medium text-[var(--ink)] hover:text-[var(--accent)]">
                     {s.name}
                   </a>
@@ -232,10 +244,10 @@ export default function ProposalsPage() {
           </div>
         )}
       </div>
-      {filtered.length > visibleCount && (
+      {grouped.length > visibleCount && (
         <div className="py-3 text-center">
           <Button size="small" onClick={() => setVisibleCount(visibleCount + 50)}>
-            加载更多（还有 {filtered.length - visibleCount} 条）
+            加载更多（还有 {grouped.length - visibleCount} 家）
           </Button>
         </div>
       )}

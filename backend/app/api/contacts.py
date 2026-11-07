@@ -199,3 +199,90 @@ def contacts_export(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=dial_list.csv"},
     )
+
+
+@router.get("/contacts/{cid}/prep")
+def contact_prep(
+    cid: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """通话准备聚合（SPEC-CH CH1）：为什么现在打 + 怎么聊，一屏原料。"""
+    from ..models import Followup, Lead, Signal
+    from ..recommend import _product_match
+
+    c = session.get(Contact, cid)
+    if c is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(404, "联系人不存在")
+    e = session.get(Enterprise, c.enterprise_id)
+    if e is None or e.deleted_at is not None:
+        from fastapi import HTTPException
+
+        raise HTTPException(404, "企业不存在")
+
+    signals = (
+        session.query(Signal)
+        .filter(Signal.enterprise_id == e.id)
+        .order_by(Signal.id.desc())
+        .limit(3)
+        .all()
+    )
+    lead = (
+        session.query(Lead)
+        .filter(Lead.enterprise_id == e.id)
+        .first()
+    )
+    last_followup = None
+    if lead is not None:
+        f = (
+            session.query(Followup)
+            .filter(Followup.lead_id == lead.id)
+            .order_by(Followup.id.desc())
+            .first()
+        )
+        if f is not None:
+            last_followup = {
+                "content": f.content, "created_at": (f.created_at or "")[:16]
+            }
+
+    match = _product_match(session, e.industry_key)
+    return {
+        "contact": {
+            "id": c.id, "name": c.name, "role": c.role, "title": c.title,
+            "phones": load_phones(c.phones_json),
+            "decision_role": c.decision_role,
+            "verify_state": c.verify_state,
+            "call_result": c.call_result,
+            "evidence_claim": c.evidence_claim,
+        },
+        "enterprise": {
+            "id": e.id, "name": e.name,
+            "industry_name": e.industry_name,
+            "province": e.province, "city": e.city,
+            "intent_score": e.intent_score,
+            "customer_role": e.customer_role,
+            "is_competitor": e.is_competitor,
+        },
+        "signals": [
+            {
+                "type": s.type, "title": s.title,
+                "evidence": s.evidence_claim or s.raw_excerpt or "",
+                "pub_date": (s.pub_date or "")[:10],
+                "url": s.url,
+            }
+            for s in signals
+        ],
+        "product_match": match,
+        "lead": (
+            {
+                "id": lead.id, "status": lead.status,
+                "next_action": lead.next_action,
+                "next_time": (lead.next_time or "")[:16],
+            }
+            if lead is not None
+            else None
+        ),
+        "last_followup": last_followup,
+    }

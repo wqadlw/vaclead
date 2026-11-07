@@ -185,6 +185,11 @@ downstream_industries:
     tier: 1
     industry_codes: ["R73", "R88"]
     keywords: [大学, 学院, 研究所, 研究院, 科学技术, 科学院, 实验室, 疾控, 疾病预防, 计量, 学校, 技工, 职业教育, 实训, 中等专业, 职教]
+  - key: lab_instrument
+    name: 检验检测/第三方实验室
+    tier: 1
+    industry_codes: ["M74"]
+    keywords: [检测公司, 检测技术, 检测科技, 检验检测, 检验认证, 第三方检测, 测试技术, 分析测试, 质量技术, 检测, 测控, 检验中心]
   - key: medical_health
     name: 医疗卫生
     tier: 1
@@ -255,11 +260,6 @@ downstream_industries:
     tier: 1
     industry_codes: ["C40", "C38"]
     keywords: [自动化, 工控, 电气成套, 非标设备, 机器人, 智能装备, 机电科技, 输配电]
-  - key: lab_instrument
-    name: 检验检测/第三方实验室
-    tier: 1
-    industry_codes: ["M74"]
-    keywords: [检测公司, 检测技术, 检测科技, 检验检测, 检验认证, 第三方检测, 测试技术, 分析测试, 质量技术, 检测, 测控]
   - key: environmental
     name: 环保水务
     tier: 1

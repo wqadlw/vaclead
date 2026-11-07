@@ -365,12 +365,14 @@ export default function DashboardPage() {
     not_interested: { label: "无需求", color: "grey" },
   };
   const [recs, setRecs] = useState<RecItem[]>([]);
+  // SPEC-CH CH3：产品线过滤（空=全部）
+  const [recProduct, setRecProduct] = useState("");
   const loadRecs = useCallback(() => {
     api
-      .get<{ items: RecItem[] }>("/api/recommendations?limit=8")
+      .get<{ items: RecItem[] }>(`/api/recommendations?limit=8${recProduct ? `&product=${encodeURIComponent(recProduct)}` : ""}`)
       .then((d) => setRecs(d.items.map((x) => ({ ...x, managed: x.reasons.some((r) => r.includes("尚未分配")) === false }))))
       .catch(() => setRecs([]));
-  }, []);
+  }, [recProduct]);
   useEffect(() => {
     loadRecs();
   }, [loadRecs]);
@@ -602,6 +604,21 @@ export default function DashboardPage() {
       <section className="mt-5 rounded-lg border border-[var(--border)] bg-white p-4">
         <div className="mb-3 flex items-baseline justify-between">
           <h2 className="text-[15px] font-medium text-[var(--ink)]">今日推荐 · 先打给谁</h2>
+          <div className="flex items-center gap-1">
+            {["", "EVS", "干式", "压缩机", "鼓风机"].map((p) => (
+              <button
+                key={p || "all"}
+                onClick={() => setRecProduct(p)}
+                className={`rounded-full border px-2 py-0.5 text-[11px] ${
+                  recProduct === p
+                    ? "border-[var(--accent)] bg-[var(--accent-weak,rgba(94,106,210,0.1))] text-[var(--accent)]"
+                    : "border-[var(--border)] bg-white text-[var(--muted)] hover:border-[var(--accent)]"
+                }`}
+              >
+                {p || "全部"}
+              </button>
+            ))}
+          </div>
           <span className="text-[12px] text-[var(--muted)]">
             可触达性×采购信号排序 · 随每日采集自动更新
           </span>
