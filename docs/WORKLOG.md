@@ -1954,3 +1954,23 @@ Todo 导入，ast 检查+grep 导入模式核对后补回（教训：大块编�
 检查+导入核对）；OPERATIONS cron 表补全 6 个历史缺行。
 **测试**：test_spec_bm.py 3 条（基线/分层推送/幂等+游标恢复），水位表
 主键是 job_name 非 id——隔离 fixture 特殊处理。门禁：全量 307 passed。
+
+
+## 2026-11-07 · W59 · SPEC-BN 竞对雷达轮：组合级竞对监测（Agent B）
+
+依据 PRODUCT_GAP §5.3 真缺口 #3（11-03 调研：剑鱼把"竞对监测"当付费
+功能卖，我们 is_competitor 信号早已在库只缺视图）。intel.py 的图谱是
+单企业视角；本轮补**组合级**："今天谁家的蛋糕被竞对抢了"晨检场景。
+**落地**：app/api/competitors.py 四端点（overview/榜单/feed/mark）+
+前端 /competitors（五 KPI 卡含"被抢走的生意"红色卡/竞对榜单带
+top_buyer 回抽/动态流 stolen_from 高亮"被抢走的机会点"/admin 搜索
+标记）+ 侧栏「竞对雷达」。
+**两个测试教训（都值得记住）**：
+- 共享测试库基线相对断言：其他模块会留 is_competitor=1 数据，绝对
+  计数单跑过/全量挂——种数据前先取 overview 快照，全部比差值。
+- E2E strict mode 违规根因在种子不在 UI：历史 seed 把手机号塞联系人
+  title 字段（号码 chips 上线前的 hack），AH 轮后同号渲染两遍。修
+  种子 title="采购负责人"，UI 展示是对的。
+**Mimosa 规避**：Signal.enterprise_id or_/== 链（不用 .in_）；聚合
+纯 Python（竞对几十级无需物化）。
+**门禁**：pytest 309 + build + E2E 7 全绿（E2E 套件从 6 涨到 7）。

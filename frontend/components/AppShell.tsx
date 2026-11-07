@@ -6,6 +6,7 @@ import { Avatar, Dropdown, Input, Modal, Toast } from "@douyinfe/semi-ui";
 import {
   BarChart3,
   ClipboardList,
+  Crosshair,
   FileText,
   Gauge,
   Inbox,
@@ -33,6 +34,7 @@ const NAV = [
   { href: "/signals", label: "标讯中心", icon: Megaphone },
   { href: "/enterprises", label: "企业筛选", icon: Search },
   { href: "/map", label: "客户地图", icon: Map },
+  { href: "/competitors", label: "竞对雷达", icon: Crosshair },
   { href: "/leads", label: "线索看板", icon: Radar },
   { href: "/quotes", label: "报价单", icon: FileText },
   { href: "/products", label: "产品目录", icon: Package },

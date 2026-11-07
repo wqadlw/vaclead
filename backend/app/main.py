@@ -540,6 +540,9 @@ app.include_router(review.router, prefix="/api")
 from .api import intel  # noqa: E402
 
 app.include_router(intel.router, prefix="/api")
+from .api import competitors  # noqa: E402
+
+app.include_router(competitors.router, prefix="/api")
 from .api import automation  # noqa: E402
 
 app.include_router(automation.router, prefix="/api")

@@ -13,6 +13,8 @@ export const PAGE_TITLES: Record<string, string> = {
   "/outreach/inbox": "收件箱",
   "/reports": "报表中心",
   "/compare": "企业对比",
+  "/map": "客户地图",
+  "/competitors": "竞对雷达",
 };
 
 export const BRAND = {
