@@ -512,12 +512,12 @@ export default function EnterprisesPage() {
     {
       title: "企业名称",
       dataIndex: "name",
-      width: 260,
+      width: 170,
       render: (_: unknown, r: Enterprise) => (
         <>
           <button
             onClick={() => router.push(`/enterprises/view?id=${r.id}`)}
-            className="block max-w-[240px] cursor-pointer truncate border-0 bg-transparent p-0 text-left text-[13.5px] font-medium text-[var(--ink)] hover:text-[var(--accent)]"
+            className="block max-w-[160px] cursor-pointer truncate rounded border-0 bg-transparent py-1 text-left text-[13.5px] font-medium text-[var(--ink)] hover:text-[var(--accent)]"
             title={`${r.name} · 打开完整情报页`}
           >
             {r.name}
@@ -749,7 +749,7 @@ export default function EnterprisesPage() {
           <button
             onClick={() => convert(r)}
             disabled={convertingId === r.id}
-            className="cursor-pointer border-0 bg-transparent p-0 text-[13px] font-medium text-[var(--ink)] hover:text-[var(--accent)] disabled:opacity-50"
+            className="cursor-pointer rounded border-0 bg-transparent py-2 text-[13px] font-medium text-[var(--ink)] hover:text-[var(--accent)] disabled:opacity-50"
           >
             {convertingId === r.id ? "转入中…" : "转线索 →"}
           </button>
@@ -1036,8 +1036,10 @@ export default function EnterprisesPage() {
         </div>
       )}
 
-      {/* 表格直接落在纸上 */}
-      <div className="mt-4">
+      {/* 表格直接落在纸上；<md 横滑保列宽（行内编辑/勾选/列管理是桌面核心交互，
+          卡片化成本过高——表格用户对横滑手势熟悉，行业列 390 下被挤成一字实锤） */}
+      <div className="mt-4 overflow-x-auto">
+        <div className="hscroll-table-wrap">
         <Table<Enterprise>
           rowKey="id"
               rowSelection={{
@@ -1050,6 +1052,7 @@ export default function EnterprisesPage() {
           dataSource={data?.items ?? []}
           loading={loading}
           size={dense ? "small" : "middle"}
+          tableLayout="fixed"
           empty={loading ? " " : "没有匹配的企业 —— 放宽筛选条件，或先去「拓客任务」采集数据"}
           onRow={(r) => ({ className: r?.is_competitor === 1 ? "opacity-45 saturate-50" : "" })}
           pagination={{
@@ -1059,6 +1062,7 @@ export default function EnterprisesPage() {
             onPageChange: (p: number) => setPage(p),
           }}
         />
+        </div>
       </div>
       <AdvancedFilterModal
         open={afOpen}

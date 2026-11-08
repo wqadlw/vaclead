@@ -279,6 +279,26 @@ a {
   box-shadow: var(--shadow-strong) !important;
 }
 
+/* 移动端兜底（2026-11-09）：任何 Modal 固定宽（480/600…）在 390 视口下都会
+   两侧裁切出屏（全局搜索面板实锤 x=-42）——全站统一止溢 */
+@media (max-width: 767px) {
+  .semi-modal {
+    max-width: calc(100vw - 24px) !important;
+  }
+  /* 数据表格（.hscroll-table-wrap 内）按内容自然宽：width:100% 会在窄容器里
+     按比例挤压列（企业列表行业列被挤成一字实锤），横滑看全列 */
+  .hscroll-table-wrap table {
+    width: max-content !important;
+    min-width: 720px;
+  }
+  /* 触屏按压反馈：hover 不存在，按下时轻降透明度（原生 app 触感） */
+  button:active,
+  a:active,
+  .semi-button:active {
+    opacity: 0.72;
+  }
+}
+
 /* 登录页纯 CSS 入场（页面级允许一次入场编排） */
 @keyframes fadein {
   from { opacity: 0; }

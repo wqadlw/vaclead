@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button, Input, Select, Tag, Toast } from "@douyinfe/semi-ui";
 import { Sprout, UserPlus } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import LoadMoreSensor from "@/components/LoadMoreSensor";
 import { ProvinceBars } from "@/components/charts";
 import { api } from "@/lib/api";
 
@@ -245,11 +246,7 @@ export default function ProposalsPage() {
         )}
       </div>
       {grouped.length > visibleCount && (
-        <div className="py-3 text-center">
-          <Button size="small" onClick={() => setVisibleCount(visibleCount + 50)}>
-            加载更多（还有 {grouped.length - visibleCount} 家）
-          </Button>
-        </div>
+        <LoadMoreSensor onLoadMore={() => setVisibleCount((n) => n + 50)} />
       )}
     </AppShell>
   );
