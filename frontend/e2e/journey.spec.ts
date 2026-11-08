@@ -72,7 +72,7 @@ test("完整销售旅程", async ({ page }) => {
   const themeBefore = await page.evaluate(
     () => document.documentElement.getAttribute("data-theme"),
   );
-  await page.locator('button[title*="主题"]').click();
+  await page.locator('header button[title*="主题"]').click();
   await expect
     .poll(() =>
       page.evaluate(() => document.documentElement.getAttribute("data-theme")),

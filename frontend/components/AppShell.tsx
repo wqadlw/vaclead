@@ -158,7 +158,7 @@ function NotificationBell() {
         </Dropdown.Menu>
       }
     >
-      <span className="relative flex cursor-pointer select-none items-center rounded-md p-2 hover:bg-[rgba(19,20,22,0.04)]">
+      <span className="relative flex h-10 w-10 cursor-pointer select-none items-center justify-center rounded-md hover:bg-[rgba(19,20,22,0.04)] md:h-8 md:w-8">
         <Bell size={16} className="text-[var(--ink)]" />
         {unread > 0 && (
           <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--negative)] px-0.5 text-[9px] leading-none text-white">
@@ -284,6 +284,7 @@ function CommandPalette() {
       footer={null}
       closeOnEsc
       width={480}
+      style={{ maxWidth: "calc(100vw - 24px)" }}
       bodyStyle={{ padding: "12px 16px" }}
     >
       <Input
@@ -293,7 +294,7 @@ function CommandPalette() {
         placeholder="搜企业 / 联系人 / 标讯，或输入页面名…"
         size="large"
       />
-      <div className="mt-3 max-h-[320px] overflow-auto">
+      <div className="mt-3 max-h-[40vh] overflow-auto md:max-h-[320px]">
         {pages.length > 0 && (
           <div className="mb-2">
             <div className="px-1 pb-1 text-[11px] text-[var(--muted)]">页面</div>
@@ -360,7 +361,7 @@ function CommandPalette() {
           </div>
         )}
       </div>
-      <div className="mt-2 text-[11px] text-[var(--muted)]">Esc 关闭 · Enter 无默认行为，点选跳转</div>
+      <div className="mt-2 hidden text-[11px] text-[var(--muted)] md:block">Esc 关闭 · Enter 无默认行为，点选跳转</div>
     </Modal>
   );
 }
@@ -505,6 +506,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
 
+        {/* 主题切换移动端入口：顶栏不放（高德/企查查惯例），收进抽屉 */}
+        <div className="flex items-center justify-between px-5 pb-3 md:hidden">
+          <span className="text-[12.5px] text-[var(--muted)]">外观主题</span>
+          <ThemeToggle />
+        </div>
         <div className="px-5 pb-4 text-[11px] text-[#9ca0a3]">
           v0.3 · {role === "admin" ? "管理员" : "销售"}登录
         </div>
@@ -512,36 +518,38 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* 主列：顶栏 + 白纸 */}
       <div className="flex min-h-screen flex-col md:ml-[228px]">
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between bg-[var(--ground)] px-4 md:h-12 md:px-6">
-          <div className="flex items-center gap-2 md:gap-3">
-            <button
-              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-white text-[var(--muted)] md:hidden"
-              title="菜单"
-              aria-label="菜单"
-              onClick={() => setMobileNav(true)}
-            >
-              <Menu size={17} />
-            </button>
-            {/* SPEC-CT CT2：顶栏移动端精简——文字搜索钮桌面保留，<md 换纯图标钮（仍派发 Ctrl+K） */}
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-1.5 border-b border-[var(--border)] bg-[var(--ground)] px-3 md:h-12 md:gap-3 md:border-b-0 md:px-6">
+          {/* 移动端（<md）：☰ + 搜索条 + 右组——高德/企查查惯例，搜索条代替图标钮与页面标题 */}
+          <button
+            className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-white text-[var(--muted)] md:hidden"
+            title="菜单"
+            aria-label="菜单"
+            onClick={() => setMobileNav(true)}
+          >
+            <Menu size={17} />
+          </button>
+          <button
+            onClick={() => {
+              const ev = new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true });
+              window.dispatchEvent(ev);
+            }}
+            title="全局搜索"
+            aria-label="全局搜索"
+            className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-full border border-[var(--border)] bg-white px-3.5 text-left text-[13px] text-[var(--muted)] md:hidden"
+          >
+            <Search size={15} className="shrink-0" />
+            <span className="truncate">搜企业 / 联系人 / 标讯</span>
+          </button>
+          {/* 桌面（md+）：SPEC-CT CT2 文字搜索钮 + 快捷键 + 工作区 */}
+          <div className="hidden items-center gap-3 md:flex">
             <button
               onClick={() => {
                 const ev = new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true });
                 window.dispatchEvent(ev);
               }}
-              className="hidden h-7 cursor-pointer items-center gap-1.5 rounded border border-[var(--border)] bg-white px-2 text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)] md:flex"
+              className="flex h-7 cursor-pointer items-center gap-1.5 rounded border border-[var(--border)] bg-white px-2 text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)]"
             >
               搜索 <kbd className="rounded bg-[var(--raised)] px-1 text-[10px]">Ctrl K</kbd>
-            </button>
-            <button
-              onClick={() => {
-                const ev = new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true });
-                window.dispatchEvent(ev);
-              }}
-              title="搜索"
-              aria-label="搜索"
-              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-white text-[var(--muted)] hover:border-[var(--accent)] md:hidden"
-            >
-              <Search size={17} />
             </button>
             <button
               onClick={() => {
@@ -549,37 +557,37 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 window.dispatchEvent(ev);
               }}
               title="键盘快捷键（?）"
-              className="hidden h-7 w-7 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-white text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)] md:flex"
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-white text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)]"
             >
               ?
             </button>
-            <span className="hidden text-[13px] text-[var(--muted)] md:inline">默认工作区 / 全国</span>
+            <span className="text-[13px] text-[var(--muted)]">默认工作区 / 全国</span>
           </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
+          <div className="ml-auto flex shrink-0 items-center gap-1 md:gap-2">
+            <div className="hidden md:block"><ThemeToggle /></div>
             <NotificationBell />
             <Dropdown
-            trigger="click"
-            position="bottomRight"
-            render={
-              <Dropdown.Menu>
-                <Dropdown.Item disabled>
-                  {role === "admin" ? "管理员账号" : "销售账号"}
-                </Dropdown.Item>
-                <Dropdown.Divider />
-                <Dropdown.Item icon={<LogOut size={14} />} onClick={logout}>
-                  退出登录
-                </Dropdown.Item>
-              </Dropdown.Menu>
-            }
-          >
-            <span className="flex cursor-pointer select-none items-center gap-2 rounded-md py-1 pl-1 pr-2.5 hover:bg-[rgba(19,20,22,0.04)]">
-              <Avatar alt={user} size="extra-small" color="light-blue">
-                {role === "admin" ? <UserRound size={12} /> : user.slice(0, 1)}
-              </Avatar>
-              <span className="text-[13px] text-[var(--ink)]">{user}</span>
-            </span>
-          </Dropdown>
+              trigger="click"
+              position="bottomRight"
+              render={
+                <Dropdown.Menu>
+                  <Dropdown.Item disabled>
+                    {role === "admin" ? "管理员账号" : "销售账号"}
+                  </Dropdown.Item>
+                  <Dropdown.Divider />
+                  <Dropdown.Item icon={<LogOut size={14} />} onClick={logout}>
+                    退出登录
+                  </Dropdown.Item>
+                </Dropdown.Menu>
+              }
+            >
+              <span className="flex cursor-pointer select-none items-center gap-2 rounded-md py-1 pl-1 pr-1 hover:bg-[rgba(19,20,22,0.04)] md:pr-2.5">
+                <Avatar alt={user} size="extra-small" color="light-blue">
+                  {role === "admin" ? <UserRound size={12} /> : user.slice(0, 1)}
+                </Avatar>
+                <span className="hidden text-[13px] text-[var(--ink)] md:inline">{user}</span>
+              </span>
+            </Dropdown>
           </div>
         </header>
 

@@ -63,12 +63,13 @@ test("移动端：底部导航栏 5 tab 且 active 高亮", async ({ page }) => 
   // active 态：当前路由（今日 /）accent 高亮加粗，非 active 不加粗
   await expect(tabbar.locator('[data-btab="/"]')).toHaveClass(/font-semibold/);
   await expect(tabbar.locator('[data-btab="/contacts"]')).not.toHaveClass(/font-semibold/);
-  // 顶栏精简：<md 无搜索文字钮（Ctrl K 文字钮隐藏）、无 ? 快捷键钮、无工作区选择器；
-  // 搜索换为纯图标钮（title="搜索"）
+  // 顶栏精简（高德/企查查式）：<md 无搜索文字钮、无 ? 快捷键钮、无工作区选择器；
+  // 搜索换为圆角搜索条（title="全局搜索"），主题切换收进抽屉
   await expect(page.getByRole("button", { name: "搜索 Ctrl K" })).toBeHidden();
-  await expect(page.locator('header button[title="搜索"]')).toBeVisible();
+  await expect(page.locator('header button[title="全局搜索"]')).toBeVisible();
   await expect(page.locator('header button[title="键盘快捷键（?）"]')).toBeHidden();
   await expect(page.getByText("默认工作区 / 全国")).toBeHidden();
+  await expect(page.getByText("搜企业 / 联系人 / 标讯")).toBeVisible();
 });
 
 test("移动端：底部导航点联系人跳 /contacts", async ({ page }) => {
