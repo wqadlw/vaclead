@@ -7,7 +7,7 @@
  */
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Button, Dropdown, Input, Modal, Skeleton, TabPane, Tabs, Tag, Toast } from "@douyinfe/semi-ui";
+import { Button, Dropdown, Input, Modal, Skeleton, TabPane, Tabs, Tag, Toast, Select } from "@douyinfe/semi-ui";
 import { ArrowLeft, Bell, BellRing, Phone, Trash2, UserCheck } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import JourneyTimeline, { type JourneyItem } from "@/components/JourneyTimeline";
@@ -176,6 +176,12 @@ function IntelInner() {
   const [noteDraft, setNoteDraft] = useState("");
   // SPEC-BT 客户旅程（八源合流时间线）
   const [journey, setJourney] = useState<JourneyItem[] | null>(null);
+  // SPEC-CL 手工记联系人（风鸟/企查查查到直接填）
+  const [cName, setCName] = useState("");
+  const [cPhone, setCPhone] = useState("");
+  const [cTitle, setTitle] = useState("");
+  const [cRole, setCRole] = useState("buyer_contact");
+  const [cBusy, setCBusy] = useState(false);
   // SPEC-CD 找相似（look-alike 可解释榜）
   const [similar, setSimilar] = useState<SimilarItem[] | null>(null);
   const [simConverting, setSimConverting] = useState<number | null>(null);
@@ -197,6 +203,24 @@ function IntelInner() {
   }, [eid]);
 
   useEffect(() => load(), [load]);
+
+  // SPEC-CL：手工记一条联系人（进可拨库与推荐）
+  const addContact = async () => {
+    if (!cName.trim()) return;
+    setCBusy(true);
+    try {
+      await api.post(`/api/enterprises/${eid}/contacts`, {
+        name: cName.trim(), phone: cPhone.trim(), title: cTitle.trim(), role: cRole,
+      });
+      Toast.success("已记入联系人——号码进可拨库与推荐");
+      setCName(""); setCPhone(""); setTitle("");
+      load();
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "记录失败");
+    } finally {
+      setCBusy(false);
+    }
+  };
 
   /** SPEC-AN AN1：标记触达结果并局部刷新联系人 */
   const markCallResult = useCallback(async (cid: number, result: string) => {
@@ -682,6 +706,26 @@ function IntelInner() {
           </TabPane>
 
           <TabPane tab="关键联系人" itemKey="contacts" className="p-5">
+            {/* SPEC-CL：查到联系方式直接记（风鸟/企查查查询后） */}
+            <div className="mb-4 rounded-lg border border-[var(--border)] bg-[var(--raised)] px-4 py-3">
+              <div className="mb-2 text-[12.5px] text-[var(--muted)]">
+                查到联系方式？直接记进来——号码立即进入可拨库与推荐
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input size="small" placeholder="姓名 *" value={cName} onChange={setCName} className="!w-28" />
+                <Input size="small" placeholder="电话" value={cPhone} onChange={setCPhone} className="!w-40" />
+                <Input size="small" placeholder="职务" value={cTitle} onChange={setTitle} className="!w-32" />
+                <Select size="small" value={cRole} onChange={(v) => setCRole(String(v))} className="!w-32">
+                  <Select.Option value="buyer_contact">采购联系人</Select.Option>
+                  <Select.Option value="legal_rep">法定代表人</Select.Option>
+                  <Select.Option value="project_contact">项目联系人</Select.Option>
+                  <Select.Option value="proxy">代理机构</Select.Option>
+                </Select>
+                <Button size="small" theme="solid" loading={cBusy} disabled={!cName.trim()} onClick={() => void addContact()}>
+                  记一条
+                </Button>
+              </div>
+            </div>
             {contacts.length === 0 ? (
               <div className="py-8 text-center text-[13px] text-[var(--muted)]">
                 暂无联系人 —— 每日 04:08 回填任务会从政采公告详情页自动补充法定公开联系方式

@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
@@ -145,6 +146,70 @@ def list_contacts(
             for c in rows
         ]
     }
+
+
+class ContactManualIn(BaseModel):
+    """手工录入联系人（SPEC-CL）：风鸟/企查查查到后直接记进来。"""
+    name: str
+    phone: str = ""
+    title: str = ""
+    role: str = "buyer_contact"
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("姓名不能为空")
+        return v.strip()
+
+
+_ROLES = ("legal_rep", "buyer_contact", "project_contact", "map_phone", "proxy")
+
+
+@router.post("/enterprises/{eid}/contacts", status_code=201)
+def create_contact_manual(
+    eid: int,
+    body: ContactManualIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """手工录入一条联系人（SPEC-CL）：查到电话直接记，进可拨库与推荐。
+
+    电话走规范化抽取（手机/座机含分机）；同企业已有同号码 → 422 拒重。
+    source=manual，evidence 如实标注"手工录入"。
+    """
+    if body.role not in _ROLES:
+        raise HTTPException(422, f"非法角色，允许值：{'/'.join(_ROLES)}")
+    e = session.get(Enterprise, eid)
+    if e is None or e.deleted_at is not None:
+        raise HTTPException(404, "企业不存在")
+    from ..phones import dump_phones, extract_phones, load_phones
+
+    phones = extract_phones(body.phone)
+    if body.phone.strip() and not phones:
+        raise HTTPException(422, "电话格式无法识别（手机号或座机）")
+
+    def _base(num: str) -> str:
+        """座机去分机段（0512-66668888-801 → 0512-66668888）；手机号原样。"""
+        parts = num.split("-")
+        return "-".join(parts[:2]) if len(parts) > 2 else num
+
+    new_bases = {_base(p) for p in phones}
+    for c in session.query(Contact).filter(Contact.enterprise_id == eid).all():
+        if {_base(p) for p in load_phones(c.phones_json)} & new_bases:
+            raise HTTPException(422, "该号码在此企业下已存在（含分机差异）")
+    c = Contact(
+        enterprise_id=eid,
+        name=body.name,
+        role=body.role,
+        title=body.title.strip() or None,
+        phones_json=dump_phones(phones),
+        source="manual",
+        evidence_claim="手工录入（如风鸟/企查查查询后登记）",
+    )
+    session.add(c)
+    session.commit()
+    return {"id": c.id, "phones": phones}
 
 
 _CALL_RESULTS = ("pending", "no_answer", "voicemail", "invalid",
