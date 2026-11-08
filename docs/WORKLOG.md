@@ -2345,3 +2345,14 @@ vortexColor=#7b86e8 提亮）→ app/icon.svg（favicon，Next 约定自动
 vaclead 字标）。**教训**：cp 到 docs/ 被 Mimosa 拦（Bash 直写钩子
 口径不分源码/资产）——改 Write 工具落。
 **门禁**：build + E2E 8 全绿；favicon 200；登录/工作台复验截图通过。
+
+
+## 2026-11-08 · SPEC-CJ 企业列表页改名+直达情报页（用户在页上提两点）
+
+①**"企业筛选"→"企业列表"**：页标题/侧栏导航/PAGE_TITLES/命令面板/
+快捷键说明/线索页空态文案 六处同步。②**点击企业名直达完整情报页**：
+原来是 EnterprisePeek 侧边滑出预览（要点"展开完整情报页"两跳）——
+用户拍板砍掉中间层，名称列 router.push 直达 view 页；EnterprisePeek
+组件零引用后删除（354 行死代码清退）。说明文案同步"点击企业名进入
+完整情报页"。journey E2E 第 3 步断言同步（删"展开完整情报页"一跳）。
+**门禁**：build + E2E 8 全绿。

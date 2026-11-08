@@ -530,7 +530,7 @@ export default function LeadsPage() {
             empty={
               tab === "pool"
                 ? "公海暂时没有可领取的线索"
-                : "该状态下暂无线索 —— 去企业筛选页转化高分客户"
+                : "该状态下暂无线索 —— 去企业列表页转化高分客户"
             }
             pagination={{
               currentPage: page,

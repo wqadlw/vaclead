@@ -12,7 +12,7 @@ import { Modal } from "@douyinfe/semi-ui";
 
 const GO_TARGETS: { key: string; label: string; path: string }[] = [
   { key: "1", label: "工作台", path: "/" },
-  { key: "2", label: "企业筛选", path: "/enterprises" },
+  { key: "2", label: "企业列表", path: "/enterprises" },
   { key: "3", label: "商机管线", path: "/leads" },
   { key: "4", label: "拓客任务", path: "/tasks" },
   { key: "5", label: "设置", path: "/settings" },

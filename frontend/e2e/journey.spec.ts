@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * 销售旅程 E2E（SPEC-H H2）：登录→工作台→企业筛选→情报页→转线索→看板→完成待办。
+ * 销售旅程 E2E（SPEC-H H2）：登录→工作台→企业列表→情报页→转线索→看板→完成待办。
  * 断言用可见文本（服务端 seed 的确定性数据），不依赖实现细节。
  */
 
@@ -29,14 +29,13 @@ test("完整销售旅程", async ({ page }) => {
 
   // 2) 企业页 → 快捷筛选"有联系电话"（seed：2 家有联系人，1 家没有）
   await page.goto("/enterprises");
-  await expect(page.getByRole("button", { name: "企业筛选" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "企业列表" })).toBeVisible();
   await page.getByRole("button", { name: "有联系电话" }).click();
   await expect(page.getByText(/本页 \d+ 家 · 筛选共/)).toContainText("2");
 
-  // 3) 清筛选 → 打开情报页（Side Panel 预览 → 展开完整页）
+  // 3) 清筛选 → 点企业名直达完整情报页（SPEC-CJ：取消侧边预览）
   await page.getByRole("button", { name: "有联系电话" }).click(); // 再点取消
   await page.getByRole("button", { name: "苏州长晶半导体有限公司" }).first().click();
-  await page.getByRole("button", { name: /展开完整情报页/ }).click();
   await expect(page).toHaveURL(/enterprises\/view/);
 
   // 4) 情报页四页签：档案（四段评分）→ 图谱 → 联系人 → 信号

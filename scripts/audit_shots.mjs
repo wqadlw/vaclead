@@ -28,7 +28,19 @@ await page.evaluate(async () => {
   localStorage.setItem("vaclead_user", "管理员");
 });
 
-const pages = [["login", "/login"], ["home", "/"]];
+const pages = [
+  ["home", "/"],
+  ["signals", "/signals"],
+  ["enterprises", "/enterprises"],
+  ["competitors", "/competitors"],
+  ["proposals", "/proposals"],
+  ["contacts", "/contacts"],
+  ["leads", "/leads"],
+  ["notifications", "/notifications"],
+  ["quality", "/quality"],
+  ["reports", "/reports"],
+  ["settings", "/settings"],
+];
 
 for (const [name, route] of pages) {
   await page.goto(`${BASE}${route}`, { waitUntil: "domcontentloaded" });

@@ -44,7 +44,7 @@ const DAILY_NAV = [
 ];
 const FIND_NAV = [
   { href: "/signals", label: "标讯中心", icon: Megaphone },
-  { href: "/enterprises", label: "企业筛选", icon: Search },
+  { href: "/enterprises", label: "企业列表", icon: Search },
   { href: "/map", label: "客户地图", icon: Map },
 ];
 const RADAR_NAV = [
@@ -262,7 +262,7 @@ function CommandPalette() {
 
   const pages = [
     { label: "工作台", path: "/" },
-    { label: "企业筛选", path: "/enterprises" },
+    { label: "企业列表", path: "/enterprises" },
     { label: "线索看板", path: "/leads" },
     { label: "序列触达", path: "/outreach" },
     { label: "收件箱", path: "/outreach/inbox" },

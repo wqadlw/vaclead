@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { Button, Checkbox, Dropdown, Input, InputNumber, Modal, Popover, Select, Table, Tag, Tabs, Toast } from "@douyinfe/semi-ui";
 import { ChevronDown, Pencil, Save, Search, Settings2, RotateCcw, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
-import EnterprisePeek from "@/components/EnterprisePeek";
 import { AGG_OPS, AdvancedFilterModal, QuickPicks, SummaryBar } from "@/components/EnterprisesWidgets";
 import { addToCompare, readCompare } from "@/lib/compare";
 import { api } from "@/lib/api";
@@ -190,7 +189,6 @@ export default function EnterprisesPage() {
   const fetchSeq = useRef(0);
   const [convertingId, setConvertingId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [peekId, setPeekId] = useState<number | null>(null);
   // 行内编辑（twenty InlineCell 双态）：editingKey="col:entId"，draft 可取消
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<string>("");
@@ -518,9 +516,9 @@ export default function EnterprisesPage() {
       render: (_: unknown, r: Enterprise) => (
         <>
           <button
-            onClick={() => setPeekId(r.id)}
+            onClick={() => router.push(`/enterprises/view?id=${r.id}`)}
             className="block max-w-[240px] cursor-pointer truncate border-0 bg-transparent p-0 text-left text-[13.5px] font-medium text-[var(--ink)] hover:text-[var(--accent)]"
-            title={`${r.name} · 打开情报页`}
+            title={`${r.name} · 打开完整情报页`}
           >
             {r.name}
           </button>
@@ -766,9 +764,9 @@ export default function EnterprisesPage() {
       {/* 标题行 */}
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-[22px] font-semibold leading-7 text-[var(--ink)]">企业筛选</h1>
+          <h1 className="text-[22px] font-semibold leading-7 text-[var(--ink)]">企业列表</h1>
           <p className="mt-1 text-[13.5px] text-[var(--muted)]">
-            {loading ? "加载中…" : `共 ${data?.total ?? 0} 家 · 疑似同行已置灰 · 点击企业名查看评分理由与信号`}
+            {loading ? "加载中…" : `共 ${data?.total ?? 0} 家 · 疑似同行已置灰 · 点击企业名进入完整情报页`}
           </p>
         </div>
         {typeof window !== "undefined" && localStorage.getItem("vaclead_role") === "admin" && (
@@ -1073,12 +1071,6 @@ export default function EnterprisesPage() {
         }}
       />
 
-      <EnterprisePeek
-        open={peekId !== null}
-        enterpriseId={peekId}
-        onClose={() => setPeekId(null)}
-        onOpenFull={(id) => router.push(`/enterprises/view?id=${id}`)}
-      />
     </AppShell>
   );
 }
