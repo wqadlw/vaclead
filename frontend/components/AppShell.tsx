@@ -35,7 +35,9 @@ import { api, getToken, logout } from "@/lib/api";
 import { useRouter as useNextRouter } from "next/navigation";
 import { BRAND, PAGE_TITLES } from "@/lib/theme";
 
-// SPEC-CG 导航分组：按"销售一天的使用顺序"组织——任务在先，情报在后
+// SPEC-CG 导航分组：按"销售一天的使用顺序"组织——任务在先，情报在后。
+// NAV_GROUPS 是唯一导航源：侧栏分组 / 底部导航 5 tab / 顶部组内导航条共用一份。
+// 用户定稿（2026-11-09）：情报雷达 ∪ 触达 合并为一组（雷达发现信号 → 触达承接，同一作战链路）。
 const NAV = [{ href: "/", label: "工作台", icon: Gauge }];
 const DAILY_NAV = [
   { href: "/contacts", label: "联系人中心", icon: PhoneCall },
@@ -50,14 +52,28 @@ const FIND_NAV = [
 const RADAR_NAV = [
   { href: "/competitors", label: "竞对雷达", icon: Crosshair },
   { href: "/proposals", label: "拟建雷达", icon: Sprout },
-];
-const TOOL_NAV = [{ href: "/products", label: "产品目录", icon: Package }];
-
-/** SPEC-J J4 触达组 */
-const OUTREACH_NAV = [
   { href: "/outreach", label: "序列触达", icon: Send },
   { href: "/outreach/inbox", label: "收件箱", icon: Inbox },
 ];
+const TOOL_NAV = [{ href: "/products", label: "产品目录", icon: Package }];
+
+const NAV_GROUPS: {
+  key: string;
+  label: string;
+  icon: typeof Gauge;
+  defaultPath: string;
+  items: typeof NAV;
+}[] = [
+  { key: "home", label: "工作台", icon: Gauge, defaultPath: "/", items: NAV },
+  { key: "daily", label: "每日行动", icon: ClipboardList, defaultPath: "/contacts", items: DAILY_NAV },
+  { key: "find", label: "找客户", icon: Search, defaultPath: "/signals", items: FIND_NAV },
+  { key: "radar", label: "情报雷达", icon: Radar, defaultPath: "/competitors", items: RADAR_NAV },
+  { key: "tool", label: "工具", icon: Package, defaultPath: "/products", items: TOOL_NAV },
+];
+
+/** 当前路由归属组判定（详情页 /enterprises/view 归属其前缀组） */
+const matchNavItem = (href: string, path: string) =>
+  href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`);
 
 const ADMIN_NAV = [
   { href: "/quality", label: "数据质量", icon: Database },
@@ -443,14 +459,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const navSections: { label: string | null; items: typeof NAV }[] = [
-    { label: null, items: NAV },
-    { label: "每日行动", items: DAILY_NAV },
-    { label: "找客户", items: FIND_NAV },
-    { label: "情报雷达", items: RADAR_NAV },
-    { label: "触达", items: OUTREACH_NAV },
-    { label: "工具", items: TOOL_NAV },
-  ];
+  const navSections: { label: string | null; items: typeof NAV }[] = NAV_GROUPS.map(
+    (g, gi) => ({ label: g.key === "home" ? null : g.label, items: g.items }),
+  );
   if (role === "admin") navSections.push({ label: null, items: ADMIN_NAV });
 
   return (
@@ -591,6 +602,41 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
+        {/* 顶部组内导航条（<md）：当前底栏大区的二级页面切换（横滑 chips，md+ 由侧栏承担）
+            单页组（工作台/工具）不渲染；管理组路由不归属五区、无条 */}
+        {(() => {
+          const group = NAV_GROUPS.find((g) =>
+            g.items.some((it) => matchNavItem(it.href, pathname)),
+          );
+          if (!group || group.items.length <= 1) return null;
+          return (
+            <nav
+              data-group-nav
+              className="sticky top-14 z-10 flex flex-nowrap items-center gap-1.5 overflow-x-auto border-b border-[var(--border)] bg-[var(--ground)] px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:hidden"
+            >
+              {group.items.map((it) => {
+                const Icon = it.icon;
+                const active = matchNavItem(it.href, pathname);
+                return (
+                  <button
+                    key={it.href}
+                    data-gnav={it.href}
+                    onClick={() => router.push(it.href)}
+                    className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12.5px] ${
+                      active
+                        ? "border-[var(--accent)] bg-[var(--accent)] font-medium text-white"
+                        : "border-[var(--border)] bg-white text-[var(--muted)]"
+                    }`}
+                  >
+                    <Icon size={13} strokeWidth={active ? 2.2 : 1.8} />
+                    {it.label}
+                  </button>
+                );
+              })}
+            </nav>
+          );
+        })()}
+
         {/* 白纸：距右/下边缘 8px，1px 边，16px 圆角，无阴影 */}
         <KeyboardShortcuts />
         <CommandPalette />
@@ -601,42 +647,31 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* SPEC-CT CT1：移动端底部导航（<md）——拇指可达，5 tab 均分、点按目标 ≥44px。
-          z-20 低于抽屉背板 z-30 / 抽屉 z-40：开抽屉时底栏被背板覆盖 */}
+      {/* 移动端底部导航（<md）——五大区一级 tab（用户定稿 2026-11-09）：
+          工作台/每日行动/找客户/情报雷达/工具；点按进组默认页，组内页面由顶部导航条切换。
+          管理组页面走顶栏 ☰ 抽屉。点按目标 ≥44px；z-20 低于抽屉背板 z-30 / 抽屉 z-40 */}
       <nav
         data-mobile-tabbar
         className="fixed inset-x-0 bottom-0 z-20 flex border-t border-[var(--border)] bg-[var(--surface)] md:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        {[
-          { href: "/", label: "今日", icon: Gauge },
-          { href: "/contacts", label: "联系人", icon: PhoneCall },
-          { href: "/map", label: "地图", icon: Map },
-          { href: "/leads", label: "线索", icon: Radar },
-        ].map(({ href, label, icon: Icon }) => {
-          const active = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+        {NAV_GROUPS.map((g) => {
+          const Icon = g.icon;
+          const active = g.items.some((it) => matchNavItem(it.href, pathname));
           return (
             <button
-              key={href}
-              data-btab={href}
-              onClick={() => router.push(href)}
+              key={g.key}
+              data-btab={g.key}
+              onClick={() => router.push(g.defaultPath)}
               className={`flex flex-1 cursor-pointer flex-col items-center justify-center gap-[3px] py-2 ${
                 active ? "font-semibold text-[var(--accent)]" : "text-[var(--muted)]"
               }`}
             >
               <Icon size={18} strokeWidth={active ? 2.2 : 1.8} />
-              <span className="text-[10.5px] leading-none">{label}</span>
+              <span className="text-[10.5px] leading-none">{g.label}</span>
             </button>
           );
         })}
-        <button
-          data-btab="more"
-          onClick={() => setMobileNav(true)}
-          className="flex flex-1 cursor-pointer flex-col items-center justify-center gap-[3px] py-2 text-[var(--muted)]"
-        >
-          <Menu size={18} strokeWidth={1.8} />
-          <span className="text-[10.5px] leading-none">更多</span>
-        </button>
       </nav>
     </div>
   );
