@@ -285,6 +285,24 @@ a {
   .semi-modal {
     max-width: calc(100vw - 24px) !important;
   }
+  /* SideSheet（通话驾驶舱 460/合同详情 560 等）：390 视口下右侧滑入必溢出
+     ——移动端全宽化，即原生 app 的全屏详情侧板形态。inner 同步限宽：
+     仅压外壳时内容仍按声明宽排版（左缘裁字实锤） */
+  .semi-sidesheet {
+    max-width: 100vw !important;
+  }
+  .semi-sidesheet .semi-sidesheet-inner {
+    width: 100vw !important;
+    max-width: 100vw !important;
+  }
+  /* iOS 防聚焦缩放：input 字号 <16px 时 iOS Safari 会自动放大页面（跳页大忌），
+     16px 是业界防缩放底线 */
+  .semi-input,
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
   /* 数据表格（.hscroll-table-wrap 内）按内容自然宽：width:100% 会在窄容器里
      按比例挤压列（企业列表行业列被挤成一字实锤），横滑看全列 */
   .hscroll-table-wrap table {

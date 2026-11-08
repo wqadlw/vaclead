@@ -131,7 +131,7 @@ function NotificationBell() {
             <span className="flex items-center justify-between">
               <span className="text-[13px] font-medium">订阅动态</span>
               <button
-                className="border-0 bg-transparent p-0 text-[12px] text-[var(--accent)] cursor-pointer"
+                className="cursor-pointer rounded border-0 bg-transparent px-1 py-2 text-[12px] text-[var(--accent)]"
                 onClick={(e) => {
                   e.stopPropagation();
                   void markAll();
@@ -145,7 +145,7 @@ function NotificationBell() {
             <span className="flex items-center justify-between">
               <span className="text-[11.5px] text-[var(--muted)]">未读 {unread}</span>
               <button
-                className="border-0 bg-transparent p-0 text-[12px] text-[var(--accent)] cursor-pointer"
+                className="cursor-pointer rounded border-0 bg-transparent px-1 py-2 text-[12px] text-[var(--accent)]"
                 onClick={(e) => {
                   e.stopPropagation();
                   window.location.href = "/notifications";
