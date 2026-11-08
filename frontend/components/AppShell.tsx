@@ -463,7 +463,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[228px] flex-col transition-transform duration-200 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[228px] flex-col bg-[var(--ground)] transition-transform duration-200 ${
           mobileNav ? "translate-x-0" : "-translate-x-full"
         } md:translate-x-0`}
       >
