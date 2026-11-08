@@ -234,3 +234,138 @@ def set_call_result(
     c.called_at = utcnow()
     session.commit()
     return {"ok": True, "id": cid, "call_result": result, "called_at": c.called_at}
+
+
+_GS_LABELS = {
+    "统一社会信用代码": "uscc", "信用代码": "uscc", "纳税人识别号": "uscc",
+    "法定代表人": "legal_rep", "法人": "legal_rep", "负责人": "legal_rep",
+    "注册资本": "_capital",
+    "成立日期": "established_at", "注册日期": "established_at",
+    "企业电话": "_phone", "联系电话": "_phone", "电话": "_phone",
+    "企业地址": "address", "注册地址": "address", "地址": "address",
+    "经营范围": "business_scope",
+}
+
+
+def _parse_capital_raw(raw: str) -> float | None:
+    import re as _re
+
+    m = _re.search(r"([\d.,]+)\s*万", raw.replace(",", ""))
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
+def _parse_date_raw(raw: str) -> str | None:
+    import re as _re
+
+    m = _re.search(r"(\d{4})[年.-]\s*(\d{1,2})[月.-]\s*(\d{1,2})", raw)
+    if not m:
+        m2 = _re.match(r"(\d{4}-\d{2}-\d{2})", raw)
+        return m2.group(1) if m2 else None
+    return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+
+
+@router.post("/enterprises/{eid}/gongshang-paste")
+def gongshang_paste(
+    eid: int,
+    body: dict,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """从风鸟企业页整块复制的"字段名 值"文本 → 解析入库（SPEC-CM）。
+
+    吃原始粘贴（每行"标签：值"/"标签 值"/Tab 分隔均可）；**仅补空不
+    覆盖**；电话进联系人（source=riskbird，基础号查重）。返回逐字段
+    结果供 UI 显示"补了什么/跳过什么"。
+    """
+    from ..models import Contact as _CT
+    from ..normalize import resolve_enterprise  # noqa: F401 语义对齐提示
+    from ..phones import dump_phones as _dp
+    from ..phones import extract_phones as _ep
+    from ..phones import load_phones as _lp
+
+    e = session.get(Enterprise, eid)
+    if e is None or e.deleted_at is not None:
+        raise HTTPException(404, "企业不存在")
+    text = str(body.get("text") or "")
+    if not text.strip():
+        raise HTTPException(422, "粘贴内容为空")
+
+    import re as _re
+
+    filled: dict[str, str] = {}
+    skipped: list[str] = []
+    phone_added = False
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = _re.split(r"[：:]|" + chr(9) + r"|\s{2,}|(?<=[一-龥])\s(?=\S)", line, maxsplit=1)
+        if len(parts) != 2:
+            continue
+        label = parts[0].strip()
+        value = parts[1].strip()
+        if not label or not value:
+            continue
+        field = _GS_LABELS.get(label)
+        if field is None:
+            continue
+        if field == "_capital":
+            cap = _parse_capital_raw(value)
+            if cap is not None and not e.registered_capital_wan:
+                e.registered_capital_wan = cap
+                filled["注册资本"] = value
+            elif cap is None:
+                skipped.append(label + "（无法解析金额）")
+            else:
+                skipped.append(label + "（已有值）")
+            continue
+        if field == "_phone":
+            phones = _ep(value)
+            added = False
+            for ph in phones:
+                base_new = ph.split("-")
+                base_new = "-".join(base_new[:2]) if len(base_new) > 2 else ph
+                dup = False
+                for c in session.query(_CT).filter(_CT.enterprise_id == eid).all():
+                    bases = {
+                        "-".join(p.split("-")[:2]) if len(p.split("-")) > 2 else p
+                        for p in _lp(c.phones_json)
+                    }
+                    if base_new in bases:
+                        dup = True
+                        break
+                if dup:
+                    continue
+                session.add(_CT(
+                    enterprise_id=eid, name="工商档案电话", role="map_phone",
+                    phones_json=_dp([ph]), source="riskbird",
+                    evidence_claim="风鸟工商信息粘贴（" + label + "）",
+                ))
+                phone_added = True
+                added = True
+            if added:
+                filled[label] = value
+            elif phones:
+                skipped.append(label + "（号码已存在）")
+            continue
+        # 文本字段：仅补空
+        current = getattr(e, field, None)
+        if current:
+            skipped.append(label + "（已有值）")
+            continue
+        if field == "established_at":
+            norm = _parse_date_raw(value)
+            if not norm:
+                skipped.append(label + "（无法解析日期）")
+                continue
+            setattr(e, field, norm)
+        else:
+            setattr(e, field, value)
+        filled[label] = value
+    session.commit()
+    return {"filled": filled, "skipped": skipped, "phone_added": phone_added}

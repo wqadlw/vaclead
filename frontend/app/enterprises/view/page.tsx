@@ -176,6 +176,10 @@ function IntelInner() {
   const [noteDraft, setNoteDraft] = useState("");
   // SPEC-BT 客户旅程（八源合流时间线）
   const [journey, setJourney] = useState<JourneyItem[] | null>(null);
+  // SPEC-CM 风鸟粘贴（整块复制→解析入库）
+  const [gsPaste, setGsPaste] = useState("");
+  const [gsBusy, setGsBusy] = useState(false);
+  const [gsResult, setGsResult] = useState("");
   // SPEC-CL 手工记联系人（风鸟/企查查查到直接填）
   const [cName, setCName] = useState("");
   const [cPhone, setCPhone] = useState("");
@@ -203,6 +207,30 @@ function IntelInner() {
   }, [eid]);
 
   useEffect(() => load(), [load]);
+
+  // SPEC-CM：风鸟粘贴解析入库
+  const importGsPaste = async () => {
+    if (!gsPaste.trim()) return;
+    setGsBusy(true);
+    try {
+      const r = await api.post<{ filled: Record<string, string>; skipped: string[]; phone_added: boolean }>(
+        `/api/enterprises/${eid}/gongshang-paste`,
+        { text: gsPaste },
+      );
+      const filledKeys = Object.keys(r.filled);
+      setGsResult(
+        filledKeys.length > 0
+          ? `已补：${filledKeys.join("、")}` + (r.phone_added ? "（含电话）" : "")
+          : "没有需要补的——所选字段都已有值",
+      );
+      setGsPaste("");
+      load();
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "解析失败");
+    } finally {
+      setGsBusy(false);
+    }
+  };
 
   // SPEC-CL：手工记一条联系人（进可拨库与推荐）
   const addContact = async () => {
@@ -636,6 +664,30 @@ function IntelInner() {
                 </div>
               </div>
             )}
+
+            {/* SPEC-CM：从风鸟粘贴工商资料——吃原始"字段名 值"格式，仅补空 */}
+            <div className="mt-6 rounded-lg border border-[var(--border)] bg-[var(--raised)] px-4 py-3">
+              <div className="mb-1.5 text-[12.5px] font-medium text-[var(--ink)]">
+                从风鸟补工商资料
+              </div>
+              <div className="mb-2 text-[11.5px] leading-4 text-[var(--muted)]">
+                在风鸟打开这家公司的"工商信息"表格 → 整块选中复制 → 粘到下面
+                → 只补空缺字段，已有值不动
+              </div>
+              <textarea
+                value={gsPaste}
+                onChange={(e) => setGsPaste(e.target.value)}
+                placeholder={"粘贴示例（风鸟页复制即得）：\n法定代表人 张三\n注册资本 1200万人民币\n成立日期 2015-03-01\n企业电话 0512-66881234"}
+                rows={4}
+                className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 font-mono text-[12px] outline-none focus:border-[var(--accent)]"
+              />
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="min-w-0 flex-1 truncate text-[11.5px] text-[var(--positive)]">{gsResult}</span>
+                <Button size="small" theme="solid" loading={gsBusy} disabled={!gsPaste.trim()} onClick={() => void importGsPaste()}>
+                  解析入库
+                </Button>
+              </div>
+            </div>
 
             {/* SPEC-V V1：企业备注（主观工作笔记，区别于客观信号时间线） */}
             <div className="mt-6">

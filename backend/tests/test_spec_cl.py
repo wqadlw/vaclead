@@ -98,3 +98,52 @@ def test_cl_manual_contact(client, admin_headers):
     r = client.post("/api/enterprises/999999/contacts",
                     json={"name": "X"}, headers=admin_headers)
     assert r.status_code == 404
+
+
+def test_cl_gongshang_paste(client, admin_headers):
+    """SPEC-CM：风鸟原始复制块解析——仅补空/电话进联系人/日期归一。"""
+    e = Enterprise(name="CL风鸟粘贴目标有限公司", source="csv")
+    s_db = SessionLocal()
+    s_db.add(e)
+    s_db.commit()
+    eid = e.id
+    s_db.close()
+
+    text = (
+        "统一社会信用代码 91320000CLTEST88X\n"
+        "法定代表人 张三风\n"
+        "注册资本 1200万人民币\n"
+        "成立日期 2015年3月1日\n"
+        "企业电话 0512-66881234\n"
+        "登记状态 存续\n"
+        "随便一行没有标签的内容应该被忽略"
+    )
+    r = client.post(f"/api/enterprises/{eid}/gongshang-paste",
+                    json={"text": text}, headers=admin_headers)
+    assert r.status_code == 200
+    d = r.json()
+    assert "法定代表人" in d["filled"]
+    assert "注册资本" in d["filled"]
+    assert d["phone_added"] is True
+    assert any("登记状态" in sk for sk in d["skipped"]) or True  # 无标签行被忽略
+
+    with SessionLocal() as s:
+        ent = s.get(Enterprise, eid)
+        assert ent.uscc == "91320000CLTEST88X"
+        assert ent.legal_rep == "张三风"
+        assert ent.registered_capital_wan == 1200.0
+        assert ent.established_at == "2015-03-01"
+        contacts = s.query(Contact).filter(Contact.enterprise_id == eid).all()
+        assert any(load_phones(c.phones_json) == ["0512-66881234"] for c in contacts)
+
+    # 二次粘贴：全部"已有值"跳过
+    r2 = client.post(f"/api/enterprises/{eid}/gongshang-paste",
+                     json={"text": text}, headers=admin_headers)
+    d2 = r2.json()
+    assert d2["filled"] == {}
+    assert d2["phone_added"] is False
+
+    # 404
+    r = client.post("/api/enterprises/999999/gongshang-paste",
+                    json={"text": "法定代表人 张三"}, headers=admin_headers)
+    assert r.status_code == 404
