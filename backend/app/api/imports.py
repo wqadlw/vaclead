@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from urllib.parse import quote
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -553,9 +554,11 @@ def gongshang_lookup_export(
             break
     buf = _io.StringIO()
     w = _csv.writer(buf)
-    w.writerow(["企业名称", "地区", "行业", "意图分", "缺失项"])
+    w.writerow(["企业名称", "地区", "行业", "意图分", "缺失项", "风鸟直搜链接"])
     for r in sorted(rows_out, key=lambda x: -(x["intent"] or 0)):
-        w.writerow([r["name"], r["region"], r["industry"], r["intent"], r["missing"]])
+        # SPEC-CK 补强：每行带风鸟搜索直链——清单里点一下就到查询页，零复制粘贴
+        url = "https://www.riskbird.com/search?key=" + quote(r["name"])
+        w.writerow([r["name"], r["region"], r["industry"], r["intent"], r["missing"], url])
     buf.seek(0)
     return StreamingResponse(
         iter([buf.getvalue()]),
