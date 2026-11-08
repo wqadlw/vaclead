@@ -667,12 +667,21 @@ function IntelInner() {
 
             {/* SPEC-CM：从风鸟粘贴工商资料——吃原始"字段名 值"格式，仅补空 */}
             <div className="mt-6 rounded-lg border border-[var(--border)] bg-[var(--raised)] px-4 py-3">
-              <div className="mb-1.5 text-[12.5px] font-medium text-[var(--ink)]">
-                从风鸟补工商资料
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="text-[12.5px] font-medium text-[var(--ink)]">从风鸟补工商资料</span>
+                <a
+                  href={`https://www.riskbird.com/search?key=${encodeURIComponent(detail.name)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[12px] text-[var(--accent)] hover:underline"
+                  title="在新标签页打开风鸟并搜索此公司"
+                >
+                  一键打开风鸟搜此公司 ↗
+                </a>
               </div>
               <div className="mb-2 text-[11.5px] leading-4 text-[var(--muted)]">
-                在风鸟打开这家公司的"工商信息"表格 → 整块选中复制 → 粘到下面
-                → 只补空缺字段，已有值不动
+                点上方链接 → 在风鸟打开这家公司的"工商信息"表格 → 整块选中复制 →
+                粘到下面 → 只补空缺字段，已有值不动
               </div>
               <textarea
                 value={gsPaste}

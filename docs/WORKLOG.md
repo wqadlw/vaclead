@@ -2451,3 +2451,10 @@ key=企业名 URL 编码）——CSV 里点一下直达查询页，省复制粘�
 真实换行）——**python 补丁一律走 Write 工具文件，弃用 heredoc**；
 修 v1 补丁锚点错插进别的卡 → git checkout 恢复后用 Card title
 锚重做。**门禁**：pytest 342 + build + E2E 8 全绿。
+
+
+## 2026-11-08 · CK 补强：情报页一键直达风鸟（用户："搞一个一键直达风鸟的按钮"）
+
+档案页签风鸟粘贴框标题行新增「一键打开风鸟搜此公司 ↗」——
+riskbird.com/search?key=企业名（encodeURIComponent），新标签页直达
+该公司的风鸟搜索结果。查→复制→回粘贴，三步零切应用。
