@@ -545,6 +545,7 @@ def gongshang_lookup_export(
             continue
         rows_out.append({
             "name": e.name,
+            "eid": e.id,
             "region": " ".join(x for x in (e.province, e.city) if x),
             "industry": e.industry_name or "",
             "intent": e.intent_score,
@@ -557,7 +558,7 @@ def gongshang_lookup_export(
     w.writerow(["企业名称", "地区", "行业", "意图分", "缺失项", "风鸟直搜链接"])
     for r in sorted(rows_out, key=lambda x: -(x["intent"] or 0)):
         # SPEC-CK 补强：每行带风鸟搜索直链——清单里点一下就到查询页，零复制粘贴
-        url = "https://www.riskbird.com/ent/" + quote(r["name"])
+        url = "https://www.riskbird.com/ent/" + quote(r["name"]) + "?eid=" + str(r["eid"])
         w.writerow([r["name"], r["region"], r["industry"], r["intent"], r["missing"], url])
     buf.seek(0)
     return StreamingResponse(

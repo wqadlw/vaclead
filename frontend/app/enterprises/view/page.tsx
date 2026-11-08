@@ -12,6 +12,32 @@ import { ArrowLeft, Bell, BellRing, Phone, Trash2, UserCheck } from "lucide-reac
 import AppShell from "@/components/AppShell";
 import JourneyTimeline, { type JourneyItem } from "@/components/JourneyTimeline";
 
+// SPEC-CN 搬运书签：在风鸟公司页点一下，抓工商字段回平台自动入库。
+// 只读当前页文本+手动单家触发（合规：等效复制粘贴，非爬虫）。
+function makeBookmarkletSrc(origin: string): string {
+  const js = `(function(){
+var LAB={法定代表人:"法人",法人:"法人",负责人:"法人","统一社会信用代码":"信用代码",信用代码:"信用代码",纳税人识别号:"信用代码",注册资本:"注册资本",成立日期:"成立日期",注册日期:"成立日期",企业电话:"电话",联系电话:"电话",电话:"电话",企业地址:"地址",注册地址:"地址",地址:"地址",经营范围:"经营范围"};
+var out=[],cur=null,ph="";
+var lines=(document.body.innerText||"").split(/\\n+/);
+for(var i=0;i<lines.length;i++){
+var ln=lines[i].trim();
+if(!ln)continue;
+if(cur){out.push(cur+" "+ln.slice(0,300));cur=null;continue}
+var m=ln.match(/^([一-龥A-Za-z（）()]{2,12})[：\\s]\s*(.+)$/);
+if(m&&LAB[m[1]]){out.push(LAB[m[1]]+" "+m[2].trim().slice(0,300));continue}
+var m2=ln.match(/^([一-龥]{2,12})$/);
+if(m2&&LAB[m2[1]]){cur=LAB[m2[1]];continue}
+if(!ph){var pm=ln.match(/1[3-9]\\d{9}|0\\d{2,3}[-—]?\\d{7,8}(?:[-—]\\d{3,4})?/);if(pm)ph=pm[0]}
+}
+if(ph&&out.every(function(s){return s.indexOf("电话")!==0}))out.push("电话 "+ph);
+var q=encodeURIComponent(out.join("\n").slice(0,1800));
+var eid=(location.search.match(/eid=(\\d+)/)||[])[1];
+if(!eid){alert("请从平台点「一键打开风鸟」进来（链接需带 eid）");return}
+window.open("${origin}/enterprises/view?id="+eid+"&gongshang="+q);
+})()`;
+  return "javascript:" + encodeURIComponent(js);
+}
+
 interface SimilarItem {
   id: number;
   name: string;
@@ -176,6 +202,8 @@ function IntelInner() {
   const [noteDraft, setNoteDraft] = useState("");
   // SPEC-BT 客户旅程（八源合流时间线）
   const [journey, setJourney] = useState<JourneyItem[] | null>(null);
+  // SPEC-CN 搬运书签
+  const [bmOpen, setBmOpen] = useState(false);
   // SPEC-CM 风鸟粘贴（整块复制→解析入库）
   const [gsPaste, setGsPaste] = useState("");
   const [gsBusy, setGsBusy] = useState(false);
@@ -207,6 +235,37 @@ function IntelInner() {
   }, [eid]);
 
   useEffect(() => load(), [load]);
+
+  // SPEC-CN：书签搬运回流——URL 带 gongshang 参数则自动填框并解析入库
+  useEffect(() => {
+    const payload = sp?.get("gongshang");
+    if (!payload) return;
+    const decoded = decodeURIComponent(payload);
+    setGsPaste(decoded);
+    const t = setTimeout(() => {
+      void (async () => {
+        try {
+          const r = await api.post<{ filled: Record<string, string>; phone_added: boolean }>(
+            `/api/enterprises/${eid}/gongshang-paste`,
+            { text: decoded },
+          );
+          const keys = Object.keys(r.filled);
+          Toast.success(
+            keys.length > 0
+              ? `书签搬运完成：已补 ${keys.join("、")}` + (r.phone_added ? "（含电话）" : "")
+              : "书签搬运完成：字段都已有值",
+          );
+        } catch (e) {
+          Toast.error(e instanceof Error ? e.message : "书签数据解析失败");
+        }
+        setGsPaste("");
+        window.history.replaceState({}, "", `/enterprises/view?id=${eid}`);
+        load();
+      })();
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eid]);
 
   // SPEC-CM：风鸟粘贴解析入库
   const importGsPaste = async () => {
@@ -669,15 +728,24 @@ function IntelInner() {
             <div className="mt-6 rounded-lg border border-[var(--border)] bg-[var(--raised)] px-4 py-3">
               <div className="mb-1.5 flex items-center justify-between gap-2">
                 <span className="text-[12.5px] font-medium text-[var(--ink)]">从风鸟补工商资料</span>
-                <a
-                  href={`https://www.riskbird.com/ent/${encodeURIComponent(detail.name)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[12px] text-[var(--accent)] hover:underline"
-                  title="在新标签页打开风鸟并搜索此公司"
-                >
-                  一键打开风鸟搜此公司 ↗
-                </a>
+                <span className="flex items-center gap-3">
+                  <button
+                    onClick={() => setBmOpen(true)}
+                    className="cursor-pointer border-0 bg-transparent p-0 text-[12px] text-[var(--accent)] hover:underline"
+                    title="安装浏览器书签：在风鸟页点一下自动搬运回平台"
+                  >
+                    搬运书签
+                  </button>
+                  <a
+                    href={`https://www.riskbird.com/ent/${encodeURIComponent(detail.name)}?eid=${eid}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[12px] text-[var(--accent)] hover:underline"
+                    title="在新标签页打开风鸟并搜索此公司"
+                  >
+                    一键打开风鸟搜此公司 ↗
+                  </a>
+                </span>
               </div>
               <div className="mb-2 text-[11.5px] leading-4 text-[var(--muted)]">
                 点上方链接 → 在风鸟打开这家公司的"工商信息"表格 → 整块选中复制 →
@@ -986,6 +1054,44 @@ function IntelInner() {
           </TabPane>
         </Tabs>
       </div>
+      {/* SPEC-CN 搬运书签安装 Modal */}
+      <Modal
+        title="安装「风鸟搬运」书签"
+        visible={bmOpen}
+        onCancel={() => setBmOpen(false)}
+        footer={null}
+        width={520}
+      >
+        <div className="space-y-3 text-[13px] leading-6 text-[var(--ink)]">
+          <p>
+            把下面的链接<b>拖到浏览器书签栏</b>（拖不动就右键收藏）。以后在
+            风鸟打开任意一家公司页，点一下书签——页面上的工商字段自动搬回
+            平台该公司的情报页并入库。
+          </p>
+          <div className="rounded-lg border border-[var(--border)] bg-[var(--raised)] px-3 py-3">
+            <a
+              href={makeBookmarkletSrc(window.location.origin)}
+              onClick={(e) => e.preventDefault()}
+              className="inline-block cursor-grab rounded-md bg-[#131416] px-3 py-1.5 text-[13px] font-medium text-white"
+              title="按住拖到书签栏"
+            >
+              📌 风鸟搬运 → vaclead
+            </a>
+            <div className="mt-2 text-[11.5px] text-[var(--muted)]">
+              必须从平台点「一键打开风鸟」进入（链接带公司编号），直接开风鸟没有回传目标。
+            </div>
+          </div>
+          <ol className="ml-4 list-decimal space-y-1 text-[12.5px] text-[var(--muted)]">
+            <li>平台点「一键打开风鸟搜此公司」→ 风鸟登录态打开公司页</li>
+            <li>点书签栏的「风鸟搬运」→ 自动抓工商字段</li>
+            <li>自动跳回平台情报页并入库，显示补了什么</li>
+          </ol>
+          <p className="text-[11.5px] text-[var(--muted)]">
+            边界：只在风鸟公司页手动点一下才抓当前这一家——不做批量自动化
+            （合规红线）。
+          </p>
+        </div>
+      </Modal>
     </AppShell>
   );
 }
