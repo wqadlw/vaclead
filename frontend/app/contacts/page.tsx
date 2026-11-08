@@ -178,51 +178,54 @@ export default function ContactsPage() {
         ))}
       </div>
 
-      {/* 筛选条 */}
+      {/* 筛选条：<md 折成「标题行 + 横向滚动筛选行（不折行）」；md+ 经 contents 并回原单行 */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <span className="flex items-center gap-1.5 text-[13.5px] font-medium text-[var(--ink)]">
+        <span className="flex shrink-0 items-center gap-1.5 text-[13.5px] font-medium text-[var(--ink)]">
           <Phone size={15} /> 今日拨打名单
         </span>
-        <Select value={callStatus || undefined} placeholder="全部状态" showClear onChange={(v) => setCallStatus(String(v ?? ""))} className="!w-32">
-          <Select.Option value="untouched">未触达</Select.Option>
-          <Select.Option value="touched">已触达</Select.Option>
-          <Select.Option value="interested">有意向</Select.Option>
-          <Select.Option value="connected">已接通</Select.Option>
-          <Select.Option value="no_answer">无人接</Select.Option>
-          <Select.Option value="invalid">空号</Select.Option>
-        </Select>
-        <Select value={decisionRole || undefined} placeholder="全部角色" showClear onChange={(v) => setDecisionRole(String(v ?? ""))} className="!w-32">
-          <Select.Option value="decision_maker">决策链</Select.Option>
-          <Select.Option value="handler">经办人</Select.Option>
-        </Select>
-        <Select value={province || undefined} placeholder="全部省份" showClear onChange={(v) => setProvince(String(v ?? ""))} className="!w-32">
-          {Object.keys(data?.provinces ?? {}).map((p) => (
-            <Select.Option key={p} value={p}>{p}</Select.Option>
-          ))}
-        </Select>
-        <Input
-          prefix={<Phone size={13} className="text-slate-400" />}
-          placeholder="搜联系人/企业名"
-          value={q}
-          onChange={setQ}
-          showClear
-          className="!w-56"
-        />
-        <Button
-          size="small"
-          icon={<Download size={13} />}
-          onClick={() => {
-            const p = new URLSearchParams({ has_phone: "1", limit: "5000" });
-            if (callStatus) p.set("call_status", callStatus);
-            if (decisionRole) p.set("decision_role", decisionRole);
-            if (province) p.set("province", province);
-            if (q.trim()) p.set("q", q.trim());
-            window.open(`/api/contacts/export?${p}`, "_blank");
-          }}
-        >
-          导出名单
-        </Button>
-        <span className="ml-auto text-[12.5px] text-[var(--muted)]">
+        <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:order-last md:contents">
+          <Select value={callStatus || undefined} placeholder="全部状态" showClear onChange={(v) => setCallStatus(String(v ?? ""))} className="!w-32 shrink-0">
+            <Select.Option value="untouched">未触达</Select.Option>
+            <Select.Option value="touched">已触达</Select.Option>
+            <Select.Option value="interested">有意向</Select.Option>
+            <Select.Option value="connected">已接通</Select.Option>
+            <Select.Option value="no_answer">无人接</Select.Option>
+            <Select.Option value="invalid">空号</Select.Option>
+          </Select>
+          <Select value={decisionRole || undefined} placeholder="全部角色" showClear onChange={(v) => setDecisionRole(String(v ?? ""))} className="!w-32 shrink-0">
+            <Select.Option value="decision_maker">决策链</Select.Option>
+            <Select.Option value="handler">经办人</Select.Option>
+          </Select>
+          <Select value={province || undefined} placeholder="全部省份" showClear onChange={(v) => setProvince(String(v ?? ""))} className="!w-32 shrink-0">
+            {Object.keys(data?.provinces ?? {}).map((p) => (
+              <Select.Option key={p} value={p}>{p}</Select.Option>
+            ))}
+          </Select>
+          <Input
+            prefix={<Phone size={13} className="text-slate-400" />}
+            placeholder="搜联系人/企业名"
+            value={q}
+            onChange={setQ}
+            showClear
+            className="!w-56 shrink-0"
+          />
+          <Button
+            size="small"
+            icon={<Download size={13} />}
+            className="shrink-0"
+            onClick={() => {
+              const p = new URLSearchParams({ has_phone: "1", limit: "5000" });
+              if (callStatus) p.set("call_status", callStatus);
+              if (decisionRole) p.set("decision_role", decisionRole);
+              if (province) p.set("province", province);
+              if (q.trim()) p.set("q", q.trim());
+              window.open(`/api/contacts/export?${p}`, "_blank");
+            }}
+          >
+            导出名单
+          </Button>
+        </div>
+        <span className="ml-auto text-[12.5px] text-[var(--muted)] max-md:ml-0">
           共 {data?.total ?? 0} 人 · 排序：可拨优先 → 意图分 → 未拨优先
         </span>
       </div>

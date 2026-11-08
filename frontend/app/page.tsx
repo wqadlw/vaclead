@@ -437,15 +437,15 @@ export default function DashboardPage() {
 
   return (
     <AppShell>
-      {/* 标题行 */}
-      <div className="flex items-end justify-between">
-        <div>
+      {/* 标题行：<md 上下堆叠（长提示语独占一行），md+ 保持左右分布 */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="min-w-0">
           <h1 className="text-[22px] font-semibold leading-7 text-[var(--ink)]">工作台</h1>
           <p className="mt-1 text-[13.5px] text-[var(--muted)]">
             {health?.next_action?.hint ?? "近 7 天新增采购信号 —— 优先跟进有新信号的高分客户"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <Button theme="borderless" icon={<SlidersHorizontal size={14} />} onClick={() => setPrefOpen(true)}>
             布局
           </Button>
@@ -577,7 +577,7 @@ export default function DashboardPage() {
         {kpis.map((k, i) => (
           <div
             key={k.label}
-            className={`flex items-center justify-between bg-white px-5 py-4 ${
+            className={`flex items-center justify-between gap-2 bg-white px-4 py-4 sm:px-5 ${
               i > 0 ? "border-l border-[var(--rule)]" : ""
             } ${i >= 2 ? "max-lg:border-t max-lg:border-[var(--rule)]" : ""} ${
               i === 2 || i === 4 ? "max-lg:border-l-0" : ""
@@ -586,14 +586,18 @@ export default function DashboardPage() {
             <div className="min-w-0">
               <div className="text-[13px] text-[var(--muted)]">{k.label}</div>
               <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-[28px] font-normal leading-9 tabular-nums text-[var(--ink)]">
+                <span className="text-[22px] font-normal leading-8 tabular-nums text-[var(--ink)] sm:text-[28px] sm:leading-9">
                   {k.value.toLocaleString("zh-CN")}
                 </span>
                 <DeltaBadge delta={k.delta} />
               </div>
               <div className="mt-0.5 truncate text-[12px] text-[#8a8d8f]">{k.caption}</div>
             </div>
-            {k.spark.length > 1 && <SparkBars values={k.spark} />}
+            {k.spark.length > 1 && (
+              <span className="hidden shrink-0 sm:block">
+                <SparkBars values={k.spark} />
+              </span>
+            )}
           </div>
         ))}
       </div>
@@ -602,14 +606,14 @@ export default function DashboardPage() {
       {/* SPEC-AL 今日推荐：可触达性×采购信号的可解释排序 */}
       {vis("recs") && (
       <section className="mt-5 rounded-lg border border-[var(--border)] bg-white p-4">
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-[15px] font-medium text-[var(--ink)]">今日推荐 · 先打给谁</h2>
-          <div className="flex items-center gap-1">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 md:items-baseline">
+          <h2 className="shrink-0 text-[15px] font-medium text-[var(--ink)]">今日推荐 · 先打给谁</h2>
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:flex-none">
             {["", "EVS", "干式", "压缩机", "鼓风机"].map((p) => (
               <button
                 key={p || "all"}
                 onClick={() => setRecProduct(p)}
-                className={`rounded-full border px-2 py-0.5 text-[11px] ${
+                className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] ${
                   recProduct === p
                     ? "border-[var(--accent)] bg-[var(--accent-weak,rgba(94,106,210,0.1))] text-[var(--accent)]"
                     : "border-[var(--border)] bg-white text-[var(--muted)] hover:border-[var(--accent)]"
@@ -619,7 +623,7 @@ export default function DashboardPage() {
               </button>
             ))}
           </div>
-          <span className="text-[12px] text-[var(--muted)]">
+          <span className="shrink-0 text-[12px] text-[var(--muted)] max-md:order-last max-md:basis-full">
             可触达性×采购信号排序 · 随每日采集自动更新
           </span>
         </div>
@@ -633,7 +637,7 @@ export default function DashboardPage() {
               <a
                 key={r.ent_id}
                 href={`/enterprises/view?id=${r.ent_id}`}
-                className="flex items-start justify-between gap-3 rounded-lg border border-[var(--border)] px-3 py-2 transition-colors hover:border-[var(--accent)]"
+                className="flex flex-col gap-2 rounded-lg border border-[var(--border)] px-3 py-2 transition-colors hover:border-[var(--accent)] md:flex-row md:items-start md:justify-between md:gap-3"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
@@ -659,7 +663,7 @@ export default function DashboardPage() {
                     {r.city ?? "—"} · {r.industry_name ?? "未分类"} · {r.reasons[0] ?? ""}
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 md:shrink-0">
                   <span className="text-[15px] font-semibold tabular-nums text-[var(--accent)]">
                     {r.score}
                   </span>

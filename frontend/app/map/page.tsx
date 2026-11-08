@@ -351,14 +351,14 @@ export default function MapPage() {
 
   return (
     <AppShell>
-      <div className="flex items-end justify-between gap-4">
-        <div>
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between md:gap-4">
+        <div className="min-w-0">
           <h1 className="text-[22px] font-semibold leading-7 text-[var(--ink)]">客户地图</h1>
           <p className="mt-1 text-[13.5px] text-[var(--muted)]">
             区域作战视图 · 看到目标即可拨打 · 近期动态=近 30 天有公示
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2.5">
+        <div className="flex items-center gap-2.5 md:shrink-0">
           <span className="text-[12.5px] text-[var(--muted)]">
             当前视野 <span className="font-medium text-[var(--ink)]">{stats.total}</span> 家
             ·{" "}
@@ -373,14 +373,14 @@ export default function MapPage() {
         </div>
       </div>
 
-      {/* 筛选行：城市 chips 一行横排 + 行业 + 意图/电话过滤 */}
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+      {/* 筛选行：<md 横向滚动一行（不折行、隐藏滚动条），md+ 恢复折行 */}
+      <div className="mt-3 flex flex-nowrap items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:flex-wrap md:overflow-x-visible">
         {CITIES.map((c) => (
           <button
             key={c.name}
             type="button"
             onClick={() => setCity(c.name)}
-            className={`rounded-md border px-2 py-[3px] text-[12px] leading-4 transition-colors ${
+            className={`shrink-0 rounded-md border px-2 py-[3px] text-[12px] leading-4 transition-colors ${
               city === c.name
                 ? "border-[var(--accent)] bg-[var(--accent-weak)] font-medium text-[var(--accent)]"
                 : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--control)] hover:text-[var(--ink)]"
@@ -389,18 +389,19 @@ export default function MapPage() {
             {c.name}
           </button>
         ))}
-        <span aria-hidden className="mx-1 h-4 w-px bg-[var(--border)]" />
+        <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-[var(--border)]" />
         <Select
           value={industry}
           onChange={(v) => setIndustry(String(v))}
           style={{ width: 130 }}
           size="small"
+          className="shrink-0"
           optionList={INDUSTRIES.map((i) => ({ value: i.key, label: i.label }))}
         />
         <Tag
           color={recentOnly ? "blue" : "grey"}
           type="light"
-          className="!cursor-pointer"
+          className="shrink-0 !cursor-pointer"
           onClick={() => setRecentOnly((v) => !v)}
         >
           近期有动态
@@ -408,7 +409,7 @@ export default function MapPage() {
         <Tag
           color={withPhone ? "blue" : "grey"}
           type="light"
-          className="!cursor-pointer"
+          className="shrink-0 !cursor-pointer"
           onClick={() => setWithPhone((v) => !v)}
         >
           只看有电话

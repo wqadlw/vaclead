@@ -1033,7 +1033,10 @@ def backfill_notice_contacts(
             if exists is None:
                 session.add(Contact(
                     enterprise_id=target.id, name=name, role=role,
-                    title=phone_text[:80] if phone_text else None,
+                    # SPEC-CU：title 槽位回归职务本义——phone_text 原文混有
+                    # 页面 CSS/附件名（真库 98 条污染实证），号码只进
+                    # phones_json，title 不再留档原文。
+                    title=None,
                     email=notice_email,
                     phones_json=dump_phones(phones),
                     decision_role=drole,
