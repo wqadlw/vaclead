@@ -196,6 +196,11 @@ td,th{{border:1px solid #d8dee2;padding:7px 10px;text-align:left}}
 ol.cases{{padding-left:20px}}ol.cases li{{margin-bottom:4px;font-size:13px}}
 @media print{{.noprint{{display:none}}}}
 </style></head><body>
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+<svg width="22" height="22" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M 24 3.5 L 41.6 13.7 L 41.6 34.3 L 24 44.5 L 6.4 34.3 L 6.4 13.7 Z" fill="none" stroke="#131416" stroke-width="2.8" stroke-linejoin="round"/><g fill="#5e6ad2"><path d="M 24 24 L 33 10.5 L 37 24 Z"/><path d="M 24 24 L 37 24 L 24 37.5 Z" opacity="0.55"/><path d="M 24 24 L 15 10.5 L 24 10.5 Z" opacity="0.8"/></g></svg>
+<span style="font-weight:600;letter-spacing:-0.018em;color:#131416">vaclead</span>
+<span style="color:#8a8d8f;font-size:11px">昊志机械 · 工业设备智能拓客平台</span>
+</div>
 <h1>{e.name} · 真空系统节能改造提案</h1>
 <p>由 {user.display_name or user.username}（昊志机械 · 昊青气体装备官方销售商）基于公开实测案例区间估算</p>
 <h2>一、节能账（按贵司现状参数）</h2>

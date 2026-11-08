@@ -29,6 +29,7 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
+import BrandMark from "@/components/BrandMark";
 import KeyboardShortcuts from "@/components/KeyboardShortcuts";
 import { api, getToken, logout } from "@/lib/api";
 import { useRouter as useNextRouter } from "next/navigation";
@@ -467,9 +468,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         } md:translate-x-0`}
       >
         <div className="flex items-center gap-2.5 px-5 pt-5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--accent)]">
-            <Radar className="h-[16px] w-[16px] text-white" strokeWidth={2.2} />
-          </div>
+          <BrandMark size={30} className="shrink-0 text-[var(--ink)]" />
           <div className="leading-tight">
             <div className="text-[15px] font-semibold text-[var(--ink)]">{BRAND.name}</div>
             <div className="text-[11px] text-[var(--muted)]">{BRAND.subtitle}</div>

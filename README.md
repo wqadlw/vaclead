@@ -1,3 +1,5 @@
+<p align="left"><img src="docs/logo.svg" width="64" alt="vaclead logo"></p>
+
 # vaclead · 工业设备智能拓客平台
 
 > 从**官方公示数据**到**可拨打线索**到**商机成交**的全链路自托管销售平台。

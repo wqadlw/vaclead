@@ -15,6 +15,7 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
 // 登录
 await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded" });
+await page.evaluate(() => localStorage.clear());
 await page.evaluate(async () => {
   const r = await fetch("/api/auth/login", {
     method: "POST",
@@ -27,19 +28,7 @@ await page.evaluate(async () => {
   localStorage.setItem("vaclead_user", "管理员");
 });
 
-const pages = [
-  ["home", "/"],
-  ["signals", "/signals"],
-  ["enterprises", "/enterprises"],
-  ["competitors", "/competitors"],
-  ["proposals", "/proposals"],
-  ["contacts", "/contacts"],
-  ["leads", "/leads"],
-  ["notifications", "/notifications"],
-  ["quality", "/quality"],
-  ["reports", "/reports"],
-  ["settings", "/settings"],
-];
+const pages = [["login", "/login"], ["home", "/"]];
 
 for (const [name, route] of pages) {
   await page.goto(`${BASE}${route}`, { waitUntil: "domcontentloaded" });

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Form, Toast } from "@douyinfe/semi-ui";
-import { Radar } from "lucide-react";
+import BrandMark from "@/components/BrandMark";
 import { setAuth, api } from "@/lib/api";
 import { BRAND } from "@/lib/theme";
 
@@ -38,9 +38,7 @@ export default function LoginPage() {
       {/* 左：墨色整面（扁平色场，无渐变） */}
       <div className="animate-fadein relative hidden w-[46%] flex-col justify-between overflow-hidden p-12 text-white lg:flex" style={{ background: "#131416" }}>
         <div className="relative flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-[var(--accent)]">
-            <Radar className="h-[17px] w-[17px]" strokeWidth={2.2} />
-          </div>
+          <BrandMark size={34} hexColor="#f7f8f8" vortexColor="#7b86e8" />
           <div>
             <div className="text-[16px] font-semibold">{BRAND.name}</div>
             <div className="text-[11px] text-white/50">{BRAND.subtitle}</div>

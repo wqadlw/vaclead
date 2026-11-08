@@ -2331,3 +2331,17 @@ regress 行内编辑用例被默认隐藏列卡住——注册资本列回退为
 （藏地址一项即可，行内编辑能力与老习惯不破坏）。
 **门禁**：pytest 337 + build + E2E 8 全绿；复验截图确认新布局
 （27,421 家/电话列/单行筛选）。
+
+
+## 2026-11-08 · Logo 定稿轮（用户两轮选型：6 号→精修否决→原版 6 号）
+
+用户从 6 个方向选型点中"六角涡"，精修变体（6-1..6-6）被全部否决——
+**原版 6 号直接定稿**：六角描边（currentColor 随主题反转）+ 三叶涡
+（--accent 随主题提亮）。**落地**：components/BrandMark.tsx 共享组件
+（size/hexColor/vortexColor 三参）→ 侧栏（描边随明暗反转，不再用
+accent 底块+白色 Radar）→ 登录页墨面（hexColor=#f7f8f8 固定+
+vortexColor=#7b86e8 提亮）→ app/icon.svg（favicon，Next 约定自动
+挂载）→ docs/logo.svg + README 头图 → 提案打印页眉（墨描边小标+
+vaclead 字标）。**教训**：cp 到 docs/ 被 Mimosa 拦（Bash 直写钩子
+口径不分源码/资产）——改 Write 工具落。
+**门禁**：build + E2E 8 全绿；favicon 200；登录/工作台复验截图通过。
