@@ -509,9 +509,9 @@ function IntelInner() {
         )}
       </Modal>
 
-      <div className="mt-3 rounded-lg border border-[var(--border)] bg-white px-6 py-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
+      <div className="mt-3 rounded-lg border border-[var(--border)] bg-white px-4 py-4 sm:px-6 sm:py-5">
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0 w-full sm:w-auto">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-[20px] font-semibold text-[var(--ink)]">{detail.name}</h1>
               <Tag color={sourceMeta.color} type="light">{sourceMeta.label}</Tag>
@@ -591,7 +591,7 @@ function IntelInner() {
               )}
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">
             <Button
               theme="light"
               onClick={() => {
