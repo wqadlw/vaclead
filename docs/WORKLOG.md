@@ -4,6 +4,39 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-09 · SPEC-BRF 落地：客户作战简报（打单前一页纸）
+
+**定位**：第十二次差距调研"AI 研究员"域的**确定性版**——不卡 GLM Key，
+纯本地八源数据组装。对标 Attio 2026 account briefing 惯例（ABM 标准动作）。
+打大单/久攻不下客户时点一下，10 分钟读完：这家公司是干嘛的/在买什么/
+为什么现在打/打给谁/谈资/下一步。
+
+**双子 Agent 并行交付**（第二次全流程，流程已可复制）：
+- Agent A（后端）：brief.py 两端点（GET brief 六块聚合 / GET brief/print
+  A4 打印页）。聚合口径全部复用现源——wins 金额回抽用 jobs.extract_amount_wan
+  （成交价X万元，证据句优先）、buyer 用采购人正则（与 enrich_stats 同源）、
+  contacts 排序照抄工作列表（可拨→未拨→决策链加权）、竞对抢单 30 天窗
+  沿用 competitors.py 口径（采购人名互含归属）、similar_won=同行业 won lead。
+  todo_hint 确定性规则四档（无跟进→先拨 / 有跟进无 next→补记 / 有装机→
+  查耗材时钟 / 兜底）。13 个新单测 → **全量 368 passed**
+- Agent B（前端）：详情页「作战简报」按钮 +13 行纯新增（照"打印客户
+  提案"先例：URLSearchParams token 回退 + window.open）
+- 主线程：SPEC + 集成门禁 + 真库实弹验证
+
+**Agent 纠正 SPEC 笔误**：SPEC 2.1 写了 NoticeContact 表——实际不存在
+（公告联系人是 backfill_notice_contacts 写入的 Contact 行），Agent 摸底
+确认后按 Contact 聚合，口径等价。SPEC 写作时表名要 grep 验证，不能凭
+记忆写。
+
+**真库实弹**：重启 :8000 后 id=13（深圳森丰）验证——六块齐全、
+2 联系人可拨、todo_hint"先拨第一个可拨联系人"、print 200。**踩坑
+复刻**：新路由必须重启服务才生效（旧进程 import 不到新文件，
+:8000 单进程部署模式固性）。
+
+**门禁**：build ✓ + 后端 368（+13）+ E2E 12 + print 真库 200。
+**AI 预留**：打印页末段占位注释——GLM Key 到位后注入"AI 摘要"段
+（下一版差异化）。
+
 ## 2026-11-09 · SPEC-WH 落地：信号出站群机器人渠道（双子 Agent 首次全流程并行）
 
 **选型逻辑**（第十三次功能轮，用户指令开轮覆盖维护姿态）：第十二次差距

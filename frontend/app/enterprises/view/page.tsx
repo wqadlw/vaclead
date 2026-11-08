@@ -548,6 +548,19 @@ function IntelInner() {
               >
                 生成节能账
               </Button>
+              <Button
+                size="small"
+                theme="outline"
+                title="打单前一页纸：他们买什么/为什么现在打/打给谁/谈资"
+                onClick={() => {
+                  const qs = new URLSearchParams({
+                    token: getToken() ?? "", // 新开页无 localStorage API 包装——AI1 的 ?token= 回退
+                  });
+                  window.open(`/api/enterprises/${eid}/brief/print?${qs}`, "_blank");
+                }}
+              >
+                作战简报
+              </Button>
             </div>
             <div className="mt-1.5 text-[13px] text-[var(--muted)]">
               统一信用代码 {detail.uscc || "—"} · {[detail.province, detail.city, detail.district].filter(Boolean).join(" ") || "地区待回填"} · {detail.address || "地址待回填"}

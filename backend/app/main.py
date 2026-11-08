@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import enterprises, imports, leads, misc, tasks
+from .api import brief, enterprises, imports, leads, misc, tasks
 from .db import SessionLocal, init_db
 from .models import Enterprise, Lead, TaskCheckpoint, utcnow
 
@@ -564,6 +564,7 @@ async def access_log_middleware(request, call_next):
 
 app.include_router(misc.router, prefix="/api")
 app.include_router(enterprises.router, prefix="/api")
+app.include_router(brief.router, prefix="/api")  # SPEC-BRF 客户作战简报
 app.include_router(leads.router, prefix="/api")
 app.include_router(imports.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
