@@ -2571,3 +2571,25 @@ Modal 预填现值、删除 Modal.confirm 文案按规格；** thoughtful 细节
 **门禁**：后端 345 + 子 Agent build/E2E 8 全绿 + 整合后端复跑 345。
 **多 agent 协作实绩**：SPEC 契约先行=前后端零对接冲突；子 Agent
 40 工具调用/18 分钟完成前端整轮。
+
+
+## 2026-11-08 · SPEC-CQ 地图作战轮（用户："/map 没完善好，多派子agent"）
+
+**为谁服务锚**：地图=销售区域作战工具（看到目标即打电话），非数据
+可视化玩具。**并行分工**：主线程后端 geo 增强 + 子 Agent 地图前端
+重构（SPEC-CQ 契约先行零冲突，第二 次多 agent 完整跑通）。
+**后端（主线程）**：geo items 补 phone（首个可拨号码）/recent_30d
+（近 30 天动态）；recent=1 过滤；**research_edu 默认排除**（客户定义
+修正延续，显式查学校保留）；clusters 边界豁免明细。
+**前端（子 Agent，208→440 行+MapLegend）**：①popup 作战卡（电话
+input 点击全选+复制按钮+tel: 拨打链接+意图 chip+近期动态徽标+详情
+链接）②事件委托到 popupopen 的 wrapper（Leaflet disableClickPropagation
+坑）③意图分层点样式（≥80 深紫大点/≥60 中/其余现状）④MapLegend
+图例组件（右上角悬浮，随 mode 切换）⑤筛选升级（删 research_edu、
+补冻干/制药/化工/包装四行业、近期动态 chip、城市 Select 改横排
+chips）⑥**escapeHtml 全动态值转义+tel: 数字消毒——XSS 修复**。
+**顺手修真 bug**：city effect 与 filter effect 双重依赖导致重复请求
+（合并单 effect 单请求）。
+**子 Agent 自验含 XSS 载荷冒烟**（<script> 企业名注入 29 断言全过）
+——前端安全测试素养升级。后端未部署新字段时优雅降级。
+**门禁**：后端 348 + build + E2E 8 全绿（双跑）。

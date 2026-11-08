@@ -1,16 +1,23 @@
 /**
- * 客户地图（SPEC-AJ AJ2）：Leaflet + 高德栅格瓦片。
+ * 客户地图（SPEC-AJ AJ2 → 区域作战工具）：Leaflet + 高德栅格瓦片。
  * POI 坐标（GCJ-02）与高德瓦片同源——零纠偏。
  * ssr:false 动态导入（Leaflet 依赖 window，静态导出必须 client-only）。
  * framed-sheet：白底浅框、青蓝 Linear 主色 #5e6ad2，无渐变无阴影。
+ *
+ * 区域作战视图：出门前看"这片有哪些可拨客户"，看到目标即打电话。
+ * - popup=作战卡：企业名→情报页链接、意图分、近期动态徽标、号码可复制可拨打。
+ * - 点样式按意图分层：≥80 深紫大点、≥60 半透中点、有电话、无电话灰点。
+ * - 动态值一律 escapeHtml 后进 innerHTML（企业名/行业/地区/号码，防 XSS）。
  */
 "use client";
 
 import "leaflet/dist/leaflet.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Select, Tag, Toast } from "@douyinfe/semi-ui";
+import { Phone } from "lucide-react";
 import type { Map as LeafletMap, CircleMarker } from "leaflet";
 import AppShell from "@/components/AppShell";
+import MapLegend from "@/components/MapLegend";
 import { api } from "@/lib/api";
 
 interface GeoPoint {
@@ -23,10 +30,23 @@ interface GeoPoint {
   industry_name: string | null;
   intent_score: number | null;
   has_phone: boolean;
+  /** 首个可拨号码（后端增强字段，未部署时 undefined 按无号码降级） */
+  phone?: string | null;
+  /** 近 30 天有信号（后端增强字段） */
+  recent_30d?: boolean;
+}
+
+interface GeoCluster {
+  lat: number;
+  lng: number;
+  count: number;
+  phone: number;
+  /** 近期有动态的企业数（后端增强字段） */
+  recent?: number;
 }
 
 const CITIES = [
-  { name: "苏州", center: [31.30, 120.58] as [number, number] },
+  { name: "苏州", center: [31.3, 120.58] as [number, number] },
   { name: "无锡", center: [31.49, 120.31] as [number, number] },
   { name: "东莞", center: [23.02, 113.75] as [number, number] },
   { name: "佛山", center: [23.02, 113.12] as [number, number] },
@@ -38,6 +58,7 @@ const CITIES = [
   { name: "合肥", center: [31.82, 117.23] as [number, number] },
 ];
 
+// research_edu（科研院所）后端默认排除，不再作为筛选维度（AK3 契约）
 const INDUSTRIES = [
   { key: "", label: "全部行业" },
   { key: "vacuum", label: "真空设备" },
@@ -48,8 +69,142 @@ const INDUSTRIES = [
   { key: "hvac_building", label: "暖通机电" },
   { key: "lab_instrument", label: "检验检测" },
   { key: "medical_health", label: "医疗卫生" },
-  { key: "research_edu", label: "科研院所" },
+  { key: "freeze_dried", label: "冻干食品" },
+  { key: "pharma_biotech", label: "制药生物" },
+  { key: "chemical_new_material", label: "化工新材料" },
+  { key: "packaging_printing", label: "包装印刷" },
 ];
+
+/* ---------- popup 内联图标：popup 是 innerHTML 字符串，按 lucide 线型内联 SVG ---------- */
+
+const ICON_PHONE =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+const ICON_COPY =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+const ICON_ACTIVITY =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>';
+
+/** XSS 防线：所有动态值进 innerHTML 前必须过此函数（企业名/行业/地区/号码）。 */
+function escapeHtml(v: string): string {
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** 意图分层点样式：≥80 深紫大点 / ≥60 半透中点 / 有电话 / 无电话灰点。 */
+function pointStyle(p: GeoPoint): {
+  radius: number;
+  color: string;
+  weight: number;
+  fillColor: string;
+  fillOpacity: number;
+  opacity?: number;
+} {
+  const score = p.intent_score ?? 0;
+  if (score >= 80) {
+    return { radius: 7, color: "#5e6ad2", weight: 2, fillColor: "#5e6ad2", fillOpacity: 0.9 };
+  }
+  if (score >= 60) {
+    return {
+      radius: 5.5, color: "#5e6ad2", weight: 1.5, fillColor: "#5e6ad2",
+      fillOpacity: 0.75, opacity: 0.75,
+    };
+  }
+  if (p.has_phone) {
+    return { radius: 5, color: "#5e6ad2", weight: 1, fillColor: "#5e6ad2", fillOpacity: 0.85 };
+  }
+  return { radius: 3.5, color: "#9aa5a9", weight: 1, fillColor: "#e8ecee", fillOpacity: 0.6 };
+}
+
+/** 结构化作战卡：名称链接情报页 → 行业地区 → 意图/动态 → 电话区块。 */
+function buildPopupHtml(p: GeoPoint): string {
+  const name = escapeHtml(p.name ?? "");
+  const meta = escapeHtml(
+    [p.industry_name ?? "未分类", p.district ?? p.city ?? ""].filter(Boolean).join(" · "),
+  );
+  const link = `/enterprises/view?id=${encodeURIComponent(String(p.id))}`;
+
+  const score = p.intent_score;
+  const intentHtml =
+    score == null
+      ? ""
+      : score >= 80
+        ? `<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:999px;background:var(--accent-weak);border:1px solid var(--accent);color:var(--accent);font-size:11.5px;font-weight:600;line-height:18px">意图 ${score}</span>`
+        : `<span style="color:var(--muted);font-size:11.5px;line-height:18px">意图 ${score}</span>`;
+  const recentHtml =
+    p.recent_30d === true
+      ? `<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:999px;background:#fdf4e3;border:1px solid #ecd9ad;color:#8a5a10;font-size:11.5px;font-weight:600;line-height:18px">${ICON_ACTIVITY}近期有动态</span>`
+      : "";
+
+  const phone = (p.phone ?? "").trim();
+  const tel = phone.replace(/[^\d+]/g, "");
+  const phoneBlock = phone
+    ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+        <div style="display:flex;align-items:center;gap:6px;color:var(--ink);font-weight:500">
+          ${ICON_PHONE}
+          <input readonly data-map-phone value="${escapeHtml(phone)}"
+            style="flex:1;min-width:0;border:none;background:transparent;font:inherit;font-weight:500;color:inherit;padding:1px 2px;cursor:text;outline:none"
+            title="点击全选号码" />
+        </div>
+        <div style="margin-top:6px;display:flex;gap:6px;align-items:center">
+          <button type="button" data-copy-phone="${escapeHtml(phone)}"
+            style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:2px 9px;font-size:12px;color:var(--ink);cursor:pointer">${ICON_COPY}复制</button>
+          <a href="tel:${escapeHtml(tel)}"
+            style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--accent-weak);background:var(--accent-weak);border-radius:6px;padding:2px 9px;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">${ICON_PHONE}拨打</a>
+        </div>
+      </div>`
+    : `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;color:#9aa5a9;font-size:12px">— 无公开电话（可去风鸟补）</div>`;
+
+  return `<div style="font-size:13px;min-width:210px;line-height:1.5">
+      <a href="${link}" target="_blank" rel="noreferrer"
+        style="font-size:13.5px;font-weight:600;color:var(--ink);text-decoration:none"
+        title="进入企业情报页">${name}</a>
+      <div style="color:var(--muted);margin-top:1px">${meta}</div>
+      <div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">${intentHtml}${recentHtml}</div>
+      ${phoneBlock}
+    </div>`;
+}
+
+/** popup 内事件委托（Leaflet 对 popup wrapper 做了 disableClickPropagation，必须挂 wrapper 上）。 */
+function attachPopupHandlers(e: { popup: { getElement: () => HTMLElement | null } }): void {
+  const root = e.popup.getElement();
+  const wrap = root?.querySelector<HTMLElement>(".leaflet-popup-content-wrapper") ?? root;
+  if (!wrap || wrap.dataset.vacleadDelegated === "1") return;
+  wrap.dataset.vacleadDelegated = "1";
+  wrap.addEventListener("click", (ev) => {
+    const target = ev.target as HTMLElement | null;
+    if (!target) return;
+    // 点号码框：全选，方便 Ctrl+C
+    const input = target.closest<HTMLInputElement>("input[data-map-phone]");
+    if (input) {
+      input.focus();
+      input.select();
+      return;
+    }
+    // 复制按钮
+    const btn = target.closest<HTMLElement>("[data-copy-phone]");
+    if (!btn) return;
+    const value = btn.dataset.copyPhone ?? "";
+    const inp = wrap.querySelector<HTMLInputElement>("input[data-map-phone]");
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(value)
+        .then(() => Toast.success({ content: "号码已复制", duration: 2 }))
+        .catch(() => {
+          inp?.focus();
+          inp?.select();
+          Toast.warning({ content: "复制失败——号码已全选，Ctrl+C 即可", duration: 3 });
+        });
+    } else {
+      inp?.focus();
+      inp?.select();
+      Toast.warning({ content: "当前浏览器不支持一键复制——号码已全选，Ctrl+C 即可", duration: 3 });
+    }
+  });
+}
 
 export default function MapPage() {
   const divRef = useRef<HTMLDivElement | null>(null);
@@ -58,6 +213,8 @@ export default function MapPage() {
   const [city, setCity] = useState("苏州");
   const [industry, setIndustry] = useState("");
   const [withPhone, setWithPhone] = useState(false);
+  const [recentOnly, setRecentOnly] = useState(false);
+  const [mode, setMode] = useState<"points" | "clusters">("points");
   const [stats, setStats] = useState({ total: 0, phone: 0 });
   const [ready, setReady] = useState(false);
 
@@ -92,16 +249,17 @@ export default function MapPage() {
       for (const m of markersRef.current) m.remove();
       markersRef.current = [];
       try {
-        const d = await api.get<{ mode: string; items: GeoPoint[]; total: number }>(
+        const d = await api.get<{ mode: string; items: (GeoPoint | GeoCluster)[]; total: number }>(
           `/api/enterprises/geo?limit=2000${withPhone ? "&with_phone=1" : ""}${
             industry ? `&industry_key=${industry}` : ""
-          }`,
+          }${recentOnly ? "&recent=1" : ""}`,
         );
         const L = (await import("leaflet")).default;
         let phoneCount = 0;
         if (d.mode === "clusters") {
+          setMode("clusters");
           // AK2：全国级聚合——圆面积∝数量，青蓝占比=电话覆盖率
-          for (const cl of d.items as unknown as { lat: number; lng: number; count: number; phone: number }[]) {
+          for (const cl of d.items as GeoCluster[]) {
             phoneCount += cl.phone;
             const ratio = cl.phone / Math.max(cl.count, 1);
             const marker = L.circleMarker([cl.lat, cl.lng], {
@@ -111,28 +269,18 @@ export default function MapPage() {
               fillColor: ratio > 0.4 ? "#5e6ad2" : "#b9bfe8",
               fillOpacity: 0.45,
             }).addTo(map);
-            marker.bindTooltip(`${cl.count} 家 · 电话 ${cl.phone}`, { permanent: false });
+            const recentTxt = typeof cl.recent === "number" ? ` · 近期 ${cl.recent}` : "";
+            marker.bindTooltip(`${cl.count} 家 · 电话 ${cl.phone}${recentTxt}`, { permanent: false });
             marker.on("click", () => map.setView([cl.lat, cl.lng], 12));
             markersRef.current.push(marker);
           }
         } else {
-          for (const p of d.items) {
+          setMode("points");
+          for (const p of d.items as GeoPoint[]) {
             if (p.has_phone) phoneCount += 1;
-            const marker = L.circleMarker([p.lat, p.lng], {
-              radius: p.has_phone ? 5 : 3.5,
-              color: p.has_phone ? "#5e6ad2" : "#9aa5a9",
-              weight: 1,
-              fillColor: p.has_phone ? "#5e6ad2" : "#e8ecee",
-              fillOpacity: p.has_phone ? 0.85 : 0.6,
-            }).addTo(map);
-            marker.bindPopup(
-              `<div style="font-size:13px;min-width:180px">
-                 <b>${p.name}</b><br/>
-                 <span style="color:#6b7175">${p.industry_name ?? "未分类"} · ${p.district ?? p.city ?? ""}</span><br/>
-                 ${p.has_phone ? '<span style="color:var(--accent)">有公开电话</span>' : '<span style="color:#9aa5a9">无公开电话</span>'}<br/>
-                 <a href="/enterprises/view?id=${p.id}" target="_blank" rel="noreferrer">查看详情 →</a>
-               </div>`,
-            );
+            const marker = L.circleMarker([p.lat, p.lng], pointStyle(p)).addTo(map);
+            marker.bindPopup(buildPopupHtml(p), { maxWidth: 280 });
+            marker.on("popupopen", attachPopupHandlers);
             markersRef.current.push(marker);
           }
         }
@@ -141,10 +289,10 @@ export default function MapPage() {
         Toast.error(e instanceof Error ? e.message : "加载失败");
       }
     },
-    [withPhone, industry],
+    [withPhone, industry, recentOnly],
   );
 
-  // 切城市：平移 + 重载点
+  // 切城市 / 筛选变化：平移 + 重载（loadPoints 引用随筛选变化，一个 effect 统一驱动，避免双请求）
   useEffect(() => {
     if (!ready) return;
     const c = CITIES.find((x) => x.name === city);
@@ -152,57 +300,76 @@ export default function MapPage() {
     void loadPoints();
   }, [city, ready, loadPoints]);
 
-  // 筛选变化：重载
-  useEffect(() => {
-    if (!ready) return;
-    void loadPoints();
-  }, [withPhone, industry, ready, loadPoints]);
-
   return (
     <AppShell>
-      <div className="flex items-end justify-between">
+      <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-[22px] font-semibold leading-7 text-[var(--ink)]">客户地图</h1>
           <p className="mt-1 text-[13.5px] text-[var(--muted)]">
-            POI 自主公开电话打点 · 青蓝=打得通 · 点击查看联系卡
+            区域作战视图 · 看到目标即可拨打 · 近期动态=近 30 天有公示
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex shrink-0 items-center gap-2.5">
           <span className="text-[12.5px] text-[var(--muted)]">
             本视图 <span className="font-medium text-[var(--ink)]">{stats.total}</span> 家
-            · 有电话 <span className="font-medium text-[var(--accent)]">{stats.phone}</span>
+            ·{" "}
+            <span className="inline-flex items-center gap-0.5 align-baseline text-[var(--accent)]">
+              <Phone size={12} strokeWidth={2.25} className="self-center" aria-hidden />
+              有电话 <span className="font-medium">{stats.phone}</span>
+            </span>
             {stats.total > 2000 && (
               <span className="ml-1 text-[#c2801b]">（视图上限 2000，缩放到单城看全量）</span>
             )}
           </span>
-          <Select
-            value={city}
-            onChange={(v) => setCity(String(v))}
-            style={{ width: 110 }}
-            size="small"
-            optionList={CITIES.map((c) => ({ value: c.name, label: c.name }))}
-          />
-          <Select
-            value={industry}
-            onChange={(v) => setIndustry(String(v))}
-            style={{ width: 130 }}
-            size="small"
-            optionList={INDUSTRIES.map((i) => ({ value: i.key, label: i.label }))}
-          />
-          <Tag
-            color={withPhone ? "blue" : "grey"}
-            type="light"
-            className="!cursor-pointer"
-            onClick={() => setWithPhone((v) => !v)}
-          >
-            只看有电话
-          </Tag>
         </div>
       </div>
-      <div
-        ref={divRef}
-        className="mt-4 h-[calc(100vh-190px)] min-h-[480px] w-full overflow-hidden rounded-lg border border-[var(--border)]"
-      />
+
+      {/* 筛选行：城市 chips 一行横排 + 行业 + 意图/电话过滤 */}
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        {CITIES.map((c) => (
+          <button
+            key={c.name}
+            type="button"
+            onClick={() => setCity(c.name)}
+            className={`rounded-md border px-2 py-[3px] text-[12px] leading-4 transition-colors ${
+              city === c.name
+                ? "border-[var(--accent)] bg-[var(--accent-weak)] font-medium text-[var(--accent)]"
+                : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--control)] hover:text-[var(--ink)]"
+            }`}
+          >
+            {c.name}
+          </button>
+        ))}
+        <span aria-hidden className="mx-1 h-4 w-px bg-[var(--border)]" />
+        <Select
+          value={industry}
+          onChange={(v) => setIndustry(String(v))}
+          style={{ width: 130 }}
+          size="small"
+          optionList={INDUSTRIES.map((i) => ({ value: i.key, label: i.label }))}
+        />
+        <Tag
+          color={recentOnly ? "blue" : "grey"}
+          type="light"
+          className="!cursor-pointer"
+          onClick={() => setRecentOnly((v) => !v)}
+        >
+          近期有动态
+        </Tag>
+        <Tag
+          color={withPhone ? "blue" : "grey"}
+          type="light"
+          className="!cursor-pointer"
+          onClick={() => setWithPhone((v) => !v)}
+        >
+          只看有电话
+        </Tag>
+      </div>
+
+      <div className="relative mt-4 h-[calc(100vh-232px)] min-h-[480px] w-full overflow-hidden rounded-lg border border-[var(--border)]">
+        <div ref={divRef} className="h-full w-full" />
+        <MapLegend mode={mode} />
+      </div>
     </AppShell>
   );
 }

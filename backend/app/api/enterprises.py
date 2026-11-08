@@ -470,13 +470,17 @@ def enterprises_geo(
     east: float | None = None,
     with_phone: int = 0,
     industry_key: str | None = None,
+    recent: int = 0,
     limit: int = 2000,
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
     """客户地图打点（SPEC-AJ AJ2）：GCJ-02 坐标（与高德瓦片同源零纠偏）。
 
-    bbox 可选；with_phone=1 只看打得通的；limit ≤2000 防炸（前端分城聚合加载）。
+    bbox 可选；with_phone=1 只看打得通的；recent=1 只看近 30 天有公示
+    动态的；limit ≤2000 防炸（前端分城聚合加载）。
+    research_edu 默认排除（2026-11-08 用户拍板：学校非目标客户），
+    显式 industry_key=research_edu 查询时保留。
     """
     callable_ids = (
         session.query(Contact.enterprise_id)
@@ -502,6 +506,18 @@ def enterprises_geo(
             Enterprise.lat >= south, Enterprise.lat <= north,
             Enterprise.lng >= west, Enterprise.lng <= east,
         )
+    # SPEC-CQ CQ1：学校非目标客户——默认排除（显式查学校时保留）
+    if industry_key != "research_edu":
+        stmt = stmt.where(
+            or_(
+                Enterprise.industry_key != "research_edu",
+                Enterprise.industry_key.is_(None),
+            )
+        )
+    if recent:
+        cutoff30 = _iso_days_ago(30)
+        recent_ids = select(Signal.enterprise_id).where(Signal.created_at >= cutoff30)
+        stmt = stmt.where(Enterprise.id.in_(recent_ids))
     if with_phone:
         stmt = stmt.where(Enterprise.id.in_(callable_ids.select()))
     if industry_key:
@@ -522,6 +538,27 @@ def enterprises_geo(
     clustered = grid_cluster(flat, threshold=1500)
     if clustered["mode"] == "clusters":
         return {"mode": "clusters", "total": clustered["total"], "items": clustered["items"]}
+    # SPEC-CQ CQ1：弹窗作战卡数据一次带齐——首个可拨号码 + 近 30 天动态标记
+    from ..phones import load_phones as _lp
+
+    ids = [e.id for e in rows]
+    phone_map: dict[int, str] = {}
+    cond = [Contact.enterprise_id == i for i in ids]
+    for eid, pj in session.query(Contact.enterprise_id, Contact.phones_json).filter(
+        Contact.phones_json != "[]", or_(*cond)
+    ).order_by(Contact.id.asc()).all():
+        if eid in phone_map:
+            continue
+        pp = _lp(pj)
+        if pp:
+            phone_map[eid] = pp[0]
+    cutoff30 = _iso_days_ago(30)
+    recent_set = {
+        r[0]
+        for r in session.execute(
+            select(Signal.enterprise_id).where(Signal.created_at >= cutoff30)
+        ).all()
+    }
     return {
         "mode": "points",
         "total": clustered["total"],
@@ -532,6 +569,8 @@ def enterprises_geo(
                 "industry_name": e.industry_name,
                 "intent_score": e.intent_score,
                 "has_phone": e.id in phone_set,
+                "phone": phone_map.get(e.id),
+                "recent_30d": e.id in recent_set,
             }
             for e in rows
         ],
