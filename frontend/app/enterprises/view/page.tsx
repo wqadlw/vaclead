@@ -239,14 +239,36 @@ function IntelInner() {
   // SPEC-CN：书签搬运回流——URL 带 gongshang 参数则自动填框并解析入库
   useEffect(() => {
     const payload = sp?.get("gongshang");
+    const nameParam = sp?.get("name");
+    if (!payload && !nameParam) return;
     if (!payload) return;
     const decoded = decodeURIComponent(payload);
     setGsPaste(decoded);
     const t = setTimeout(() => {
       void (async () => {
+        let targetEid = eid;
+        if (!targetEid && nameParam) {
+          try {
+            const found = await api.get<{ items: { id: number; name: string }[] }>(
+              `/api/enterprises?q=${encodeURIComponent(nameParam)}&page_size=10`,
+            );
+            const exact = found.items.find((x) => x.name === nameParam);
+            if (exact) targetEid = exact.id;
+          } catch {
+            /* 定位失败走下方无 id 分支 */
+          }
+        }
+        if (!targetEid) {
+          Toast.error(
+            `书签搬运：平台没找到「${nameParam}」——请确认已采集该企业`,
+          );
+          window.history.replaceState({}, "", "/enterprises");
+          router.push("/enterprises");
+          return;
+        }
         try {
           const r = await api.post<{ filled: Record<string, string>; phone_added: boolean }>(
-            `/api/enterprises/${eid}/gongshang-paste`,
+            `/api/enterprises/${targetEid}/gongshang-paste`,
             { text: decoded },
           );
           const keys = Object.keys(r.filled);
@@ -259,7 +281,7 @@ function IntelInner() {
           Toast.error(e instanceof Error ? e.message : "书签数据解析失败");
         }
         setGsPaste("");
-        window.history.replaceState({}, "", `/enterprises/view?id=${eid}`);
+        window.history.replaceState({}, "", `/enterprises/view?id=${targetEid}`);
         load();
       })();
     }, 400);
