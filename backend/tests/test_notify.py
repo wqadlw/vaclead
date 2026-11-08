@@ -31,7 +31,8 @@ def test_channel_registry_and_default_prefs(client, admin_headers):
     assert r.status_code == 200
     d = r.json()
     keys = [c["key"] for c in d["channels"]]
-    assert keys == ["in_app", "email", "wechat"]
+    # SPEC-WH 新增 webhook（群机器人）渠道
+    assert keys == ["in_app", "email", "wechat", "webhook"]
     assert d["preferences"] == ["in_app"]  # 默认只站内
 
 

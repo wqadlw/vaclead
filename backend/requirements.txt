@@ -10,4 +10,5 @@ python-multipart>=0.0.9
 apscheduler>=3.10
 langgraph>=0.2
 pyjwt>=2.8
+requests>=2.31
 pytest>=8.2

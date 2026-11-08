@@ -10,9 +10,12 @@ vaclead 适配（单进程 SQLite）：
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
+import socket
 
+import requests
 from sqlalchemy.orm import Session
 
 from ..models import Notification, SettingsKV, User, utcnow
@@ -24,9 +27,24 @@ CHANNELS: dict[str, dict] = {
     "in_app": {"label": "站内", "enabled": True},
     "email": {"label": "邮件", "enabled": False},   # 配置 emailengine_url 后启用
     "wechat": {"label": "企微", "enabled": False},  # P3 WEWORK_INTEGRATION 契约
+    "webhook": {"label": "群机器人", "enabled": True},  # SPEC-WH：企微/钉钉/飞书群机器人
 }
 
 DEFAULT_PREFERENCES = ["in_app"]
+
+#: SPEC-WH SSRF 边界：只允许三类官方群机器人域名（出站前 _webhook_guard 校验；
+#: admin 配置入口 misc.py PUT 同步校验——双端一致）
+_WEBHOOK_ALLOWED_HOSTS = {
+    "qyapi.weixin.qq.com",   # 企业微信群机器人
+    "oapi.dingtalk.com",     # 钉钉群机器人
+    "open.feishu.cn",        # 飞书群机器人
+}
+
+#: SPEC-WH 群机器人类型白名单（settings_kv.notify_webhook_type）
+WEBHOOK_TYPES = ("wecom", "dingtalk", "feishu")
+
+#: 群消息截断上限（SPEC-WH：企微 markdown content 4096 字节限，留余量）
+_GROUP_MSG_MAX = 3800
 
 
 def user_channels(session: Session, user_id: int) -> list[str]:
@@ -116,7 +134,127 @@ def _deliver_wechat(session: Session, user_id: int, *, kind: str, title: str,
     return "skipped:not-implemented"
 
 
-_DISPATCH = {"in_app": _deliver_in_app, "email": _deliver_email, "wechat": _deliver_wechat}
+def render_group_message(title: str, body: str) -> str:
+    """群消息渲染（SPEC-WH）：`**[vaclead] {title}**\n{body}`。
+
+    超 3800 字符截断（企微 markdown content 4096 字节限，留余量防多字节越界）。
+    """
+    return f"**[vaclead] {title}**\n{body}"[:_GROUP_MSG_MAX]
+
+
+def _webhook_payload(wh_type: str, msg: str, title: str) -> dict:
+    """按群机器人类型构造 payload（SPEC-WH 3.1 三格式）。
+
+    - wecom：markdown content（默认格式，未知类型也回退到这里，最稳）
+    - dingtalk：markdown title + text
+    - feishu：纯 text（兼容最稳，绕开各卡片格式版本差异）
+    """
+    if wh_type == "feishu":
+        return {"msg_type": "text", "content": {"text": msg}}
+    if wh_type == "dingtalk":
+        return {"msgtype": "markdown", "markdown": {"title": title, "text": msg}}
+    return {"msgtype": "markdown", "markdown": {"content": msg}}
+
+
+def _webhook_type_of(session: Session) -> str:
+    """读群机器人类型（settings_kv.notify_webhook_type），存量空值回退 wecom。"""
+    row = session.get(SettingsKV, "notify_webhook_type")
+    return row.value if row and row.value else "wecom"
+
+
+def _webhook_guard(url: str) -> None:
+    """SSRF 边界（SPEC-WH，Mimosa high 修复）：四层校验缺一不可。
+
+    1. 协议 https only；2. 官方机器人域名白名单；3. 解析后全部 IP 必须公网
+    （阻断私网/环回/链路本地/保留段——防 DNS rebinding 绕白名单）；
+    4. requests 侧 allow_redirects=False（防 302 跳内网）。"""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError("webhook 必须 https")
+    host = (parsed.hostname or "").lower()
+    if host not in _WEBHOOK_ALLOWED_HOSTS:
+        raise ValueError(f"webhook 域名不在白名单: {host}")
+    for _, _, _, _, sa in socket.getaddrinfo(host, 443):
+        ip = ipaddress.ip_address(sa[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            raise ValueError(f"webhook 域名解析到非公网地址: {ip}")
+
+
+def _webhook_post(url: str, payload: dict):
+    """出站 POST——显式禁代理（SPEC-WH：继承"死代理毒链路"教训，后台出站必须绕系统代理）；
+    出站前过 _webhook_guard 四层 SSRF 边界；禁重定向。"""
+    _webhook_guard(url)
+    return requests.post(
+        url, json=payload, timeout=10,
+        proxies={"http": None, "https": None}, allow_redirects=False,
+    )
+
+
+def _webhook_code(wh_type: str, data: dict) -> int:
+    """群机器人响应校验码：wecom/dingtalk 看 errcode；feishu 看 code。"""
+    return int(data.get("code", 0) if wh_type == "feishu" else data.get("errcode", 0))
+
+
+def _deliver_webhook(session: Session, user_id: int, *, kind: str, title: str,
+                     body: str, ref_type: str, ref_id: int) -> str:
+    """群机器人渠道（SPEC-WH）：全局一个群，销售不打开平台群里就能看到新信号。
+
+    - 未配置 URL → skipped:not-configured（渠道列表 available 跟随）
+    - dedup：Notification 存在同 (ref_type, ref_id) 行 → skipped:duplicate
+      （群消息不可轰炸；调用方水位防重之上再兜一层）
+    - 响应码非 0 → f"failed:{code}"；网络异常直接抛（notify_dispatch per-channel try 兜）
+    """
+    url_row = session.get(SettingsKV, "notify_webhook_url")
+    url = url_row.value if url_row else None
+    if not url:
+        return "skipped:not-configured"
+    dup = (
+        session.query(Notification)
+        .filter(
+            Notification.ref_type == ref_type,
+            Notification.ref_id == ref_id,
+        )
+        .first()
+    )
+    if dup is not None:
+        return "skipped:duplicate"
+    wh_type = _webhook_type_of(session)
+    payload = _webhook_payload(wh_type, render_group_message(title, body), title)
+    resp = _webhook_post(url, payload)
+    code = _webhook_code(wh_type, resp.json())
+    if code != 0:
+        return f"failed:{code}"
+    return "ok"
+
+
+def _deliver_webhook_test(session: Session, url: str, wh_type: str) -> dict:
+    """发固定测试消息（SPEC-WH 3.1），返回 {"ok": bool, "detail": str}。
+
+    供 POST /api/notify-webhook/test 复用；任何失败都不抛——HTTP 层永远 200。
+    """
+    msg = "[vaclead] 测试消息——群机器人通道已打通"
+    payload = _webhook_payload(wh_type, msg, "测试消息")
+    try:
+        resp = _webhook_post(url, payload)
+    except Exception as exc:  # noqa: BLE001 — 测试端点不 500，失败也 200
+        return {"ok": False, "detail": f"error:{exc}"}
+    try:
+        code = _webhook_code(wh_type, resp.json())
+    except ValueError:  # 非 JSON 响应（反代错误页等）
+        return {"ok": False, "detail": f"failed:http-{resp.status_code}"}
+    if code != 0:
+        return {"ok": False, "detail": f"failed:{code}"}
+    return {"ok": True, "detail": "ok"}
+
+
+_DISPATCH = {
+    "in_app": _deliver_in_app,
+    "email": _deliver_email,
+    "wechat": _deliver_wechat,
+    "webhook": _deliver_webhook,  # SPEC-WH 群机器人
+}
 
 
 def notify_dispatch(session: Session, user_id: int, *, kind: str, title: str,

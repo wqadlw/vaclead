@@ -218,19 +218,47 @@ class NotifyPrefsIn(BaseModel):
     channels: list[str]  # ["in_app"] / ["in_app","email"] / 含 wechat
 
 
+def _mask_webhook_url(url: str | None) -> str | None:
+    """群机器人 URL 脱敏（SPEC-WH）：保留头 60 尾 12，中段打码。
+
+    过短（<=72 位）时 key 必在段内，整体只露前 8 位防泄漏。
+    """
+    if not url:
+        return None
+    if len(url) <= 72:
+        return f"{url[:8]}***"
+    return f"{url[:60]}***{url[-12:]}"
+
+
 @router.get("/notify-preferences")
 def get_notify_prefs(
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
-    """渠道偏好（吸收 Novu subscriber preferences）+ 渠道注册表。"""
+    """渠道偏好（吸收 Novu subscriber preferences）+ 渠道注册表。
+
+    SPEC-WH：webhook 渠道 available = URL 已配置（其余渠道保持注册表 enabled）；
+    响应附 webhook 配置摘要（URL 脱敏）。
+    """
     from ..notify.channels import CHANNELS, user_channels
 
+    wh_url = _get(session, "notify_webhook_url")
+    channels = [
+        {
+            "key": k,
+            "label": v["label"],
+            "available": bool(wh_url) if k == "webhook" else v["enabled"],
+        }
+        for k, v in CHANNELS.items()
+    ]
     return {
-        "channels": [
-            {"key": k, "label": v["label"], "available": v["enabled"]} for k, v in CHANNELS.items()
-        ],
+        "channels": channels,
         "preferences": user_channels(session, user.id),
+        "webhook": {
+            "url": _mask_webhook_url(wh_url),
+            "type": _get(session, "notify_webhook_type") or "wecom",
+            "configured": bool(wh_url),
+        },
     }
 
 
@@ -252,6 +280,64 @@ def put_notify_prefs(
         row.value = json.dumps(valid)
     session.commit()
     return {"ok": True, "preferences": valid}
+
+
+# ---------------- 群机器人 Webhook（SPEC-WH） ----------------
+class NotifyWebhookIn(BaseModel):
+    url: str
+    type: str = "wecom"
+
+
+@router.put("/notify-webhook")
+def put_notify_webhook(
+    body: NotifyWebhookIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """群机器人配置（SPEC-WH）：URL 必须 https、type 白名单 → 写 settings_kv 两键。
+
+    key：notify_webhook_url / notify_webhook_type（wecom|dingtalk|feishu）。
+    SSRF 边界：域名白名单双端校验的配置入口侧——只接受三类官方机器人域名。
+    """
+    from urllib.parse import urlparse
+
+    from ..notify.channels import WEBHOOK_TYPES, _WEBHOOK_ALLOWED_HOSTS
+
+    if not body.url.startswith("https://"):
+        raise HTTPException(422, "机器人地址必须以 https:// 开头")
+    host = (urlparse(body.url).hostname or "").lower()
+    if host not in _WEBHOOK_ALLOWED_HOSTS:
+        raise HTTPException(422, f"机器人域名须为官方地址（企微/钉钉/飞书），拒绝 {host or '空'}")
+    if body.type not in WEBHOOK_TYPES:
+        raise HTTPException(422, "type 须为 wecom/dingtalk/feishu")
+    for key, value in (("notify_webhook_url", body.url), ("notify_webhook_type", body.type)):
+        row = session.get(SettingsKV, key)
+        if row is None:
+            session.add(SettingsKV(key=key, value=value))
+        else:
+            row.value = value
+    session.commit()
+    return {"ok": True}
+
+
+@router.post("/notify-webhook/test")
+def test_notify_webhook(
+    body: dict | None = None,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """群机器人测试消息（SPEC-WH）：真发一条 → {ok, detail}，失败也 200 不 500。
+
+    body 可带 {url, type} 支持先测后存；缺省用已存配置（未配置返回 ok:false）。
+    """
+    from ..notify.channels import _deliver_webhook_test
+
+    payload = body or {}
+    url = payload.get("url") or _get(session, "notify_webhook_url")
+    wh_type = payload.get("type") or _get(session, "notify_webhook_type") or "wecom"
+    if not url:
+        return {"ok": False, "detail": "skipped:not-configured"}
+    return _deliver_webhook_test(session, url, wh_type)
 
 
 @router.get("/agent-runs")

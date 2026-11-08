@@ -1341,15 +1341,30 @@ export default function SettingsPage() {
     { key: string; label: string; available: boolean }[]
   >([]);
   const [notifyPrefs, setNotifyPrefs] = useState<string[]>(["in_app"]);
+  // SPEC-WH 群机器人配置（webhook 渠道，仅管理员可见）
+  const [whType, setWhType] = useState("wecom");
+  const [whUrl, setWhUrl] = useState("");
+  const [whSaving, setWhSaving] = useState(false);
+  const [whTesting, setWhTesting] = useState(false);
+  // 当前登录角色（与 AppShell / competitors 页同源：localStorage）
+  const [role, setRole] = useState("sales");
+  useEffect(() => setRole(localStorage.getItem("vaclead_role") || "sales"), []);
 
   const loadNotifyPrefs = useCallback(() => {
     api
-      .get<{ channels: { key: string; label: string; available: boolean }[]; preferences: string[] }>(
-        "/api/notify-preferences",
-      )
+      .get<{
+        channels: { key: string; label: string; available: boolean }[];
+        preferences: string[];
+        /** SPEC-WH：群机器人配置（url 已脱敏）；后端并行上线中，容错可选 */
+        webhook?: { url: string; type: string; configured: boolean };
+      }>("/api/notify-preferences")
       .then((d) => {
         setNotifyChannels(d.channels);
         setNotifyPrefs(d.preferences);
+        if (d.webhook) {
+          setWhUrl(d.webhook.url || "");
+          if (d.webhook.type) setWhType(d.webhook.type);
+        }
       })
       .catch(() => undefined);
   }, []);
@@ -1363,6 +1378,41 @@ export default function SettingsPage() {
   };
 
   useEffect(() => loadNotifyPrefs(), [loadNotifyPrefs]);
+
+  // SPEC-WH：保存群机器人配置（后端校验 https:// 开头 + type 白名单，非法 422）
+  const saveWebhook = async () => {
+    if (!whUrl.trim().startsWith("https://")) {
+      Toast.warning("请填写以 https:// 开头的机器人地址");
+      return;
+    }
+    setWhSaving(true);
+    try {
+      await api.put("/api/notify-webhook", { url: whUrl.trim(), type: whType });
+      Toast.success("已保存，群里收测试消息试试");
+      loadNotifyPrefs(); // 重拉 prefs：渠道列表 available 翻绿 + 回填脱敏 url
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setWhSaving(false);
+    }
+  };
+
+  // SPEC-WH：真发一条测试消息到群（后端失败也 200 返回 ok:false，不走异常分支）
+  const testWebhook = async () => {
+    setWhTesting(true);
+    try {
+      const r = await api.post<{ ok: boolean; detail?: string }>(
+        "/api/notify-webhook/test",
+        {},
+      );
+      if (r.ok === true) Toast.success("测试消息已发出，去群里看看");
+      else Toast.error(r.detail || "发送失败");
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "发送失败");
+    } finally {
+      setWhTesting(false);
+    }
+  };
 
   const saveKeys = async () => {
     if (!amapKey && !zhilKey) {
@@ -1688,6 +1738,54 @@ export default function SettingsPage() {
                 </label>
               ))}
             </div>
+            {/* SPEC-WH 群机器人配置卡（仅管理员可见） */}
+            {role === "admin" && (
+              <div className="mt-4 max-w-[420px] space-y-3 rounded-lg border border-[var(--border)] bg-white px-4 py-3">
+                <div>
+                  <div className="text-[13.5px] font-medium text-[var(--ink)]">群机器人</div>
+                  <div className="mt-1 text-[12px] leading-5 text-[var(--muted)]">
+                    把企微 / 钉钉 / 飞书群机器人的地址填进来，命中新信号自动推送到群，销售不用打开平台。
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1 text-[12.5px] text-[var(--muted)]">机器人类型</div>
+                  <Select
+                    style={{ width: "100%" }}
+                    value={whType}
+                    optionList={[
+                      { value: "wecom", label: "企业微信群机器人" },
+                      { value: "dingtalk", label: "钉钉群机器人" },
+                      { value: "feishu", label: "飞书群机器人" },
+                    ]}
+                    onChange={(v) => setWhType((v as string) || "wecom")}
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 text-[12.5px] text-[var(--muted)]">
+                    机器人地址（保存后仅显示脱敏地址，重新粘贴即覆盖）
+                  </div>
+                  <Input
+                    value={whUrl}
+                    placeholder={
+                      whType === "dingtalk"
+                        ? "https://oapi.dingtalk.com/robot/send?access_token=…"
+                        : whType === "feishu"
+                          ? "https://open.feishu.cn/open-apis/bot/v2/hook/…"
+                          : "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…"
+                    }
+                    onChange={setWhUrl}
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button theme="solid" loading={whSaving} onClick={() => void saveWebhook()}>
+                    保存配置
+                  </Button>
+                  <Button theme="borderless" type="tertiary" loading={whTesting} onClick={() => void testWebhook()}>
+                    发送测试消息
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
           </TabPane>
 
