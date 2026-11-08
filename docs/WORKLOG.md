@@ -2356,3 +2356,24 @@ vaclead 字标）。**教训**：cp 到 docs/ 被 Mimosa 拦（Bash 直写钩子
 组件零引用后删除（354 行死代码清退）。说明文案同步"点击企业名进入
 完整情报页"。journey E2E 第 3 步断言同步（删"展开完整情报页"一跳）。
 **门禁**：build + E2E 8 全绿。
+
+
+## 2026-11-08 · SPEC-CK 风鸟配额流水线轮（用户："企业信息是基石，风鸟送会员怎么用"）
+
+**合规定案（红线不动）**：不爬登录后的商业产品；**人工查询+官方导出
+=合规**。风鸟免费 SVIP（注册送 5 年）正好走这条路——三步流水线：
+①**缺数购物清单** GET /tasks/gongshang-lookup-export（admin CSV：
+缺 uscc/法人/注册资本/成立日期或无电话者，意图分降序，真库首查
+滁州应用技术学校 280.81 分在首行）②人工去风鸟逐家查询（SVIP 配额）
+③**回灌** POST /import/gongshang-csv（列名映射风鸟表头；注册资本
+"1000万人民币"→1000.0 清洗；resolve 仅补空不覆盖；电话建 contact
+source=riskbird 同号跳过）。**前端入口**：拓客任务页「工商补数（风鸟）」
+卡（下载清单+粘贴回灌框+计数反馈）——端点无入口=没上线（CE 教训）。
+**Provider 槽位**：gongshang.py 预留 riskbird（官方 API 条款未核实
+前不做自动调用）。**文档**：DATA_ACQUISITION §8。
+**坑（heredoc 转义层第 N 次重演但形态最新）**：python heredoc 写含
+\r\n\t 转义的 JS，bash 层把 \\r 变真实 CR 写盘——正则字面量被真实
+控制字符拆行。修法=Write 工具落补丁脚本+newline="" 读原始字节
+（universal newline 会把 CR?LF 变两行导致前两版 assert 失败——
+**探测工具：python -X utf8 repr 打印原始字节，别用 cat -A 猜**）。
+**门禁**：pytest 339 + build + E2E 8 全绿；清单端点真库验证。

@@ -485,3 +485,180 @@ async def import_tenders(
         "enterprises_created": enterprises_created,
         "matched_terms_summary": f"{signals_created} 条信号命中设备词",
     }
+
+
+# ---------------------------------------------------------------------------
+# SPEC-CK：风鸟配额流水线——缺数购物清单 + 官方导出回灌（合规：人工查询+官方导出）
+# ---------------------------------------------------------------------------
+@router.get("/tasks/gongshang-lookup-export")
+def gongshang_lookup_export(
+    limit: int = 500,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """缺数购物清单 CSV（SPEC-CK CK1）：值得去风鸟逐家查询的企业。
+
+    缺 uscc/法人/注册资本/成立日期或无可拨电话者入选，意图分降序——
+    免费配额花在刀刃上。官方导出/人工查询=合规数据源（红线不爬）。
+    """
+    import csv as _csv
+    import io as _io
+
+    from fastapi.responses import StreamingResponse
+
+    from ..models import Contact as _CT
+    from ..phones import load_phones as _lp
+
+    limit = max(1, min(limit, 2000))
+    ents = (
+        session.query(Enterprise)
+        .filter(Enterprise.deleted_at.is_(None))
+        .order_by(Enterprise.intent_score.desc(), Enterprise.id.desc())
+        .limit(limit * 3)
+        .all()
+    )
+    dialable_ids = {
+        eid
+        for (eid, pj) in session.query(_CT.enterprise_id, _CT.phones_json).filter(
+            _CT.phones_json != "[]"
+        ).all()
+        if _lp(pj)
+    }
+    rows_out = []
+    for e in ents:
+        missing = []
+        if not e.uscc:
+            missing.append("统一社会信用代码")
+        if not e.legal_rep:
+            missing.append("法定代表人")
+        if not e.registered_capital_wan:
+            missing.append("注册资本")
+        if not e.established_at:
+            missing.append("成立日期")
+        if e.id not in dialable_ids:
+            missing.append("联系电话")
+        if not missing:
+            continue
+        rows_out.append({
+            "name": e.name,
+            "region": " ".join(x for x in (e.province, e.city) if x),
+            "industry": e.industry_name or "",
+            "intent": e.intent_score,
+            "missing": "、".join(missing),
+        })
+        if len(rows_out) >= limit:
+            break
+    buf = _io.StringIO()
+    w = _csv.writer(buf)
+    w.writerow(["企业名称", "地区", "行业", "意图分", "缺失项"])
+    for r in sorted(rows_out, key=lambda x: -(x["intent"] or 0)):
+        w.writerow([r["name"], r["region"], r["industry"], r["intent"], r["missing"]])
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=gongshang_lookup_list.csv"},
+    )
+
+
+_GONGSHANG_MAP = {
+    "name": "name", "企业名称": "name", "公司名称": "name",
+    "统一社会信用代码": "uscc", "纳税人识别号": "uscc", "信用代码": "uscc",
+    "法定代表人": "legal_rep", "法人": "legal_rep", "法人代表": "legal_rep",
+    "注册资本": "registered_capital_wan", "注册资本(万元)": "registered_capital_wan",
+    "成立日期": "established_at", "成立时间": "established_at",
+    "企业电话": "phone", "联系电话": "phone", "电话": "phone",
+    "地址": "address", "企业地址": "address",
+    "经营范围": "business_scope",
+}
+
+_CAP_RE = re.compile(r"([\d.]+)\s*万")
+
+
+def _parse_capital(raw: str) -> float | None:
+    """风鸟注册资本形态清洗：'1000万人民币'/'1,200万元' → 1000.0。"""
+    if not raw:
+        return None
+    m = _CAP_RE.search(raw.replace(",", ""))
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
+class GongshangRowIn(BaseModel):
+    rows: list[dict]
+
+
+@router.post("/import/gongshang-csv")
+def import_gongshang_csv(
+    body: GongshangRowIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """风鸟官方导出回灌（SPEC-CK CK2）：逐行 resolve，仅补空不覆盖。
+
+    电话建 Contact（source=riskbird，evidence=风鸟工商档案公开电话），
+    同企业已有同号码跳过；未匹配列名忽略。
+    """
+    from ..models import Contact as _CT
+    from ..normalize import resolve_enterprise
+    from ..phones import dump_phones as _dp
+    from ..phones import extract_phones as _ep
+
+    filled = 0
+    phones_added = 0
+    matched = 0
+    skipped = 0
+    for raw in body.rows[:1000]:
+        mapped: dict[str, str] = {}
+        for k, v in raw.items():
+            col = _GONGSHANG_MAP.get(str(k).strip())
+            if col and str(v or "").strip():
+                mapped[col] = str(v).strip()
+        name = mapped.get("name") or ""
+        if len(name) < 4:
+            skipped += 1
+            continue
+        cap = _parse_capital(mapped.get("registered_capital_wan", ""))
+        ent, is_new = resolve_enterprise(
+            session, name, source="csv",
+            uscc=mapped.get("uscc"),
+            est_date=mapped.get("established_at"),
+            legal_rep=mapped.get("legal_rep"),
+        )
+        matched += 1
+        changed = False
+        if cap is not None and not ent.registered_capital_wan:
+            ent.registered_capital_wan = cap
+            changed = True
+        if mapped.get("address") and not ent.address:
+            ent.address = mapped["address"]
+            changed = True
+        if mapped.get("business_scope") and not ent.business_scope:
+            ent.business_scope = mapped["business_scope"]
+            changed = True
+        if changed or is_new:
+            filled += 1
+        phone_raw = mapped.get("phone")
+        if phone_raw:
+            phones = _ep(phone_raw)
+            for ph in phones:
+                dup = (
+                    session.query(_CT)
+                    .filter(_CT.enterprise_id == ent.id, _CT.phones_json.contains(ph))
+                    .first()
+                )
+                if dup is not None:
+                    continue
+                session.add(_CT(
+                    enterprise_id=ent.id, name="工商档案电话", role="map_phone",
+                    phones_json=_dp([ph]), source="riskbird",
+                    evidence_claim="风鸟工商档案公开电话",
+                ))
+                phones_added += 1
+    session.commit()
+    return {"matched": matched, "filled": filled,
+            "phones_added": phones_added, "skipped": skipped}

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button, Card, InputNumber, Progress, Select, Toast, Modal } from "@douyinfe/semi-ui";
-import { ClipboardPaste, CloudUpload, FileSpreadsheet, Globe2, Rocket, ScrollText } from "lucide-react";
+import { Building2, ClipboardPaste, CloudUpload, FileSpreadsheet, Globe2, Rocket, ScrollText } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
 import { INDUSTRY_OPTIONS, POI_CITIES } from "@/lib/constants";
@@ -29,6 +29,43 @@ function formatDone(summary: Record<string, unknown> | undefined): string {
 
 export default function TasksPage() {
   // POI 采集
+// SPEC-CK 风鸟回灌
+  const [gongshangText, setGongshangText] = useState("");
+  const [gongshangBusy, setGongshangBusy] = useState(false);
+  const [gongshangHint, setGongshangHint] = useState("");
+
+  const importGongshang = async () => {
+    const text = gongshangText.trim();
+    if (!text) return;
+    setGongshangBusy(true);
+    try {
+      const lines = text.split(/\r?\n/).filter((l) => l.trim());
+      const sep = lines[0].includes("\t") ? "\t" : ",";
+      const headers = lines[0].split(sep).map((h) => h.trim().replace(/^"|"$/g, ""));
+      const rows = lines.slice(1).map((line) => {
+        const cells = line.split(sep).map((c) => c.trim().replace(/^"|"$/g, ""));
+        const row: Record<string, string> = {};
+        headers.forEach((h, i) => {
+          if (cells[i] !== undefined) row[h] = cells[i];
+        });
+        return row;
+      });
+      const r = await api.post<{ matched: number; filled: number; phones_added: number; skipped: number }>(
+        "/api/import/gongshang-csv",
+        { rows },
+      );
+      setGongshangHint(
+        "匹配 " + r.matched + " 家 · 补齐 " + r.filled + " 家 · 新增电话 " + r.phones_added + " · 跳过 " + r.skipped,
+      );
+      setGongshangText("");
+      Toast.success("风鸟数据回灌完成");
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "回灌失败");
+    } finally {
+      setGongshangBusy(false);
+    }
+  };
+
   const [city, setCity] = useState<string>("苏州");
   const [industries, setIndustries] = useState<string[]>(["semiconductor"]);
   const [useQuadtree, setUseQuadtree] = useState(false);
@@ -458,6 +495,45 @@ export default function TasksPage() {
                 title="导入招标公告 CSV"
                 hint="列：title, content, url, pub_date, enterprise_name —— 命中设备词自动生成意图信号"
               />
+            </div>
+          </Card>
+
+          {/* SPEC-CK：风鸟配额流水线——人工查询+官方导出，零爬虫合规 */}
+          <Card
+            title={
+              <span className="flex items-center gap-2 text-[14.5px] font-medium text-[var(--ink)]">
+                <Building2 size={16} className="text-[var(--accent)]" /> 工商补数（风鸟）
+              </span>
+            }
+          >
+            <div className="space-y-2 text-[12.5px] leading-5 text-[var(--muted)]">
+              <p>
+                企业工商资料（法人/注册资本/成立日期/电话）是最薄的一层——
+                用风鸟免费 SVIP（注册送 5 年）按清单逐家补齐，官方导出回灌：
+              </p>
+              <ol className="ml-4 list-decimal space-y-0.5">
+                <li>下载缺数清单（按意图分排序，最值得查的在前）</li>
+                <li>去 riskbird.com 逐家查询，用官方导出/复制表格</li>
+                <li>把导出的表格粘贴进下方回灌框（首行列名，Tab/逗号分隔）</li>
+              </ol>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <Button size="small" icon={<FileSpreadsheet size={13} />} onClick={() => window.open("/api/tasks/gongshang-lookup-export", "_blank")}>
+                  下载缺数清单
+                </Button>
+              </div>
+              <textarea
+                value={gongshangText}
+                onChange={(e) => setGongshangText(e.target.value)}
+                placeholder={"粘贴风鸟导出的表格（首行列名，Tab/逗号分隔）……\n企业名称	法定代表人	注册资本	企业电话"}
+                rows={4}
+                className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 font-mono text-[12px] outline-none focus:border-[var(--accent)]"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-[11.5px]">{gongshangHint}</span>
+                <Button size="small" theme="solid" loading={gongshangBusy} disabled={!gongshangText.trim()} onClick={() => void importGongshang()}>
+                  回灌入库
+                </Button>
+              </div>
             </div>
           </Card>
         </div>
