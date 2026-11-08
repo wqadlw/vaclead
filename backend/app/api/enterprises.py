@@ -522,9 +522,15 @@ def enterprises_geo(
         stmt = stmt.where(Enterprise.id.in_(callable_ids.select()))
     if industry_key:
         stmt = stmt.where(Enterprise.industry_key == industry_key)
-    # SPEC-CR CR1：按意图分降序——limit 截断时保住最有价值的企业
-    # （全国模式 2000 上限=全国 Top 意图；bbox 模式视野内全量不受影响）
-    stmt = stmt.order_by(Enterprise.intent_score.desc(), Enterprise.id.desc())
+    # SPEC-CR CR1：可拨优先 → 意图分降序——limit 截断时保住最有价值企业
+    # （数据事实：intent_score 列仅 680 家>0——POI 无公示信号全为 0，
+    # 截断排序必须以可拨为第一键，否则地图上可拨企业被埋）
+    dialable_first = Enterprise.id.in_(callable_ids.select())
+    stmt = stmt.order_by(
+        dialable_first.desc(),
+        Enterprise.intent_score.desc(),
+        Enterprise.id.desc(),
+    )
     rows = session.scalars(stmt.limit(min(limit, 2000))).all()
     phone_set = {
         r[0] for r in session.execute(select(Contact.enterprise_id).where(
@@ -534,13 +540,18 @@ def enterprises_geo(
             )
         )).all()
     }
-    # SPEC-AK AK2：超 1500 点自动网格聚合（geoutil 纯函数，24k 点前端防炸）
-    from ..geoutil import grid_cluster
+    # SPEC-AK AK2：全国模式（无 bbox）超 1500 点自动网格聚合；
+    # SPEC-CR：bbox 模式（zoom>=11 区域作战）跳过聚合——按可拨+意图排序
+    # 截 limit（2000），用户在城市级视野要看真点，聚合圆违背作战语义。
+    has_bbox = south is not None and north is not None and west is not None and east is not None
+    clustered = None
+    if not has_bbox:
+        from ..geoutil import grid_cluster
 
-    flat = [(e.lat, e.lng, e.id in phone_set) for e in rows]
-    clustered = grid_cluster(flat, threshold=1500)
-    if clustered["mode"] == "clusters":
-        return {"mode": "clusters", "total": clustered["total"], "items": clustered["items"]}
+        flat = [(e.lat, e.lng, e.id in phone_set) for e in rows]
+        clustered = grid_cluster(flat, threshold=1500)
+        if clustered["mode"] == "clusters":
+            return {"mode": "clusters", "total": clustered["total"], "items": clustered["items"]}
     # SPEC-CQ CQ1：弹窗作战卡数据一次带齐——首个可拨号码 + 近 30 天动态标记
     from ..phones import load_phones as _lp
 
@@ -564,7 +575,7 @@ def enterprises_geo(
     }
     return {
         "mode": "points",
-        "total": clustered["total"],
+        "total": clustered["total"] if clustered is not None else len(rows),
         "items": [
             {
                 "id": e.id, "name": e.name, "lat": e.lat, "lng": e.lng,

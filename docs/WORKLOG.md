@@ -2611,3 +2611,13 @@ points；<11 全国 clusters；URLSearchParams 拼接）+ moveend 500ms
 确认 moveend 行为——子 Agent 深度到框架源码级）。
 **全国模式文案口径遗留**（zoom<11 统计为全国数，可后续区分）。
 **门禁**：后端 349（+排序回归）+ 子 Agent build/E2E 8 全绿。
+
+
+## 2026-11-08 · CR 收尾：bbox 聚合边界修复（AJ 测试抓出）
+
+bbox 模式跳过聚合后 points return 仍引用 clustered（bbox 分支未赋值）
+→ UnboundLocalError 500。修：clustered 初始 None + total 双源
+（clusters total / bbox len(rows)）。AJ 共享库测试顺带发现 bbox 极小
+范围在共享库下点数超 1500 会走聚合——与前端 zoom≥11 预期 points 的
+分档**理论上可能错位**（后端按点数、前端按 zoom），实际单城 2000
+上限+intent 排序下 bbox 聚合罕见；如遇可再对齐。**门禁**：349 全绿。

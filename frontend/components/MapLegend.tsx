@@ -33,6 +33,13 @@ export default function MapLegend({ mode }: { mode: "points" | "clusters" }) {
       ) : (
         <>
           <div className="flex items-center gap-2">
+            <LegendDot size={12} fill="#c2801b" />
+            <span>
+              近期有动态{" "}
+              <span className="text-[var(--muted)]">（近 30 天有公示）</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
             <LegendDot size={14} fill="#5e6ad2" stroke="#5e6ad2" strokeWidth={2} />
             <span>
               高意图 <span className="font-medium text-[var(--ink)]">≥80</span>

@@ -96,7 +96,9 @@ function escapeHtml(v: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/** 意图分层点样式：≥80 深紫大点 / ≥60 半透中点 / 有电话 / 无电话灰点。 */
+/** 点样式分层（数据事实修正）：近期有动态（amber）> 高意图（深紫）>
+ *  有电话（青蓝）> 无电话（灰）。intent_score 列仅 680 家>0（POI 无
+ *  公示信号全为 0）——不能作地图主分层键。 */
 function pointStyle(p: GeoPoint): {
   radius: number;
   color: string;
@@ -106,6 +108,9 @@ function pointStyle(p: GeoPoint): {
   opacity?: number;
 } {
   const score = p.intent_score ?? 0;
+  if (p.recent_30d === true) {
+    return { radius: 6.5, color: "#c2801b", weight: 2, fillColor: "#c2801b", fillOpacity: 0.85 };
+  }
   if (score >= 80) {
     return { radius: 7, color: "#5e6ad2", weight: 2, fillColor: "#5e6ad2", fillOpacity: 0.9 };
   }

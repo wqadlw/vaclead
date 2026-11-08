@@ -114,6 +114,10 @@ def test_cq_geo_intent_ordering(client, admin_headers, seeded):
         high = Enterprise(name="CQ高意图目标有限公司", source="poi", lat=31.33, lng=120.61,
                           city="苏州市", industry_key="coating", intent_score=95)
         s.add(high)
+        s.flush()
+        # 可拨优先排序语义：给 high 加电话（95 分可拨压过 85 分可拨）
+        s.add(Contact(enterprise_id=high.id, name="CQ高意图联系人", role="buyer_contact",
+                      phones_json='["13800000102"]'))
         s.commit()
         high_id = high.id
 
