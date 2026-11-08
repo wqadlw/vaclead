@@ -19,8 +19,8 @@ function makeBookmarkletSrc(origin: string): string {
 var LAB={法定代表人:"法人",法人:"法人",负责人:"法人","统一社会信用代码":"信用代码",信用代码:"信用代码",纳税人识别号:"信用代码",注册资本:"注册资本",成立日期:"成立日期",注册日期:"成立日期",企业电话:"电话",联系电话:"电话",电话:"电话",企业地址:"地址",注册地址:"地址",地址:"地址",经营范围:"经营范围"};
 var out=[],cur=null,ph="",name="";
 var lines=(document.body.innerText||"").split(/\\n+/);
-var titleClean=(document.title||"").split(/[ |_—-]+(?:风鸟|企业查询)[^$]*$/)[0].trim();
-if(titleClean.length>=6)name=titleClean;
+var titleRaw=(document.title||"").replace(/\\s*[-—–_|]+\\s*(工商信息查询|企业信用查询|企业查询平台|企业查询|风鸟).*$/,"").trim();
+if(titleRaw.length>=6)name=titleRaw;
 for(var i=0;i<lines.length;i++){
 var ln=lines[i].trim();
 if(!ln)continue;
