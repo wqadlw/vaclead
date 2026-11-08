@@ -526,6 +526,9 @@ def gongshang_lookup_export(
     }
     rows_out = []
     for e in ents:
+        # 2026-11-08 用户拍板：学校非目标客户——配额不花在非客户身上
+        if e.industry_key == "research_edu":
+            continue
         missing = []
         if not e.uscc:
             missing.append("统一社会信用代码")

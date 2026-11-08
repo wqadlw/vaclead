@@ -143,3 +143,23 @@ def test_ck_gongshang_csv_fill_and_no_overwrite(client, admin_headers, seeded):
     r2 = client.post("/api/import/gongshang-csv", json={"rows": rows},
                      headers=admin_headers)
     assert r2.json()["phones_added"] == 0
+
+
+def test_ck_schools_excluded(client, admin_headers, seeded):
+    """2026-11-08 用户拍板：学校/科研院所非目标客户——推荐与补数清单均排除。"""
+    with SessionLocal() as s:
+        school = Enterprise(name="CK师范学院", source="poi",
+                            industry_key="research_edu", intent_score=300)
+        s.add(school)
+        s.flush()
+        s.add(Contact(enterprise_id=school.id, name="CK老师", role="buyer_contact",
+                      phones_json='["13800000081"]'))
+        s.commit()
+
+    # 推荐排除
+    items = client.get("/api/recommendations?limit=100", headers=admin_headers).json()["items"]
+    assert all(i["industry_name"] != "科研院所/高校" for i in items)
+
+    # 补数清单排除
+    text = client.get("/api/tasks/gongshang-lookup-export", headers=admin_headers).text
+    assert "CK师范学院" not in text

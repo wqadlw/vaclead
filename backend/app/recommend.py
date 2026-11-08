@@ -140,6 +140,10 @@ def score_candidates(session: Session, limit: int = 50, product: str | None = No
             continue  # 一企业多联系人多行——只评一次
         seen_ent.add(ent.id)
 
+        # 2026-11-08 用户拍板：学校/科研院所非目标客户——不进"先打给谁"
+        if ent.industry_key == "research_edu":
+            continue
+
         # SPEC-CH CH3：产品线过滤——行业不在该产品应用面则跳过
         if product_industries is not None and ent.industry_key not in product_industries:
             continue
