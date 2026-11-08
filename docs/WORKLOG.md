@@ -2658,3 +2658,17 @@ notice_contacts 回填 `title=phone_text[:80]`（含号码的公告原文行，�
 playwright **API 响应拦截**（page.on response+text+JSON walk 定位
 FIELD:root.items[0].title）——**API 拦截定位数据字段比源码推断快**。
 **门禁**：349 全绿（回填源头改动后全量回归）。
+
+
+## 2026-11-08 · SPEC-CU 收尾：筛选行移动端横向滑动（主线程顺序执行——子 Agent 并发额度受限）
+
+390px 扫描基线达标（7 页 body scrollWidth=390），本轮做移动 app 最大
+体感差异：**筛选/工具行横向滑动不折行**（高德/企查查惯例——筛选控件
+横排滑动，md 及以上恢复 flex-wrap 桌面布局）：signals chips 行+筛选
+条/contacts 筛选行/proposals 工具行/enterprises 工具行+快捷筛选 chips
+五行统一改造（`flex-nowrap overflow-x-auto [scrollbar-width:none]
+[-&::-webkit-scrollbar]:hidden md:flex-wrap`）。390px 复扫全部达标
+（body 390/页面级零溢出；最大元素均为设计内滚动容器）。
+**执行纪律**：子 Agent 并发额度受限（两连拒）→ 主线程顺序完成并如实
+记录——多 agent 提速在额度允许时用，受限时主线程顺序不硬撑。
+**门禁**：build + E2E 12 全绿；390px 扫描脚本复跑达标。

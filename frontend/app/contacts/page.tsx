@@ -179,7 +179,7 @@ export default function ContactsPage() {
       </div>
 
       {/* 筛选条：<md 折成「标题行 + 横向滚动筛选行（不折行）」；md+ 经 contents 并回原单行 */}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="mt-4 flex flex-nowrap items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-&::-webkit-scrollbar]:hidden md:flex-wrap md:overflow-visible">
         <span className="flex shrink-0 items-center gap-1.5 text-[13.5px] font-medium text-[var(--ink)]">
           <Phone size={15} /> 今日拨打名单
         </span>

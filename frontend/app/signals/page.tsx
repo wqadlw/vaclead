@@ -123,7 +123,7 @@ export default function SignalsPage() {
   return (
     <AppShell>
       {/* 行动窗口快捷 chip（SPEC-AA AA2） */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto [scrollbar-width:none] [-&::-webkit-scrollbar]:hidden md:flex-wrap md:overflow-visible">
         <button
           onClick={() => { setType(type === "tender" ? "" : "tender"); setPage(1); }}
           className={`rounded-full border px-3 py-1 text-[12.5px] ${
@@ -162,7 +162,7 @@ export default function SignalsPage() {
         </button>
       </div>
       {/* 筛选条 */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-&::-webkit-scrollbar]:hidden md:flex-wrap md:overflow-visible">
         <Input
           prefix={<Search size={14} className="text-slate-400" />}
           placeholder="搜标题关键词，如 分子泵 / 监护仪"

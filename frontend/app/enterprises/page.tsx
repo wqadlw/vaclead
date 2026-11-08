@@ -930,7 +930,7 @@ export default function EnterprisesPage() {
       </Modal>
 
       {/* SPEC-CI 工具行收敛：搜索先行，11 个次要维度收进「更多筛选」展开行 */}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="mt-4 flex flex-nowrap items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-&::-webkit-scrollbar]:hidden md:flex-wrap md:overflow-visible">
         <Input
           style={{ width: 250 }}
           prefix={<Search size={13} className="text-[#9ca0a3]" />}

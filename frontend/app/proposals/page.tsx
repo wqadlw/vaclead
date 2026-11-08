@@ -147,7 +147,7 @@ export default function ProposalsPage() {
 
       {/* SPEC-CF 重构：全宽紧凑列表——省份 chips 行 + 仅窗口内开关 + 单行式卡片 */}
       {/* 工具条 */}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="mt-4 flex flex-nowrap items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-&::-webkit-scrollbar]:hidden md:flex-wrap md:overflow-visible">
         <Input
           size="small"
           placeholder="搜单位/项目名"
