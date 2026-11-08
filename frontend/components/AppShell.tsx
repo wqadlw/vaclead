@@ -521,14 +521,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Menu size={15} />
             </button>
+            {/* SPEC-CT CT2：顶栏移动端精简——文字搜索钮桌面保留，<md 换纯图标钮（仍派发 Ctrl+K） */}
             <button
               onClick={() => {
                 const ev = new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true });
                 window.dispatchEvent(ev);
               }}
-              className="flex h-7 cursor-pointer items-center gap-1.5 rounded border border-[var(--border)] bg-white px-2 text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)]"
+              className="hidden h-7 cursor-pointer items-center gap-1.5 rounded border border-[var(--border)] bg-white px-2 text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)] md:flex"
             >
               搜索 <kbd className="rounded bg-[var(--raised)] px-1 text-[10px]">Ctrl K</kbd>
+            </button>
+            <button
+              onClick={() => {
+                const ev = new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true });
+                window.dispatchEvent(ev);
+              }}
+              title="搜索"
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-white text-[var(--muted)] hover:border-[var(--accent)] md:hidden"
+            >
+              <Search size={15} />
             </button>
             <button
               onClick={() => {
@@ -536,11 +547,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 window.dispatchEvent(ev);
               }}
               title="键盘快捷键（?）"
-              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-white text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)]"
+              className="hidden h-7 w-7 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-white text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)] md:flex"
             >
               ?
             </button>
-            <span className="text-[13px] text-[var(--muted)]">默认工作区 / 全国</span>
+            <span className="hidden text-[13px] text-[var(--muted)] md:inline">默认工作区 / 全国</span>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -573,12 +584,50 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* 白纸：距右/下边缘 8px，1px 边，16px 圆角，无阴影 */}
         <KeyboardShortcuts />
         <CommandPalette />
-        <main className="mb-2 flex-1">
+        <main className="mb-2 flex-1 pb-16 md:pb-0">
           <div className="min-h-[calc(100vh-48px-8px)] rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-6 py-5">
             {children}
           </div>
         </main>
       </div>
+
+      {/* SPEC-CT CT1：移动端底部导航（<md）——拇指可达，5 tab 均分、点按目标 ≥44px。
+          z-20 低于抽屉背板 z-30 / 抽屉 z-40：开抽屉时底栏被背板覆盖 */}
+      <nav
+        data-mobile-tabbar
+        className="fixed inset-x-0 bottom-0 z-20 flex border-t border-[var(--border)] bg-[var(--surface)] md:hidden"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        {[
+          { href: "/", label: "今日", icon: Gauge },
+          { href: "/contacts", label: "联系人", icon: PhoneCall },
+          { href: "/map", label: "地图", icon: Map },
+          { href: "/leads", label: "线索", icon: Radar },
+        ].map(({ href, label, icon: Icon }) => {
+          const active = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+          return (
+            <button
+              key={href}
+              data-btab={href}
+              onClick={() => router.push(href)}
+              className={`flex flex-1 cursor-pointer flex-col items-center justify-center gap-[3px] py-2 ${
+                active ? "font-semibold text-[var(--accent)]" : "text-[var(--muted)]"
+              }`}
+            >
+              <Icon size={18} strokeWidth={active ? 2.2 : 1.8} />
+              <span className="text-[10.5px] leading-none">{label}</span>
+            </button>
+          );
+        })}
+        <button
+          data-btab="more"
+          onClick={() => setMobileNav(true)}
+          className="flex flex-1 cursor-pointer flex-col items-center justify-center gap-[3px] py-2 text-[var(--muted)]"
+        >
+          <Menu size={18} strokeWidth={1.8} />
+          <span className="text-[10.5px] leading-none">更多</span>
+        </button>
+      </nav>
     </div>
   );
 }

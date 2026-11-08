@@ -2621,3 +2621,24 @@ bbox 模式跳过聚合后 points return 仍引用 clustered（bbox 分支未赋
 范围在共享库下点数超 1500 会走聚合——与前端 zoom≥11 预期 points 的
 分档**理论上可能错位**（后端按点数、前端按 zoom），实际单城 2000
 上限+intent 排序下 bbox 聚合罕见；如遇可再对齐。**门禁**：349 全绿。
+
+
+## 2026-11-08 · SPEC-CT 移动端导航重构轮（用户："移动端太差，底部导航栏+顶栏好好设计"）
+
+**为谁服务锚**：销售外勤单手操作——拇指可达底部导航是移动 app 标配。
+**子 Agent 交付（AppShell.tsx 3 处+mobile.spec 4 用例）**：
+①**底部导航栏**（<md，fixed bottom+safe-area-inset）：5 tab 均分——
+今日/联系人/地图/线索/**更多**(开抽屉)；图标 18px+标签 10.5px，总高
+47px≥44px 点击目标；active=accent+加粗（/ 精确、其余 startsWith）；
+z-20 低于抽屉（开抽屉时被覆盖符合预期）。
+②**主内容让位**：main 加 pb-16 md:pb-0（桌面零改动）。
+③**顶栏精简**：搜索文字钮 hidden md:flex（新增纯图标钮 md:hidden 仍
+派发 Ctrl+K）、? 快捷键钮与工作区选择器 hidden md:*；汉堡/铃铛/头像
+保留。
+**E2E 扩展 8→12**：底部导航可见+active 迁移+顶栏精简断言+更多开抽屉
+（aside.z-40 限定——工作台页有自己的 aside 元素）+桌面 viewport 底部
+导航隐藏。
+**子 Agent 遗留如实**：白纸区 min-h 叠加 pb-16 移动端略可滚 ~56px
+（正常让位）；"更多"无 active 态（动作型入口）；lg:hidden 品牌行
+（SPEC-CB 遗产）已被移除无需处理。
+**门禁**：build + E2E **12** 全绿（子 Agent 自验+整合确认）。
