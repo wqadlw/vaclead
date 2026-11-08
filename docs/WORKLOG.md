@@ -2642,3 +2642,19 @@ z-20 低于抽屉（开抽屉时被覆盖符合预期）。
 （正常让位）；"更多"无 active 态（动作型入口）；lg:hidden 品牌行
 （SPEC-CB 遗产）已被移除无需处理。
 **门禁**：build + E2E **12** 全绿（子 Agent 自验+整合确认）。
+
+
+## 2026-11-08 · SPEC-CU 数据污染修复（移动端扫描连带发现：联系人卡泄漏 CSS）
+
+390px 扫描+截图目检发现联系人卡证据句显示 "0574-87179081 th,td
+{border:1px solid #DDD...}" ——**排查链**：SQL LIKE 全表 0 命中（诡异）
+→ playwright API 响应拦截 → **铁证 root.items[0].title** ——根因=
+notice_contacts 回填 `title=phone_text[:80]`（含号码的公告原文行，风
+鸟/政采详情页同文本混有页面 CSS/附件名）。**修复**：①真库清洗 98 条
+（CSS 形态置 NULL+电话前缀 GLOB 形态 v2 补齐）；②回填源头 title=None
+（槽位回归职务本义，号码只进 phones_json）。**同号双卡（代理机构/项目
+联系人同号）保留=业务真实**。
+**排查工具链（金子级）**：截图目检发现 → SQL LIKE 反直觉 0 命中 →
+playwright **API 响应拦截**（page.on response+text+JSON walk 定位
+FIELD:root.items[0].title）——**API 拦截定位数据字段比源码推断快**。
+**门禁**：349 全绿（回填源头改动后全量回归）。
