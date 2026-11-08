@@ -126,7 +126,7 @@ export default function SignalsPage() {
       <div className="mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto [scrollbar-width:none] [-&::-webkit-scrollbar]:hidden md:flex-wrap md:overflow-visible">
         <button
           onClick={() => { setType(type === "tender" ? "" : "tender"); setPage(1); }}
-          className={`rounded-full border px-3 py-1 text-[12.5px] ${
+          className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-[12.5px] ${
             type === "tender"
               ? "border-[#c2801b] bg-[#c2801b] text-white"
               : "border-[var(--border)] bg-white text-[var(--ink)]"
@@ -138,7 +138,7 @@ export default function SignalsPage() {
         </button>
         <button
           onClick={toggleProposal}
-          className={`rounded-full border px-3 py-1 text-[12.5px] ${
+          className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-[12.5px] ${
             type === "proposal"
               ? "border-[#c2801b] bg-[#c2801b] text-white"
               : "border-[var(--border)] bg-white text-[var(--ink)]"
@@ -150,7 +150,7 @@ export default function SignalsPage() {
         </button>
         <button
           onClick={toggleCompetitor}
-          className={`rounded-full border px-3 py-1 text-[12.5px] ${
+          className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-[12.5px] ${
             competitor === 1
               ? "border-[#c0392b] bg-[#c0392b] text-white"
               : "border-[var(--border)] bg-white text-[var(--ink)]"
@@ -169,38 +169,39 @@ export default function SignalsPage() {
           value={q}
           onChange={setQ}
           showClear
-          className="!w-64"
+          className="!w-64 shrink-0"
         />
-        <Select value={type || undefined} placeholder="全部类型" showClear onChange={(v) => { setType(String(v ?? "")); setPage(1); }} className="!w-36">
+        <Select value={type || undefined} placeholder="全部类型" showClear onChange={(v) => { setType(String(v ?? "")); setPage(1); }} className="!w-36 shrink-0">
           <Select.Option value="tender_win">中标 ({typeCount("tender_win")})</Select.Option>
           <Select.Option value="tender_buy">公开采购 ({typeCount("tender_buy")})</Select.Option>
           <Select.Option value="tender">政采公告 ({typeCount("tender")})</Select.Option>
           <Select.Option value="proposal">项目备案 ({typeCount("proposal")})</Select.Option>
         </Select>
-        <Select value={province || undefined} placeholder="全部省份" showClear filter onChange={(v) => { setProvince(String(v ?? "")); setPage(1); }} className="!w-32">
+        <Select value={province || undefined} placeholder="全部省份" showClear filter onChange={(v) => { setProvince(String(v ?? "")); setPage(1); }} className="!w-32 shrink-0">
           {PROVINCES.map((p) => (
             <Select.Option key={p} value={p}>
               {p} {facets?.province?.[p] ? `(${facets.province[p]})` : ""}
             </Select.Option>
           ))}
         </Select>
-        <Select value={industry || undefined} placeholder="全部行业" showClear filter onChange={(v) => { setIndustry(String(v ?? "")); setPage(1); }} className="!w-40">
+        <Select value={industry || undefined} placeholder="全部行业" showClear filter onChange={(v) => { setIndustry(String(v ?? "")); setPage(1); }} className="!w-40 shrink-0">
           {INDUSTRY_OPTIONS.map((o) => (
             <Select.Option key={o.key} value={o.key}>{o.name}</Select.Option>
           ))}
         </Select>
-        <Select value={String(days)} onChange={(v) => { setDays(Number(v)); setPage(1); }} className="!w-28">
+        <Select value={String(days)} onChange={(v) => { setDays(Number(v)); setPage(1); }} className="!w-28 shrink-0">
           <Select.Option value="7">近 7 天</Select.Option>
           <Select.Option value="30">近 30 天</Select.Option>
           <Select.Option value="90">近 90 天</Select.Option>
           <Select.Option value="0">全部</Select.Option>
         </Select>
-        <span className="ml-auto text-[12.5px] text-[var(--muted)]">共 {total} 条标讯</span>
+        <span className="shrink-0 whitespace-nowrap text-[12.5px] text-[var(--muted)]">共 {total} 条标讯</span>
         <Button
           size="small"
           icon={<Bell size={13} />}
           onClick={subscribeFilter}
           disabled={!type && !province && !industry && !q.trim()}
+          className="shrink-0 !whitespace-nowrap"
         >
           订阅当前筛选
         </Button>
@@ -252,12 +253,12 @@ export default function SignalsPage() {
                     </div>
                   )}
                 </div>
-                <div className="flex shrink-0 flex-col gap-1.5">
-                  <Button size="small" icon={<Bell size={13} />} loading={subscribing === s.ent_id} onClick={() => subscribe(s.ent_id)}>
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  <Button size="small" className="!whitespace-nowrap" icon={<Bell size={13} />} loading={subscribing === s.ent_id} onClick={() => subscribe(s.ent_id)}>
                     订阅
                   </Button>
                   {s.is_competitor !== 1 && (
-                    <Button size="small" theme="solid" icon={<UserPlus size={13} />} onClick={() => toLead(s.ent_id)}>
+                    <Button size="small" theme="solid" className="!whitespace-nowrap" icon={<UserPlus size={13} />} onClick={() => toLead(s.ent_id)}>
                       转线索
                     </Button>
                   )}

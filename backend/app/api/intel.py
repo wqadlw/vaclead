@@ -393,11 +393,23 @@ def gongshang_paste(
             continue
         label = parts[0].strip()
         value = parts[1].strip()
+        # 风鸟 TSV 尾巴净化：复制表格时值格常连带"复制"按钮文本与后续字段
+        # （实锤 2026-11-09：uscc="914403006189353349复制\t企业名称\t深圳森丰…复制"）
+        value = value.split(chr(9))[0].strip()
+        if value.endswith("复制"):
+            value = value[: -len("复制")].strip()
         if not label or not value:
             continue
         field = _GS_LABELS.get(label)
         if field is None:
             continue
+        if field == "uscc":
+            # 统一社会信用代码强格式（18 位，不含 I/O/S/V/Z）：从粘连值里提取
+            m = _re.search(r"[0-9A-HJ-NPQRTUWXY]{18}", value)
+            if not m:
+                skipped.append(label + "（非 18 位信用代码）")
+                continue
+            value = m.group(0)
         if field == "_capital":
             cap = _parse_capital_raw(value)
             if cap is not None and not e.registered_capital_wan:

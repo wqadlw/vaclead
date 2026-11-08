@@ -448,17 +448,18 @@ export default function LeadsPage() {
 
   return (
     <AppShell>
-      {/* 标题行 + 视图切换 */}
-      <div className="mb-3 flex items-center justify-between">
-        <div>
+      {/* 标题行 + 视图切换（窄屏 Tabs 整体掉行，保持横排不竖排） */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
           <h1 className="text-[20px] font-semibold leading-7 text-[var(--ink)]">商机管线</h1>
-          <p className="mt-0.5 text-[13px] text-[var(--muted)]">
+          <p className="mt-0.5 truncate text-[13px] text-[var(--muted)]">
             拖拽卡片流转阶段（赢率自动更新）· 点击卡片编辑金额/赢率/预计成交
           </p>
         </div>
         <Tabs
           type="button"
           size="small"
+          className="shrink-0"
           activeKey={view}
           onChange={(k) => setView(k as ViewMode)}
           tabList={[

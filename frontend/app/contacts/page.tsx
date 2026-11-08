@@ -225,7 +225,7 @@ export default function ContactsPage() {
             导出名单
           </Button>
         </div>
-        <span className="ml-auto text-[12.5px] text-[var(--muted)] max-md:ml-0">
+        <span className="hidden text-[12.5px] text-[var(--muted)] md:inline md:ml-auto">
           共 {data?.total ?? 0} 人 · 排序：可拨优先 → 意图分 → 未拨优先
         </span>
       </div>

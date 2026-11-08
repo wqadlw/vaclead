@@ -110,7 +110,7 @@ def test_cl_gongshang_paste(client, admin_headers):
     s_db.close()
 
     text = (
-        "统一社会信用代码 91320000CLTEST88X\n"
+        "统一社会信用代码 91320000CL7E8T88XH\n"
         "法定代表人 张三风\n"
         "注册资本 1200万人民币\n"
         "成立日期 2015年3月1日\n"
@@ -129,7 +129,7 @@ def test_cl_gongshang_paste(client, admin_headers):
 
     with SessionLocal() as s:
         ent = s.get(Enterprise, eid)
-        assert ent.uscc == "91320000CLTEST88X"
+        assert ent.uscc == "91320000CL7E8T88XH"
         assert ent.legal_rep == "张三风"
         assert ent.registered_capital_wan == 1200.0
         assert ent.established_at == "2015-03-01"
@@ -147,3 +147,30 @@ def test_cl_gongshang_paste(client, admin_headers):
     r = client.post("/api/enterprises/999999/gongshang-paste",
                     json={"text": "法定代表人 张三"}, headers=admin_headers)
     assert r.status_code == 404
+
+
+def test_cl_gongshang_paste_tsv_tail(client, admin_headers):
+    """风鸟 TSV 尾巴净化（2026-11-09 真库实锤）：表格复制的值格连带"复制"按钮
+    文本与后续字段（uscc="914403006189353349复制\t企业名称\t深圳森丰…复制"）——
+    解析器须剥尾巴 + uscc 提取 18 位强格式，不得整段污染入库。"""
+    e = Enterprise(name="CL风鸟TSV尾茬有限公司", source="csv")
+    s_db = SessionLocal()
+    s_db.add(e)
+    s_db.commit()
+    eid = e.id
+    s_db.close()
+
+    tab = chr(9)
+    text = (
+        f"统一社会信用代码{tab}914403006189353349复制{tab}企业名称{tab}深圳森丰真空镀膜有限公司复制\n"
+        f"法定代表人{tab}李四复{tab}复制{tab}登记状态{tab}存续\n"
+    )
+    r = client.post(f"/api/enterprises/{eid}/gongshang-paste",
+                    json={"text": text}, headers=admin_headers)
+    assert r.status_code == 200
+    with SessionLocal() as s:
+        ent = s.get(Enterprise, eid)
+        # uscc 提取 18 位强格式，尾巴"复制/企业名称/…"不入库
+        assert ent.uscc == "914403006189353349"
+        # 法定代表人剥"复制"尾巴（"李四复"的"复"是合法姓名字，只剥结尾整词"复制"）
+        assert ent.legal_rep == "李四复"

@@ -115,6 +115,9 @@ export default function CompetitorsPage() {
     }
   };
 
+  // 榜单可见行（只看有动态过滤）：移动卡片与桌面表格共用
+  const visibleRanks = ranks.filter((r) => !onlyActive || r.wins_30d > 0 || r.signal_count > 0);
+
   return (
     <AppShell>
       {/* KPI 晨检卡（framed-sheet：gap-px 发丝分格，无阴影） */}
@@ -125,8 +128,8 @@ export default function CompetitorsPage() {
           { k: "近 30 天信号", v: ov ? String(ov.signals_30d) : "—", sub: "竞对全部公开动态" },
           { k: "被抢走的生意", v: ov ? `${ov.lost_to_competitor} 条` : "—", sub: ov && ov.lost_amount_wan > 0 ? `流失合同 ${Math.round(ov.lost_amount_wan)} 万` : "竞对原因流失线索", red: true },
           { k: "最活跃竞对", v: ov?.top_competitor || "—", sub: "按 30 天中标数" },
-        ].map((c) => (
-          <div key={c.k} className="bg-white px-4 py-3">
+        ].map((c, i) => (
+          <div key={c.k} className={`bg-white px-4 py-3 ${i === 4 ? "col-span-2 md:col-span-1" : ""}`}>
             <div className="text-[11.5px] text-[var(--muted)]">{c.k}</div>
             <div className={`mt-0.5 truncate text-[18px] font-medium tabular-nums ${c.red ? "text-[var(--negative)]" : c.amber ? "text-[#c2801b]" : "text-[var(--ink)]"}`} title={c.v}>
               {c.v}
@@ -186,7 +189,39 @@ export default function CompetitorsPage() {
           </div>
         )}
         <div className="max-h-[560px] overflow-auto">
-          <table className="w-full text-[13px]">
+          {/* 移动端卡片（<md）：5 列表格挤窄屏（公司名竖排）→ 行变卡（企查查榜单惯例） */}
+          <div className="md:hidden">
+            {visibleRanks.map((r) => (
+              <div key={r.id} className="border-b border-[var(--rule)] px-4 py-3 last:border-b-0">
+                <div className="flex items-start justify-between gap-2">
+                  <a href={`/enterprises/view?id=${r.id}`} className="min-w-0 flex-1 break-all text-[14px] font-medium leading-5 text-[var(--accent)] hover:underline">
+                    {r.name}
+                  </a>
+                  {role === "admin" && (
+                    <Button size="small" theme="borderless" type="danger" className="!whitespace-nowrap" icon={<UserX size={13} />} loading={marking === r.id} onClick={() => mark(r.id, 0)}>
+                      取消
+                    </Button>
+                  )}
+                </div>
+                <div className="mt-1.5 flex items-center gap-4 text-[12.5px] tabular-nums">
+                  <span className="text-[var(--muted)]">30 天中标 <span className={r.wins_30d > 0 ? "font-medium text-[#c2801b]" : "text-[var(--ink)]"}>{r.wins_30d}</span></span>
+                  <span className="text-[var(--muted)]">累计 <span className="text-[var(--ink)]">{r.win_count}</span></span>
+                  <span className="text-[var(--muted)]">金额 <span className="text-[var(--ink)]">{r.win_amount_total_wan > 0 ? `${Math.round(r.win_amount_total_wan).toLocaleString()} 万` : "—"}</span></span>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-2 text-[12px] text-[var(--muted)]">
+                  <span className="min-w-0 truncate" title={r.top_buyer}>大户：{r.top_buyer || "—"}</span>
+                  <span className="shrink-0 tabular-nums">{r.last_signal_date || ""}</span>
+                </div>
+              </div>
+            ))}
+            {ranks.length === 0 && (
+              <div className="px-4 py-10 text-center text-[13px] text-[var(--muted)]">
+                还没有竞对标记 —— 在上方搜索企业名手动标记，或由自动化规则 tag_competitor 打标
+              </div>
+            )}
+          </div>
+          {/* 桌面表格（md+） */}
+          <table className="hidden w-full text-[13px] md:table">
             <thead className="sticky top-0 z-10 bg-white">
               <tr className="text-left text-[12.5px] font-normal text-[var(--muted)]">
                 <th className="px-4 py-2.5 font-normal">竞对</th>
@@ -199,7 +234,7 @@ export default function CompetitorsPage() {
               </tr>
             </thead>
             <tbody>
-              {ranks.filter((r) => !onlyActive || r.wins_30d > 0 || r.signal_count > 0).map((r) => (
+              {visibleRanks.map((r) => (
                 <tr key={r.id} className="border-t border-[var(--rule)] hover:bg-[var(--raised)]">
                   <td className="px-4 py-2.5">
                     <a href={`/enterprises/view?id=${r.id}`} className="font-medium text-[var(--accent)] hover:underline">{r.name}</a>

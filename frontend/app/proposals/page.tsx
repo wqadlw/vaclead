@@ -154,14 +154,14 @@ export default function ProposalsPage() {
           value={q}
           onChange={setQ}
           showClear
-          className="!w-52"
+          className="!w-52 shrink-0"
         />
-        <Select value={province || undefined} placeholder="全部省份" showClear onChange={(v) => setProvince(String(v ?? ""))} className="!w-28">
+        <Select value={province || undefined} placeholder="全部省份" showClear onChange={(v) => setProvince(String(v ?? ""))} className="!w-28 shrink-0">
           {provinceItems.map((p) => (
             <Select.Option key={p.province} value={p.province}>{p.province} ({p.count})</Select.Option>
           ))}
         </Select>
-        <Select value={String(days)} onChange={(v) => setDays(Number(v))} className="!w-28">
+        <Select value={String(days)} onChange={(v) => setDays(Number(v))} className="!w-28 shrink-0">
           <Select.Option value="30">近 30 天</Select.Option>
           <Select.Option value="90">近 90 天</Select.Option>
           <Select.Option value="365">近 1 年</Select.Option>
@@ -169,7 +169,7 @@ export default function ProposalsPage() {
         </Select>
         <button
           onClick={() => setOnlyWindow(!onlyWindow)}
-          className={`rounded-full border px-3 py-1 text-[12px] ${
+          className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-[12px] ${
             onlyWindow
               ? "border-[#c2801b] bg-[#c2801b] text-white"
               : "border-[var(--border)] bg-white text-[var(--muted)]"
@@ -178,7 +178,7 @@ export default function ProposalsPage() {
         >
           仅看正处招标窗口
         </button>
-        <span className="ml-auto text-[12.5px] text-[var(--muted)]">
+        <span className="shrink-0 whitespace-nowrap text-[12.5px] text-[var(--muted)]">
           共 {grouped.length} 家单位{onlyWindow ? "（窗口内）" : ""}
         </span>
       </div>
@@ -209,12 +209,12 @@ export default function ProposalsPage() {
               <span className="w-[84px] shrink-0 pt-0.5 text-[12px] tabular-nums text-[var(--muted)]">{s.pub_date}</span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Tag color={(CHANNEL_META[s.channel] ?? CHANNEL_META.hb).color} type="light" size="small">
+                  <Tag className="!shrink-0" color={(CHANNEL_META[s.channel] ?? CHANNEL_META.hb).color} type="light" size="small">
                     {(CHANNEL_META[s.channel] ?? CHANNEL_META.hb).label}
                   </Tag>
-                  {inWindow && <Tag color="amber" type="light" size="small">窗口内</Tag>}
+                  {inWindow && <Tag className="!shrink-0" color="amber" type="light" size="small">窗口内</Tag>}
                   {(entCount.get(s.enterprise_id) ?? 0) > 1 && (
-                    <Tag color="grey" type="light" size="small">共 {entCount.get(s.enterprise_id)} 条公示</Tag>
+                    <Tag className="!shrink-0" color="grey" type="light" size="small">共 {entCount.get(s.enterprise_id)} 条公示</Tag>
                   )}
                   <a href={`/enterprises/view?id=${s.enterprise_id}`} className="inline-flex items-center self-stretch truncate py-2 text-[13.5px] font-medium text-[var(--ink)] hover:text-[var(--accent)]">
                     {s.name}

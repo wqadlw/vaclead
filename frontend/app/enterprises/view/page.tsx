@@ -612,8 +612,8 @@ function IntelInner() {
             )}
           </div>
         </div>
-        {/* 分数条 */}
-        <div className="mt-4 grid grid-cols-4 gap-px overflow-hidden rounded-lg bg-[var(--frame)]">
+        {/* 分数条（移动 2×2，md+ 四列一行） */}
+        <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg bg-[var(--frame)] md:grid-cols-4">
           {[
             { k: "ICP 匹配分", v: String(detail.icp_score) },
             { k: "意图分（30天半衰）", v: String(detail.intent_score) },
@@ -634,14 +634,14 @@ function IntelInner() {
           <TabPane tab="档案" itemKey="profile" className="p-5">
             {/* SPEC-U U2：工商信息卡（企查查首屏字段集，数据来源=官方公示） */}
             <div className="mb-4 rounded-lg border border-[var(--border)] px-4 py-3">
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-2 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
                 <span className="text-[12.5px] font-medium text-[var(--ink)]">工商信息</span>
-                <span className="flex items-center gap-2 text-[11.5px] text-[var(--muted)]">
+                <span className="flex flex-wrap items-center gap-2 text-[11.5px] text-[var(--muted)]">
                   <span>
                     资料完整度 {detail.completeness ?? 0}/4
                     {detail.completeness != null && detail.completeness < 4 && "（缺项可经采集/导入补全）"}
                   </span>
-                  <Tag color="grey" type="light" size="small">数据来源：官方公示</Tag>
+                  <Tag className="!shrink-0" color="grey" type="light" size="small">数据来源：官方公示</Tag>
                 </span>
               </div>
               <div className="grid grid-cols-1 gap-x-10 gap-y-2 text-[13px] leading-7 md:grid-cols-2">
