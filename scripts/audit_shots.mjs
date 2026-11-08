@@ -15,7 +15,6 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
 // 登录
 await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded" });
-await page.evaluate(() => localStorage.clear());
 await page.evaluate(async () => {
   const r = await fetch("/api/auth/login", {
     method: "POST",
