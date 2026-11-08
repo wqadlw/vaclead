@@ -509,7 +509,8 @@ export default function TasksPage() {
             <div className="space-y-2 text-[12.5px] leading-5 text-[var(--muted)]">
               <p>
                 企业工商资料（法人/注册资本/成立日期/电话）是最薄的一层——
-                用风鸟免费 SVIP（注册送 5 年）按清单逐家补齐，官方导出回灌：
+                风鸟普通会员的每日免费额度即可起步（清单已按价值排序，先查头部），
+                当日额度用完明天继续，官方导出回灌：
               </p>
               <ol className="ml-4 list-decimal space-y-0.5">
                 <li>下载缺数清单（按意图分排序，最值得查的在前）</li>
