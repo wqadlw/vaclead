@@ -2550,3 +2550,24 @@ payload 完整**。TS 模板引号数终于理清：**TSX 模板源码 `""` 求�
 → chunk → 浏览器求值 → js 字符串 → encodeURIComponent → 书签源码，
 六层变换必须逐层验证（渲染 DOM 提取 href 解码 node --check + mock
 执行，是唯一可靠验证法）。**用户动作：重新拖装书签（旧的删掉）**。
+
+
+## 2026-11-08 · SPEC-CP 联系人作战面板轮（用户："联系方式很重要，多派子agent"）
+
+**为谁服务锚**：情报页联系人页签=销售拨号作战面板（看谁→拨打→记
+结果→修正错误），不是信息展示页。**并行分工**：主线程后端
+（PATCH/DELETE /contacts/{cid}）+ 子 Agent 前端重构（ContactDialPanel
+组件）——SPEC 契约先行、按契约对接零冲突。
+**后端**：PATCH 全 Optional 仅更新提供字段（电话规范化重写+同企业
+他联系人**基础号查重**含分机差异 422）；DELETE 硬删（派生数据可回填
+恢复，全员可删）；role 白名单/空名拒/404。测试 3 条（含**跨企业同号
+放行**与顺序依赖修正——update 改号后 guards 用旧号判重不命中）。
+**前端（子 Agent）**：ContactDialPanel 独立组件（SPEC-Z 组件纪律）：
+可拨→决策链→验证→id 降序排序+统计行；单行卡 px-4 py-2.5 hover
+accent；号码 chips 复制/tel:；快标+hover 显现 Edit2/Trash2；编辑
+Modal 预填现值、删除 Modal.confirm 文案按规格；** thoughtful 细节**：
+编辑 Modal 补 map_phone 角色选项（否则采集回填联系人显示英文 key）、
+历史中文 role 值编辑时"保持原有角色"不下发防静默改。
+**门禁**：后端 345 + 子 Agent build/E2E 8 全绿 + 整合后端复跑 345。
+**多 agent 协作实绩**：SPEC 契约先行=前后端零对接冲突；子 Agent
+40 工具调用/18 分钟完成前端整轮。

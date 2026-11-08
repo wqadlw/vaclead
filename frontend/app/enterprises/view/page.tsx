@@ -8,9 +8,10 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button, Dropdown, Input, Modal, Skeleton, TabPane, Tabs, Tag, Toast, Select } from "@douyinfe/semi-ui";
-import { ArrowLeft, Bell, BellRing, Phone, Trash2, UserCheck } from "lucide-react";
+import { ArrowLeft, Bell, BellRing, Trash2, UserCheck } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import JourneyTimeline, { type JourneyItem } from "@/components/JourneyTimeline";
+import ContactDialPanel, { type ContactRow } from "@/components/ContactDialPanel";
 
 // SPEC-CN 搬运书签：在风鸟公司页点一下，抓工商字段回平台自动入库。
 // 只读当前页文本+手动单家触发（合规：等效复制粘贴，非爬虫）。
@@ -50,7 +51,7 @@ interface SimilarItem {
   intent_score: number;
   reasons: string[];
 }
-import CallResultTag from "@/components/CallResultTag";
+// CallResultTag（七态快标）已随拨号作战面板收进 @/components/ContactDialPanel
 import { addToCompare, readCompare } from "@/lib/compare";
 import { api, getToken } from "@/lib/api";
 import type { Enterprise } from "@/lib/api";
@@ -62,20 +63,7 @@ interface GraphEdge {
   count: number;
   last_date: string | null;
 }
-interface ContactRow {
-  id: number;
-  name: string;
-  role: string;
-  title: string | null;
-  email: string | null;
-  decision_role: string | null;
-  verify_state: string;
-  phones?: string[];
-  call_result?: string;
-  called_at?: string | null;
-  source: string;
-  evidence_claim: string | null;
-}
+// ContactRow 类型由 @/components/ContactDialPanel 导出（拨号作战面板共享）
 
 /** SPEC-AN AN1：触达结果受控枚举（连接类→对话类分层） */
 interface UnitRow {
@@ -106,15 +94,6 @@ const SEGMENT_LABELS: { key: string; label: string }[] = [
   { key: "digital", label: "数字化程度" },
   { key: "pain", label: "采购意图" },
 ];
-
-const ROLE_CN: Record<string, string> = {
-  legal_rep: "法定代表人",
-  buyer_unit: "采购单位",
-  tender_agency: "代理机构",
-  采购联系人: "采购联系人",
-  项目联系人: "项目联系人",
-  代理机构: "代理机构",
-};
 
 const SOURCE_TAG: Record<string, { label: string; color: "cyan" | "green" | "blue" | "grey" }> = {
   ggzy: { label: "官方中标", color: "cyan" },
@@ -878,77 +857,12 @@ function IntelInner() {
                 </Button>
               </div>
             </div>
-            {contacts.length === 0 ? (
-              <div className="py-8 text-center text-[13px] text-[var(--muted)]">
-                暂无联系人 —— 每日 04:08 回填任务会从政采公告详情页自动补充法定公开联系方式
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {contacts.map((c) => (
-                  <div key={c.id} className="rounded-lg border border-[var(--border)] px-4 py-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <span className="text-[14px] font-medium text-[var(--ink)]">{c.name}</span>
-                        {/* SPEC-J J2：决策角色标记 */}
-                        {c.decision_role === "decision_maker" && (
-                          <Tag color="orange" type="light" size="small">决策链</Tag>
-                        )}
-                      </span>
-                      <span className="flex shrink-0 items-center gap-1">
-                        {/* SPEC-J J2：验证态徽章（公告法定公开=verified） */}
-                        {c.verify_state === "verified" && (
-                          <Tag color="green" type="light" size="small">公告验证</Tag>
-                        )}
-                        <Tag color="cyan" type="light" size="small">{ROLE_CN[c.role] ?? c.role}</Tag>
-                      </span>
-                    </div>
-                    {/* SPEC-AH AH3：规范化可拨号码 chips（可复制）+ SPEC-BO tel: 拨打 + SPEC-AN AN1 触达结果标记 */}
-                    {((c.phones ?? []).length > 0 || c.call_result) && (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                        {(c.phones ?? []).map((p) => (
-                          <span key={p} className="inline-flex items-center gap-0.5">
-                            <span
-                              className="cursor-pointer rounded border border-[var(--border)] bg-[var(--raised)] px-1.5 py-0.5 font-mono text-[12.5px] tabular-nums text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
-                              title="点击复制号码"
-                              onClick={() => {
-                                void navigator.clipboard?.writeText(p);
-                                Toast.success(`已复制 ${p}`);
-                              }}
-                            >
-                              {p}
-                            </span>
-                            {/* SPEC-BO：tel: 拨打——桌面唤起外呼软抖，手机唤起拨号盘 */}
-                            <a
-                              href={`tel:${p}`}
-                              title="点击拨打"
-                              className="text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
-                              onClick={(ev) => ev.stopPropagation()}
-                            >
-                              <Phone size={11} />
-                            </a>
-                          </span>
-                        ))}
-                        <CallResultTag
-                          result={(c.call_result as string) ?? "pending"}
-                          onChange={(r) => void markCallResult(c.id, r)}
-                        />
-                      </div>
-                    )}
-                    {c.title && <div className="mt-1 text-[12px] leading-4 text-[var(--muted)]">{c.title}</div>}
-                    {c.email && (
-                      <div className="mt-1 text-[13px] text-[var(--ink)]">
-                        <a href={`mailto:${c.email}`} className="hover:text-[var(--accent)]">{c.email}</a>
-                      </div>
-                    )}
-                    {c.evidence_claim && (
-                      <div className="mt-1 border-l-2 border-[var(--accent)] pl-2 text-[11.5px] leading-4 text-[var(--muted)]">
-                        {c.evidence_claim}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* 拨号作战面板：可拨优先排序 / tel: 拨打 / CallResultTag 快标 / hover 编辑删除 */}
+            <ContactDialPanel
+              contacts={contacts}
+              onRefresh={load}
+              onMarkResult={(cid, result) => void markCallResult(cid, result)}
+            />
           </TabPane>
 
           {/* SPEC-AS AS1 装机台账（CMMS 模型：装机=资产负债表，耗材时钟=定时订单） */}

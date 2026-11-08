@@ -212,6 +212,90 @@ def create_contact_manual(
     return {"id": c.id, "phones": phones}
 
 
+class ContactUpdateIn(BaseModel):
+    """编辑联系人（SPEC-CP CP1）：全 Optional，仅更新提供字段。"""
+    name: str | None = None
+    phone: str | None = None
+    title: str | None = None
+    role: str | None = None
+
+
+@router.patch("/contacts/{cid}")
+def update_contact(
+    cid: int,
+    body: ContactUpdateIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """编辑联系人（SPEC-CP CP1）：错号/错名修正——信任基础的运维能力。
+
+    电话走规范化重写（手机/座机含分机）；同企业其他联系人基础号查重；
+    role 白名单；仅更新提供字段。
+    """
+    from ..phones import dump_phones, extract_phones, load_phones
+
+    c = session.get(Contact, cid)
+    if c is None:
+        raise HTTPException(404, "联系人不存在")
+    e = session.get(Enterprise, c.enterprise_id)
+    if e is None or e.deleted_at is not None:
+        raise HTTPException(404, "所属企业不存在")
+
+    if body.role is not None:
+        if body.role not in _ROLES:
+            raise HTTPException(422, f"非法角色，允许值：{'/'.join(_ROLES)}")
+        c.role = body.role
+    if body.name is not None:
+        if not body.name.strip():
+            raise HTTPException(422, "姓名不能为空")
+        c.name = body.name.strip()
+    if body.title is not None:
+        c.title = body.title.strip() or None
+
+    if body.phone is not None:
+        phones = extract_phones(body.phone)
+        if body.phone.strip() and not phones:
+            raise HTTPException(422, "电话格式无法识别（手机号或座机）")
+
+        def _base(num: str) -> str:
+            parts = num.split("-")
+            return "-".join(parts[:2]) if len(parts) > 2 else num
+
+        new_bases = {_base(p) for p in phones}
+        for other in session.query(Contact).filter(Contact.enterprise_id == c.enterprise_id).all():
+            if other.id == c.id:
+                continue
+            if {_base(p) for p in load_phones(other.phones_json)} & new_bases:
+                raise HTTPException(422, "该号码在此企业下已存在（含分机差异）")
+        c.phones_json = dump_phones(phones)
+
+    session.commit()
+    return {
+        "id": c.id, "name": c.name, "role": c.role, "title": c.title,
+        "phones": load_phones(c.phones_json),
+    }
+
+
+@router.delete("/contacts/{cid}")
+def delete_contact(
+    cid: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """删除联系人（SPEC-CP CP1）：错号修正——公开渠道派生数据，可重新
+    回填恢复，风险低全员可删。
+    """
+    c = session.get(Contact, cid)
+    if c is None:
+        raise HTTPException(404, "联系人不存在")
+    e = session.get(Enterprise, c.enterprise_id)
+    if e is None or e.deleted_at is not None:
+        raise HTTPException(404, "所属企业不存在")
+    session.delete(c)
+    session.commit()
+    return {"ok": True}
+
+
 _CALL_RESULTS = ("pending", "no_answer", "voicemail", "invalid",
                  "connected", "interested", "not_interested")
 
