@@ -8,6 +8,8 @@
  * - popup=作战卡：企业名→情报页链接、意图分、近期动态徽标、号码可复制可拨打。
  * - 点样式按意图分层：≥80 深紫大点、≥60 半透中点、有电话、无电话灰点。
  * - 动态值一律 escapeHtml 后进 innerHTML（企业名/行业/地区/号码，防 XSS）。
+ * - SPEC-CR CR2：视野驱动加载——moveend 防抖 500ms 按当前视野 bbox 拉点；
+ *   zoom≥11 带 bbox（后端 points 模式），更低 zoom 全国聚合（clusters 模式）。
  */
 "use client";
 
@@ -210,6 +212,12 @@ export default function MapPage() {
   const divRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const markersRef = useRef<CircleMarker[]>([]);
+  // SPEC-CR CR2：请求序号守卫 + moveend 防抖计时器 + 最新加载闭包（供地图事件回调调用）
+  const loadSeqRef = useRef(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadRef = useRef<() => Promise<void>>(async () => {});
+  // 初始 setView 已定位首个城市；重复定位会触发零位移 moveend 造成冗余请求
+  const positionedCityRef = useRef(CITIES[0].name);
   const [city, setCity] = useState("苏州");
   const [industry, setIndustry] = useState("");
   const [withPhone, setWithPhone] = useState(false);
@@ -232,10 +240,16 @@ export default function MapPage() {
         maxZoom: 18,
       }).addTo(map);
       mapRef.current = map;
+      // SPEC-CR CR2：视野驱动加载——moveend（拖拽/缩放/平移结束）防抖 500ms 后按当前视野重载
+      map.on("moveend", () => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => void loadRef.current(), 500);
+      });
       setReady(true);
     })();
     return () => {
       disposed = true;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -243,18 +257,37 @@ export default function MapPage() {
 
   const loadPoints = useMemo(
     () => async () => {
-      if (!mapRef.current) return;
       const map = mapRef.current;
-      // 清旧点
-      for (const m of markersRef.current) m.remove();
-      markersRef.current = [];
+      if (!map) return;
+      // 取消排队中的防抖请求：立即加载与延迟加载都读当前视野，等价且省一次冗余请求
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      // 请求序号守卫：拖拽连发 moveend 时，慢的旧响应不得覆盖新结果——只让最新请求落账
+      const seq = ++loadSeqRef.current;
+      const params = new URLSearchParams({ limit: "2000" });
+      if (withPhone) params.set("with_phone", "1");
+      if (industry) params.set("industry_key", industry);
+      if (recentOnly) params.set("recent", "1");
+      // SPEC-CR CR2：zoom≥11 城市级视野带 bbox（后端返回 points 模式）；
+      // 更低 zoom 不带 bbox 全国聚合（后端 clusters 模式，threshold=1500 自动切档）
+      if (map.getZoom() >= 11) {
+        const b = map.getBounds();
+        params.set("south", b.getSouth().toFixed(6));
+        params.set("west", b.getWest().toFixed(6));
+        params.set("north", b.getNorth().toFixed(6));
+        params.set("east", b.getEast().toFixed(6));
+      }
       try {
         const d = await api.get<{ mode: string; items: (GeoPoint | GeoCluster)[]; total: number }>(
-          `/api/enterprises/geo?limit=2000${withPhone ? "&with_phone=1" : ""}${
-            industry ? `&industry_key=${industry}` : ""
-          }${recentOnly ? "&recent=1" : ""}`,
+          `/api/enterprises/geo?${params.toString()}`,
         );
         const L = (await import("leaflet")).default;
+        if (seq !== loadSeqRef.current) return; // 旧响应不落账
+        // 成功后才清旧点——失败静默保留旧点（网络抖动不清空地图）
+        for (const m of markersRef.current) m.remove();
+        markersRef.current = [];
         let phoneCount = 0;
         if (d.mode === "clusters") {
           setMode("clusters");
@@ -285,20 +318,31 @@ export default function MapPage() {
           }
         }
         setStats({ total: d.total, phone: phoneCount });
-      } catch (e) {
-        Toast.error(e instanceof Error ? e.message : "加载失败");
+      } catch {
+        // 静默失败：保留旧点，视野操作不被网络抖动打断（重试=再拖一下地图）
       }
     },
     [withPhone, industry, recentOnly],
   );
 
-  // 切城市 / 筛选变化：平移 + 重载（loadPoints 引用随筛选变化，一个 effect 统一驱动，避免双请求）
+  // loadPoints 引用跟进：moveend 防抖回调始终调用最新筛选闭包
   useEffect(() => {
-    if (!ready) return;
+    loadRef.current = loadPoints;
+  }, [loadPoints]);
+
+  // 切城市：只平移视野——moveend 会触发防抖重载（SPEC-CR CR2 视野驱动）
+  useEffect(() => {
+    if (!ready || positionedCityRef.current === city) return;
+    positionedCityRef.current = city;
     const c = CITIES.find((x) => x.name === city);
     if (c) mapRef.current?.setView(c.center, 11);
+  }, [city, ready]);
+
+  // 首次初始化 + 筛选变化：立即按当前视野重载（bbox 读自地图 getBounds）
+  useEffect(() => {
+    if (!ready) return;
     void loadPoints();
-  }, [city, ready, loadPoints]);
+  }, [ready, loadPoints]);
 
   return (
     <AppShell>
@@ -311,14 +355,14 @@ export default function MapPage() {
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
           <span className="text-[12.5px] text-[var(--muted)]">
-            本视图 <span className="font-medium text-[var(--ink)]">{stats.total}</span> 家
+            当前视野 <span className="font-medium text-[var(--ink)]">{stats.total}</span> 家
             ·{" "}
             <span className="inline-flex items-center gap-0.5 align-baseline text-[var(--accent)]">
               <Phone size={12} strokeWidth={2.25} className="self-center" aria-hidden />
               有电话 <span className="font-medium">{stats.phone}</span>
             </span>
-            {stats.total > 2000 && (
-              <span className="ml-1 text-[#c2801b]">（视图上限 2000，缩放到单城看全量）</span>
+            {stats.total >= 2000 && (
+              <span className="ml-1 text-[#c2801b]">（视野上限 2000，放大可看更小范围全量）</span>
             )}
           </span>
         </div>

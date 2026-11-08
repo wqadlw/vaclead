@@ -12,6 +12,7 @@ const ALLOWED_BASES = ["http://127.0.0.1:8000", "http://localhost:8000"] as cons
 function resolveBase(): string {
   if (typeof window === "undefined") return ALLOWED_BASES[0];
   const { port, hostname, protocol } = window.location;
+  if (protocol === "https:") return ""; // https 部署（如 demo 子域）：单进程同源，回退 8000 会遭混合内容拦截
   const sameOrigin = port !== "3000" && port !== "" && hostname === "127.0.0.1" && protocol === "http:";
   return sameOrigin ? "" : ALLOWED_BASES[0];
 }

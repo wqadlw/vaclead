@@ -522,6 +522,9 @@ def enterprises_geo(
         stmt = stmt.where(Enterprise.id.in_(callable_ids.select()))
     if industry_key:
         stmt = stmt.where(Enterprise.industry_key == industry_key)
+    # SPEC-CR CR1：按意图分降序——limit 截断时保住最有价值的企业
+    # （全国模式 2000 上限=全国 Top 意图；bbox 模式视野内全量不受影响）
+    stmt = stmt.order_by(Enterprise.intent_score.desc(), Enterprise.id.desc())
     rows = session.scalars(stmt.limit(min(limit, 2000))).all()
     phone_set = {
         r[0] for r in session.execute(select(Contact.enterprise_id).where(

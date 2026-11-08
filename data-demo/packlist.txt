@@ -1,0 +1,8 @@
+backend/app
+backend/requirements.txt
+config
+frontend/out
+scripts/demo_seed.py
+scripts/demo_server_setup.sh
+scripts/demo_reset.sh
+data-demo/demo.db.master

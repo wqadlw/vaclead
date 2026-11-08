@@ -106,3 +106,19 @@ def test_cq_geo_research_explicit(client, admin_headers, seeded):
                    headers=admin_headers)
     items = {i["id"]: i for i in r.json()["items"]}
     assert seeded["school"] in items
+
+
+def test_cq_geo_intent_ordering(client, admin_headers, seeded):
+    """SPEC-CR CR1：geo 按意图分降序——截断保最有价值。"""
+    with SessionLocal() as s:
+        high = Enterprise(name="CQ高意图目标有限公司", source="poi", lat=31.33, lng=120.61,
+                          city="苏州市", industry_key="coating", intent_score=95)
+        s.add(high)
+        s.commit()
+        high_id = high.id
+
+    r = client.get("/api/enterprises/geo?limit=3", headers=admin_headers)
+    items = r.json()["items"]
+    assert items[0]["id"] == high_id  # 95 分压过 85/40 的种子企业
+    scores = [i["intent_score"] for i in items if i["intent_score"] is not None]
+    assert scores == sorted(scores, reverse=True)
