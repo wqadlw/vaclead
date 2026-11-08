@@ -189,7 +189,7 @@ export default function ProposalsPage() {
           <button
             key={p.province}
             onClick={() => setProvince(province === p.province ? "" : p.province)}
-            className={`rounded-full border px-2.5 py-0.5 text-[11.5px] ${
+            className={`rounded-full border px-3 py-1.5 text-[12.5px] md:px-2.5 md:py-0.5 md:text-[11.5px] ${
               province === p.province
                 ? "border-[var(--accent)] bg-[var(--accent-weak,rgba(94,106,210,0.1))] text-[var(--accent)]"
                 : "border-[var(--border)] bg-white text-[var(--muted)] hover:border-[var(--accent)]"
@@ -216,7 +216,7 @@ export default function ProposalsPage() {
                   {(entCount.get(s.enterprise_id) ?? 0) > 1 && (
                     <Tag color="grey" type="light" size="small">共 {entCount.get(s.enterprise_id)} 条公示</Tag>
                   )}
-                  <a href={`/enterprises/view?id=${s.enterprise_id}`} className="truncate text-[13.5px] font-medium text-[var(--ink)] hover:text-[var(--accent)]">
+                  <a href={`/enterprises/view?id=${s.enterprise_id}`} className="inline-flex items-center self-stretch truncate py-2 text-[13.5px] font-medium text-[var(--ink)] hover:text-[var(--accent)]">
                     {s.name}
                   </a>
                   {s.industry_name && <span className="text-[11.5px] text-[var(--muted)]">{s.industry_name}</span>}

@@ -107,7 +107,7 @@ export default function QualityPage() {
             <div className="space-y-2">
               {steps.map((s) => (
                 <div key={s.label} className="flex items-center gap-3">
-                  <span className="w-44 shrink-0 text-right text-[12.5px] text-[var(--muted)]">
+                  <span className="w-32 shrink-0 text-right text-[12.5px] text-[var(--muted)] sm:w-44">
                     {s.label}
                   </span>
                   <div className="h-5 flex-1 rounded bg-[var(--border)]">
@@ -118,7 +118,7 @@ export default function QualityPage() {
                       {s.value.toLocaleString()}
                     </div>
                   </div>
-                  <span className="w-40 shrink-0 text-[11.5px] text-[var(--muted)]">{s.note}</span>
+                  <span className="hidden shrink-0 text-[11.5px] text-[var(--muted)] sm:block sm:w-40">{s.note}</span>
                 </div>
               ))}
             </div>
@@ -127,7 +127,7 @@ export default function QualityPage() {
       </div>
 
       {/* 缺口卡 */}
-      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { k: "省份文本缺失", v: g ? g.province_missing.toLocaleString() : "—", note: "多为无 city 来源（地址清洗/坐标反查 P2）", href: "/tasks" },
           { k: "行业未分类", v: g ? g.industry_missing.toLocaleString() : "—", note: "backfill-icp 幂等任务可补", href: "/tasks" },

@@ -213,7 +213,7 @@ function ThemeToggle() {
         setScheme(next);
       }}
       title={`主题：${scheme}（点击切换 亮色→暗色→跟随系统）`}
-      className="flex h-7 cursor-pointer items-center gap-1 rounded border border-[var(--border)] bg-white px-2 text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)]"
+      className="flex h-9 cursor-pointer items-center gap-1 rounded border border-[var(--border)] bg-white px-2 text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)] md:h-7"
     >
       {isDark ? <Moon size={13} /> : <Sun size={13} />}
       {scheme === "System" ? "跟随" : scheme === "Dark" ? "暗" : "亮"}
@@ -512,14 +512,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* 主列：顶栏 + 白纸 */}
       <div className="flex min-h-screen flex-col md:ml-[228px]">
-        <header className="sticky top-0 z-20 flex h-12 items-center justify-between bg-[var(--ground)] px-6">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between bg-[var(--ground)] px-4 md:h-12 md:px-6">
+          <div className="flex items-center gap-2 md:gap-3">
             <button
-              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-white text-[var(--muted)] md:hidden"
+              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-white text-[var(--muted)] md:hidden"
               title="菜单"
+              aria-label="菜单"
               onClick={() => setMobileNav(true)}
             >
-              <Menu size={15} />
+              <Menu size={17} />
             </button>
             {/* SPEC-CT CT2：顶栏移动端精简——文字搜索钮桌面保留，<md 换纯图标钮（仍派发 Ctrl+K） */}
             <button
@@ -537,9 +538,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 window.dispatchEvent(ev);
               }}
               title="搜索"
-              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-white text-[var(--muted)] hover:border-[var(--accent)] md:hidden"
+              aria-label="搜索"
+              className="flex h-10 w-10 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-white text-[var(--muted)] hover:border-[var(--accent)] md:hidden"
             >
-              <Search size={15} />
+              <Search size={17} />
             </button>
             <button
               onClick={() => {
@@ -585,7 +587,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <KeyboardShortcuts />
         <CommandPalette />
         <main className="mb-2 flex-1 pb-16 md:pb-0">
-          <div className="min-h-[calc(100vh-48px-8px)] rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-6 py-5">
+          <div className="min-h-[calc(100vh-56px-8px)] rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-4 sm:px-6 sm:py-5 md:min-h-[calc(100vh-48px-8px)]">
             {children}
           </div>
         </main>

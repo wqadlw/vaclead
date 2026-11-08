@@ -255,7 +255,7 @@ export default function ContactsPage() {
                   {c.phones.map((p) => (
                     <span key={p} className="inline-flex items-center gap-0.5">
                       <span
-                        className="cursor-pointer rounded border border-[var(--border)] bg-[var(--raised)] px-1.5 py-0.5 font-mono text-[12.5px] tabular-nums text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
+                        className="cursor-pointer rounded border border-[var(--border)] bg-[var(--raised)] px-2 py-1 font-mono text-[12.5px] tabular-nums text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white md:px-1.5 md:py-0.5"
                         title="点击复制号码"
                         onClick={(ev) => {
                           ev.stopPropagation();
@@ -268,16 +268,16 @@ export default function ContactsPage() {
                       <a
                         href={`tel:${p}`}
                         title="点击拨打"
-                        className="text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded text-[var(--muted)] transition-colors hover:bg-[var(--raised)] hover:text-[var(--accent)]"
                         onClick={(ev) => ev.stopPropagation()}
                       >
-                        <Phone size={11} />
+                        <Phone size={14} />
                       </a>
                     </span>
                   ))}
                   <a
                     href={`/enterprises/view?id=${c.enterprise.id}`}
-                    className="text-[var(--accent)] hover:underline"
+                    className="inline-flex items-center self-stretch py-2 text-[var(--accent)] hover:underline"
                   >
                     {c.enterprise.name}
                   </a>

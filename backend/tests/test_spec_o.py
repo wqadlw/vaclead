@@ -37,12 +37,17 @@ def _iso(dt: datetime) -> str:
 
 @pytest.fixture(scope="module")
 def seeded():
-    """上周窗口种子（offset=0 即查上周）：2 企业/2 信号/2 线索/1 跟进/1 赢单；上上周为空。"""
+    """上上周窗口种子（offset=1 即查上上周）：2 企业/2 信号/2 线索/1 跟进/1 赢单；三周前为空。
+
+    锚历史窗口而非 offset=0 的原因：全 session 共享一库（conftest setdefault 语义），
+    前序模块插入的行 created_at=now ∈ 本周；每逢周一跑全量时"上周"=[-7d, today)
+    恰含前序数据 → new_enterprises 60≠2（2026-11-09 实证）。offset≥1 的历史窗口
+    永不含 now，与跑测试的星期几解耦。"""
     from app.api.reports import _dt, _week_bounds
     from app.db import SessionLocal
     from app.models import Enterprise, Followup, Lead, Signal
 
-    start, end = _week_bounds(0)  # 上周窗口 [start, end)
+    start, end = _week_bounds(1)  # 上上周窗口 [start, end)
     mid = start + timedelta(days=3)
     lo, hi = _iso(datetime(mid.year, mid.month, mid.day, 12)), _iso(end)
     far_before = _iso(datetime(start.year, start.month, start.day) - timedelta(days=10))
@@ -75,12 +80,12 @@ def seeded():
 
 
 def test_weekly_report_kpis_and_tops(client, admin_headers, seeded):
-    r = client.get("/api/reports/weekly", params={"offset": 0}, headers=admin_headers)
+    r = client.get("/api/reports/weekly", params={"offset": 1}, headers=admin_headers)
     assert r.status_code == 200, r.text
     d = r.json()
     kpis = {k["key"]: k for k in d["kpis"]}
     kdump = {k["key"]: (k["value"], k["prev"]) for k in d["kpis"]}
-    # 上周种子 vs 上上周（空）→ 全部 prev=0、delta=1.0
+    # 上上周种子 vs 三周前（空）→ 全部 prev=0、delta=1.0
     assert kpis["new_enterprises"]["value"] == 2 and kpis["new_enterprises"]["prev"] == 0, kdump
     assert kpis["new_signals"]["value"] == 2, kdump
     assert kpis["new_leads"]["value"] == 1, kdump  # lead_won 建于窗口外，仅本周赢单（按 updated_at 计）
@@ -99,7 +104,7 @@ def test_weekly_report_kpis_and_tops(client, admin_headers, seeded):
 
 
 def test_weekly_export_csv_parses(client, admin_headers, seeded):
-    r = client.get("/api/reports/weekly/export", params={"offset": 0}, headers=admin_headers)
+    r = client.get("/api/reports/weekly/export", params={"offset": 1}, headers=admin_headers)
     assert r.status_code == 200
     assert "text/csv" in r.headers.get("content-type", "")
     rows = list(_csv.reader(io.StringIO(r.content.decode("utf-8"))))

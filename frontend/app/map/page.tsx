@@ -380,7 +380,7 @@ export default function MapPage() {
             key={c.name}
             type="button"
             onClick={() => setCity(c.name)}
-            className={`shrink-0 rounded-md border px-2 py-[3px] text-[12px] leading-4 transition-colors ${
+            className={`shrink-0 rounded-md border px-3 py-2 text-[13px] leading-4 transition-colors md:px-2 md:py-[3px] md:text-[12px] ${
               city === c.name
                 ? "border-[var(--accent)] bg-[var(--accent-weak)] font-medium text-[var(--accent)]"
                 : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--control)] hover:text-[var(--ink)]"

@@ -3,6 +3,45 @@
 > 制度（2026-10-25 确立）：本项目为**多 Agent 协作开发**，一切功能开发走正规流程：
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
+
+## 2026-11-09 · 移动端触屏目标门禁建立（12 页双零）+ 周报测试日历边界修复
+
+**quality 溢出假象收尾**：上轮 404px 溢出是**旧 out/ 构建假象**（E2E 旧产物
+假阳性同款教训第 2 次出现）——代码已改 hidden sm:block 但服务跑旧 chunk，
+`hidden` 元素照样占位。重建后复扫 sw=390 达标。纪律固化为铁律：
+**改前端 → 必须 build → 才能验任何渲染产物**。
+
+**390px 扫描升级为触屏目标门禁**（scripts/scan_390.mjs，从 frontend/scan2.mjs
+归位）：12 页逐页报告 页级溢出 sw + <28×24px 可点击目标。首轮 241 个小目标，
+逐页修到 **12 页 溢出 0 + 小目标 0**：
+
+- 根因口径：根字号 14px（87.5%）→ rem 全部打 0.875 折，CSS h-7=28px 实测
+  24.5px。扫描阈值按同口径校准：28px 实测 = 32px CSS 意图（WCAG 2.5.8
+  底线 24px 满足，44px 理想值在密集列表场景按企查查/高德惯例放宽到 28px 实测）
+- 全站公共件（每页收益）：AppShell 顶栏 h-12→h-14（移动）/菜单+搜索钮
+  28→40px 白纸容器 px-4 py-4（sm 恢复）/min-h 计算分档
+- 拨打链（核心动作零容忍）：contacts/ContactDialPanel/home 三处 tel: 链
+  11×11→28×28 居中热区（Phone 14 + inline-flex h-8 w-8）
+- chips 加高（移动端 py-1.5 text-12.5，md 恢复）：home 产品线/通话三快标
+  （接通/未接/空号 22→30px）/proposals 省份/map 城市/CallResultTag
+- 行内链接垫高：signals 原文↗+企业链/contacts 企业链（self-stretch py-2）
+  /proposals 企业链/详情页返回钮/月榜翻月钮/按信号筛选
+- 合规豁免（记录在案）：Leaflet/高德法律署名链 + 正文行内说明链
+  （data-inline-prose）——WCAG 2.5.8 明确豁免，扫描跳过
+
+**E2E webServer 超时根因**：node 轮询 `http://127.0.0.1:8010/api/health`
+被系统代理劫持（老坑"代理拦截 localhost"第 3 形态）→ NO_PROXY 即过，
+12 用例 21s 全绿。health 端点带鉴权（401）非根因（SPEC-BB 起如此）。
+
+**test_spec_o 周报日历边界耦合修复**（周一跑全量必破）：全 session 共享
+一库 + 前序模块行 created_at=now ∈ 本周；恰逢周一时"上周"=[-7d, today)
+把 60 家前序企业计入 → new_enterprises 60≠2。修复：种子锚 offset=1
+上上周窗口（历史窗口永不含 now，与星期几解耦），3 处 offset 同步。
+2026-11-09 实证修复后 349 全绿。
+
+**门禁**：build ✓ + 后端 349 全绿 + E2E 12 全绿 + 390px 扫描 12 页双零。
+
+
 > 经验沉淀对应位置：refs/STUDY.md（外部项目吸收）、docs/（契约文档）、memory（跨会话记忆）、本文（过程日志）。
 
 ---

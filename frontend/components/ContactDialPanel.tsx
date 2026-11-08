@@ -196,7 +196,7 @@ export default function ContactDialPanel({
                     {(c.phones ?? []).map((p) => (
                       <span key={p} className="inline-flex items-center gap-0.5">
                         <span
-                          className="cursor-pointer rounded border border-[var(--border)] bg-[var(--raised)] px-1.5 py-0.5 font-mono text-[12.5px] tabular-nums text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
+                          className="cursor-pointer rounded border border-[var(--border)] bg-[var(--raised)] px-2 py-1 font-mono text-[12.5px] tabular-nums text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white md:px-1.5 md:py-0.5"
                           title="点击复制号码"
                           onClick={() => {
                             void navigator.clipboard?.writeText(p);
@@ -208,10 +208,10 @@ export default function ContactDialPanel({
                         <a
                           href={`tel:${p}`}
                           title="点击拨打"
-                          className="text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded text-[var(--muted)] transition-colors hover:bg-[var(--raised)] hover:text-[var(--accent)]"
                           onClick={(ev) => ev.stopPropagation()}
                         >
-                          <Phone size={11} />
+                          <Phone size={14} />
                         </a>
                       </span>
                     ))}

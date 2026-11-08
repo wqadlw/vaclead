@@ -165,7 +165,7 @@ function LeaderboardCard() {
           <button
             onClick={() => setMonth(shiftMonth(month, -1))}
             aria-label="上一月"
-            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-[var(--muted)] transition-colors hover:bg-[var(--raised)] hover:text-[var(--ink)]"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-[var(--muted)] transition-colors hover:bg-[var(--raised)] hover:text-[var(--ink)]"
           >
             <ChevronLeft size={14} />
           </button>
@@ -176,7 +176,7 @@ function LeaderboardCard() {
             onClick={() => setMonth(shiftMonth(month, 1))}
             disabled={month >= thisMonth}
             aria-label="下一月"
-            className="flex h-6 w-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-[var(--muted)] transition-colors hover:bg-[var(--raised)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-[var(--muted)] transition-colors hover:bg-[var(--raised)] hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent"
           >
             <ChevronRight size={14} />
           </button>
@@ -613,7 +613,7 @@ export default function DashboardPage() {
               <button
                 key={p || "all"}
                 onClick={() => setRecProduct(p)}
-                className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] ${
+                className={`shrink-0 rounded-full border px-3 py-1.5 text-[12.5px] md:px-2 md:py-0.5 md:text-[11px] ${
                   recProduct === p
                     ? "border-[var(--accent)] bg-[var(--accent-weak,rgba(94,106,210,0.1))] text-[var(--accent)]"
                     : "border-[var(--border)] bg-white text-[var(--muted)] hover:border-[var(--accent)]"
@@ -651,10 +651,10 @@ export default function DashboardPage() {
                         <a
                           href={`tel:${r.phone}`}
                           title="点击拨打"
-                          className="text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded text-[var(--muted)] transition-colors hover:bg-[var(--raised)] hover:text-[var(--accent)]"
                           onClick={(ev) => ev.stopPropagation()}
                         >
-                          <Phone size={11} />
+                          <Phone size={14} />
                         </a>
                       </span>
                     )}
@@ -671,21 +671,21 @@ export default function DashboardPage() {
                   {(r.call_state ?? "pending") === "pending" && r.contact_id ? (
                     <div className="flex items-center gap-1">
                       <button
-                        className="cursor-pointer rounded border border-[var(--border)] bg-white px-1.5 py-0.5 text-[11px] text-[var(--ink)] hover:border-[var(--accent)]"
+                        className="cursor-pointer rounded border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] md:px-1.5 md:py-0.5 md:text-[11px] text-[var(--ink)] hover:border-[var(--accent)]"
                         onClick={async (ev) => {
                           ev.preventDefault();
                           await markRec(r.ent_id, "interested");
                         }}
                       >接通</button>
                       <button
-                        className="cursor-pointer rounded border border-[var(--border)] bg-white px-1.5 py-0.5 text-[11px] text-[var(--muted)] hover:border-[var(--accent)]"
+                        className="cursor-pointer rounded border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] md:px-1.5 md:py-0.5 md:text-[11px] text-[var(--muted)] hover:border-[var(--accent)]"
                         onClick={async (ev) => {
                           ev.preventDefault();
                           await markRec(r.ent_id, "no_answer");
                         }}
                       >未接</button>
                       <button
-                        className="cursor-pointer rounded border border-[var(--border)] bg-white px-1.5 py-0.5 text-[11px] text-[var(--negative)] hover:border-[var(--negative)]"
+                        className="cursor-pointer rounded border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] md:px-1.5 md:py-0.5 md:text-[11px] text-[var(--negative)] hover:border-[var(--negative)]"
                         onClick={async (ev) => {
                           ev.preventDefault();
                           await markRec(r.ent_id, "invalid");
@@ -956,7 +956,7 @@ export default function DashboardPage() {
             <h2 className="text-[15px] font-medium text-[var(--ink)]">最新信号</h2>
             <button
               onClick={() => router.push("/enterprises")}
-              className="flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-[13px] text-[var(--accent)] hover:underline"
+              className="-my-2 flex cursor-pointer items-center gap-1 rounded border-0 bg-transparent px-2 py-3 text-[13px] text-[var(--accent)] hover:underline"
             >
               按信号筛选 <ArrowRight size={12} />
             </button>

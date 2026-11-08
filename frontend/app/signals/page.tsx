@@ -233,7 +233,7 @@ export default function SignalsPage() {
                         href={s.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="shrink-0 text-[11.5px] text-[var(--accent)] hover:underline"
+                        className="inline-flex shrink-0 items-center py-2 pl-1 text-[11.5px] text-[var(--accent)] hover:underline"
                         title="查看官方公示原文"
                       >
                         原文 ↗
@@ -241,7 +241,7 @@ export default function SignalsPage() {
                     )}
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-[13px]">
-                    <a href={`/enterprises/view?id=${s.ent_id}`} className="text-[var(--accent)] hover:underline">
+                    <a href={`/enterprises/view?id=${s.ent_id}`} className="inline-flex items-center py-1.5 text-[var(--accent)] hover:underline">
                       {s.ent_name}
                     </a>
                     {s.is_competitor === 1 && <Tag color="red" type="light" size="small">疑似同行</Tag>}

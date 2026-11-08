@@ -46,8 +46,8 @@ export default function CallResultTag({
         </div>
       }
     >
-      <Tag color={cur.color} type="light" size="small" className="!cursor-pointer">
-        <Phone size={11} className="mr-1 inline" />
+      <Tag color={cur.color} type="light" size="small" className="!cursor-pointer !px-2 !py-1 !text-[12.5px]">
+        <Phone size={12} className="mr-1 inline" />
         {cur.label}
       </Tag>
     </Dropdown>

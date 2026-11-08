@@ -1445,7 +1445,7 @@ export default function SettingsPage() {
           <TabPane itemKey="keys">
           <div className="p-6 max-w-[560px]">
             <div className="text-[13px] text-slate-500 mb-5 leading-6">
-              高德 Key 用于地图拓客（<a className="text-[var(--accent)]" href="https://lbs.amap.com" target="_blank" rel="noreferrer">lbs.amap.com</a> 申请），
+              高德 Key 用于地图拓客（<a data-inline-prose className="text-[var(--accent)]" href="https://lbs.amap.com" target="_blank" rel="noreferrer">lbs.amap.com</a> 申请），
               知了标讯 Key 用于招标自动采集。未配置时对应功能禁用、CSV 导入兜底。
             </div>
             <Descriptions
