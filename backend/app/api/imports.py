@@ -557,7 +557,7 @@ def gongshang_lookup_export(
     w.writerow(["企业名称", "地区", "行业", "意图分", "缺失项", "风鸟直搜链接"])
     for r in sorted(rows_out, key=lambda x: -(x["intent"] or 0)):
         # SPEC-CK 补强：每行带风鸟搜索直链——清单里点一下就到查询页，零复制粘贴
-        url = "https://www.riskbird.com/search?key=" + quote(r["name"])
+        url = "https://www.riskbird.com/ent/" + quote(r["name"])
         w.writerow([r["name"], r["region"], r["industry"], r["intent"], r["missing"], url])
     buf.seek(0)
     return StreamingResponse(

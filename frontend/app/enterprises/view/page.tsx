@@ -670,7 +670,7 @@ function IntelInner() {
               <div className="mb-1.5 flex items-center justify-between gap-2">
                 <span className="text-[12.5px] font-medium text-[var(--ink)]">从风鸟补工商资料</span>
                 <a
-                  href={`https://www.riskbird.com/search?key=${encodeURIComponent(detail.name)}`}
+                  href={`https://www.riskbird.com/ent/${encodeURIComponent(detail.name)}`}
                   target="_blank"
                   rel="noreferrer"
                   className="text-[12px] text-[var(--accent)] hover:underline"

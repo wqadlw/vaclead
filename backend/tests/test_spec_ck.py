@@ -77,7 +77,7 @@ def test_ck_lookup_export(client, admin_headers, seeded):
     assert r.status_code == 200
     text = r.text
     assert text.startswith("企业名称,地区,行业,意图分,缺失项")
-    assert "riskbird.com/search?key=" in text  # 每行带风鸟直搜链接
+    assert "riskbird.com/ent/" in text  # 每行带风鸟直达企业页链接
     assert "CK缺数机械有限公司" in text
     assert "CK资料齐全镀膜有限公司" not in text
     assert "联系电话" in text  # poor 无电话
