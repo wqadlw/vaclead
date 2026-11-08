@@ -760,10 +760,8 @@ function IntelInner() {
                   </button>
                   <a
                     href={`https://www.riskbird.com/ent/${encodeURIComponent(detail.name)}?eid=${eid}`}
-                    target="_blank"
-                    rel="noreferrer"
                     className="text-[12px] text-[var(--accent)] hover:underline"
-                    title="在新标签页打开风鸟并搜索此公司"
+                    title="跳转到风鸟此公司页（书签搬运后自动跳回平台）"
                   >
                     一键打开风鸟搜此公司 ↗
                   </a>
