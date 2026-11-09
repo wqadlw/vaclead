@@ -108,6 +108,9 @@ _EVOLUTION_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "product": [
         ("application_industries", "TEXT NOT NULL DEFAULT '[]'"),
     ],
+    "signal": [
+        ("amount_wan", "REAL"),  # SPEC-AMT 成交金额（万元）持久列——排序/惰性回填
+    ],
 }
 
 
@@ -121,7 +124,35 @@ def _ensure_columns() -> None:
             for col, ddl in cols:
                 if col not in existing:
                     conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+        # SPEC-AMT：signal.amount_wan 自愈式回填——惰性回填排不出序（首次点
+        # 金额排序时全表 NULL=没排）。列已在但存量 NULL 时补（幂等：无 NULL 不跑）。
+        if "signal" in _EVOLUTION_COLUMNS and conn.dialect.has_table(conn, "signal"):
+            pending = conn.exec_driver_sql(
+                "SELECT COUNT(*) FROM signal WHERE amount_wan IS NULL "
+                "AND raw_excerpt LIKE '%成交价%'"
+            ).fetchone()[0]
+            if pending:
+                _backfill_signal_amount(conn)
         conn.commit()
+
+
+def _backfill_signal_amount(conn) -> int:
+    """存量 signal 批量回填 amount_wan（SPEC-AMT：正则抽取 raw_excerpt，仅本次新列时跑）。"""
+    import re
+
+    from .models import AMOUNT_RE
+
+    rows = conn.exec_driver_sql("SELECT id, raw_excerpt FROM signal").fetchall()
+    n = 0
+    for rid, excerpt in rows:
+        m = AMOUNT_RE.search(excerpt or "")
+        if m:
+            conn.exec_driver_sql(
+                "UPDATE signal SET amount_wan = ? WHERE id = ?",
+                (float(m.group(1)), rid),
+            )
+            n += 1
+    return n
 
 
 def init_db(seed: bool = True) -> None:

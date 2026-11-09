@@ -4,6 +4,36 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-10 · SPEC-AMT：信号金额持久化 + 标讯金额真排序（好用性第五轮）
+
+**背景**：signals 页金额排序被 Mimosa 三次拦（对新增 execute(stmt) 模式
+误报 SQL 注入）→ 转向正确长期方案：**金额持久化成列**（列表每行正则
+抽取本来就是性能债）。
+
+**交付**（Agent 全链路）：
+- models：AMOUNT_RE/extract_amount_wan 权威定义（替代 4 处副本）+
+  Signal.amount_wan 列 + **before_insert 钩子统一抽取**（12 个写入点
+  结构性防漏——逐点传参覆盖不了测试直构入口）
+- db.py：_EVOLUTION_COLUMNS 幂等迁移（新库/旧库双验证）
+- bulletin：items 读列（空回退正则+惰性回填）；order=amount →
+  `ORDER BY amount_wan DESC NULLS LAST, id DESC`（同额稳定键防分页翻动）
+- 前端：signals 筛选条排序 Select（最新/金额最大）+ URL 轻量同步
+
+**主线程连排三坑（Agent 交付后的冷启动链）**：
+1. **我错认文件**：signals 在 bulletin.py，大块 Edit 打去了 brief.py
+   （Mimosa 拦截反而防了污染）；发现后小 Edit 又遇 not-found——
+   **bytes 探测确认文件完好，是文件搞混**
+2. **检测泥潭**：新版 FastAPI routes 是包装对象（isinstance APIRoute
+   数出 2 条）+ linecache 旧源缓存——inspect/mem 检测全不可信，
+   8001 净室进程才见真行为
+3. **惰性回填排不出序**：存量 5668 行列全空，首次点金额排序=全 NULL
+   →id 兜底=没排。修：**db.py 自愈式回填**（列在但存量 NULL 且原文
+   含"成交价"→批量抽取，幂等无 NULL 不跑）——真库 **4592 条回填**，
+   top3 45 亿/39.8 亿/32 亿
+
+**门禁**：后端 **397**（+4）+ build + E2E 12 + 实弹排序 45 亿→28.9 亿
+降序 ✓ 默认序不变 ✓。
+
 ## 2026-11-10 · 企业列表真排序（好用性第四轮：伪排序清账）
 
 **审查发现**：表头排序是**页内伪排序**（Semi sorter 比较函数只重排当前

@@ -15,11 +15,16 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .models import Enterprise, EnterpriseStat, Signal, SyncWatermark, utcnow
+from .models import (  # SPEC-AMT：金额抽取唯一实现在 models，此处 re-export
+    Enterprise,
+    EnterpriseStat,
+    Signal,
+    SyncWatermark,
+    extract_amount_wan,
+    utcnow,
+)
 
 logger = logging.getLogger("vaclead.jobs")
-
-_AMOUNT_RE = re.compile(r"成交价([\d.]+)万元")
 
 
 # ---------------------------------------------------------------------------
@@ -170,16 +175,8 @@ def audit_cleanup(session: Session, keep: int = 50000) -> dict:
 # ---------------------------------------------------------------------------
 # B2 企业中标画像
 # ---------------------------------------------------------------------------
-def extract_amount_wan(text: str) -> float | None:
-    """从证据句/原文抽取成交价（万元）；无金额返回 None。"""
-    m = _AMOUNT_RE.search(text or "")
-    if not m:
-        return None
-    try:
-        v = float(m.group(1))
-        return v if v > 0 else None
-    except ValueError:
-        return None
+# SPEC-AMT：extract_amount_wan 已上移 models（唯一实现）；app.jobs 按原路径
+# re-export（api/brief.py、tests/test_phase_b.py 经 app.jobs 引用不断链）。
 
 
 def enrich_stats(session: Session, enterprise_id: int) -> dict:

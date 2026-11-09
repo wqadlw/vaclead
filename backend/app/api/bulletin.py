@@ -6,7 +6,6 @@ facet 直接在 Python 侧 Counter 统计（信号量数百级，无需 SQL 聚�
 """
 from __future__ import annotations
 
-import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
@@ -16,12 +15,9 @@ from sqlalchemy.orm import Session
 
 from ..auth import current_user
 from ..db import get_session
-from ..models import Enterprise, Signal, User
+from ..models import Enterprise, Signal, User, extract_amount_wan
 
 router = APIRouter(tags=["signals"])
-
-# 与 jobs.py 同源：从证据句提取成交金额（万元）——不 import jobs 防循环
-_AMOUNT_RE = re.compile(r"成交价([\d.]+)万元")
 
 _TYPE_CN = {
     "tender_win": "中标",
@@ -69,6 +65,7 @@ def list_signals(
     page: int = 1,
     page_size: int = 20,
     facets: int = 0,
+    order: str = "",
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
@@ -76,6 +73,8 @@ def list_signals(
 
     competitor=1 → 竞对中标动态视图（SPEC-AA AA2：对标剑鱼竞对监测）。
     since_id=游标增量（SPEC-AI：前端 5s 轮询实时感知，items 倒序、max_id 带回）。
+    order="amount" → 金额最大优先（SPEC-AMT：持久列 SQL ORDER BY，NULL 排尾；
+    同额按 id desc 稳定分页。默认序不变 id desc）。
     """
     kw = dict(type_=type, industry_key=industry_key, province=province, q=q, days=days,
               competitor=competitor)
@@ -84,32 +83,21 @@ def list_signals(
     if since_id is not None:
         stmt = stmt.where(Signal.id > since_id)
     total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    # SPEC-AMT：金额排序直接 SQL ORDER BY 持久列（ORM 链式，与既有形态一致）——
+    # 排序下推数据库，不再窗口内 Python 排序；NULL 排尾不挡前
+    if order.strip().lower() == "amount" and since_id is None:
+        stmt = stmt.order_by(Signal.amount_wan.desc().nulls_last(), Signal.id.desc())
+    else:
+        stmt = stmt.order_by(Signal.id.desc())
     rows = session.execute(
-        stmt.order_by(Signal.id.desc())
-        .offset(max(0, page - 1) * page_size)
+        stmt.offset(max(0, page - 1) * page_size)
         .limit(min(page_size, 50))
     ).all()
 
-    items = []
-    for sig, ent in rows:
-        m = _AMOUNT_RE.search(sig.raw_excerpt or "")
-        items.append({
-            "id": sig.id,
-            "type": sig.type,
-            "type_cn": _TYPE_CN.get(sig.type, sig.type),
-            "title": sig.title,
-            "url": sig.url,
-            "ent_id": ent.id,
-            "ent_name": ent.name,
-            "ent_industry": ent.industry_key,
-            "is_competitor": ent.is_competitor,
-            "province": ent.province,
-            "amount_wan": float(m.group(1)) if m else None,
-            "pub_date": sig.pub_date,
-            "created_at": sig.created_at,
-            "evidence_claim": sig.evidence_claim,
-            "base_score": sig.base_score,
-        })
+    items = [_signal_item(sig, ent) for sig, ent in rows]
+    if session.dirty:
+        # SPEC-AMT：惰性回填的旧行统一落库（幂等——列已有值即不再 dirty）
+        session.commit()
 
     out: dict = {"items": items, "total": total, "page": page, "page_size": page_size}
     if facets and total <= _FACET_SCAN_LIMIT:
@@ -128,3 +116,34 @@ def _joined(*cols):
     return select(*cols).select_from(Signal).join(
         Enterprise, Signal.enterprise_id == Enterprise.id
     )
+
+
+def _signal_item(sig: Signal, ent: Enterprise) -> dict:
+    """单行构造（SPEC-AMT：金额优先读持久列——列表渲染不再逐行正则）。
+
+    旧行（迁移前入库、列空）回退正则抽一次并惰性回填 ORM 属性，
+    由调用方在请求末尾统一 commit——读路径自愈：存量行被访问一次即补列，
+    下次 order=amount 直接走 SQL 排序。
+    """
+    amount = sig.amount_wan
+    if amount is None:
+        amount = extract_amount_wan(sig.raw_excerpt)
+        if amount is not None:
+            sig.amount_wan = amount
+    return {
+        "id": sig.id,
+        "type": sig.type,
+        "type_cn": _TYPE_CN.get(sig.type, sig.type),
+        "title": sig.title,
+        "url": sig.url,
+        "ent_id": ent.id,
+        "ent_name": ent.name,
+        "ent_industry": ent.industry_key,
+        "is_competitor": ent.is_competitor,
+        "province": ent.province,
+        "amount_wan": amount,
+        "pub_date": sig.pub_date,
+        "created_at": sig.created_at,
+        "evidence_claim": sig.evidence_claim,
+        "base_score": sig.base_score,
+    }

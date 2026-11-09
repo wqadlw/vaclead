@@ -52,6 +52,13 @@ export default function SignalsPage() {
   const [days, setDays] = useState<number>(30);
   const [competitor, setCompetitor] = useState<number | null>(null);
   const [subscribing, setSubscribing] = useState<number | null>(null);
+  // SPEC-AMT 排序：""=最新动态（id desc）| amount=金额最大（后端持久列 SQL 排序）
+  // URL ?order=amount 恢复（enterprises 页 initFromUrl 同款轻量版，只管 order）
+  const initOrder = (): string => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("order") === "amount" ? "amount" : "";
+  };
+  const [order, setOrder] = useState<string>(initOrder);
 
   const load = useCallback(() => {
     const p = new URLSearchParams({ page: String(page), page_size: "20", facets: "1" });
@@ -61,6 +68,7 @@ export default function SignalsPage() {
     if (q.trim()) p.set("q", q.trim());
     if (days) p.set("days", String(days));
     if (competitor != null) p.set("competitor", String(competitor));
+    if (order) p.set("order", order);
     api.get<{ items: SignalRow[]; total: number; facets: typeof facets }>(`/api/signals?${p}`)
       .then((d) => {
         setItems(d.items);
@@ -68,8 +76,21 @@ export default function SignalsPage() {
         setFacets(d.facets);
       })
       .catch(() => undefined);
-  }, [page, type, province, industry, q, days, competitor]);
+  }, [page, type, province, industry, q, days, competitor, order]);
   useEffect(load, [load]);
+
+  // SPEC-AMT：order 同步 URL（replaceState 静默写，可分享/刷新返回不丢，不触发重拉）
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    if (order) sp.set("order", order);
+    else sp.delete("order");
+    const qs = sp.toString();
+    const target = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
+    if (window.location.pathname + window.location.search !== target) {
+      window.history.replaceState(null, "", target);
+    }
+  }, [order]);
 
   const subscribe = async (entId: number) => {
     setSubscribing(entId);
@@ -194,6 +215,11 @@ export default function SignalsPage() {
           <Select.Option value="30">近 30 天</Select.Option>
           <Select.Option value="90">近 90 天</Select.Option>
           <Select.Option value="0">全部</Select.Option>
+        </Select>
+        {/* SPEC-AMT 排序：金额最大走后端持久列 SQL 排序（无金额排尾） */}
+        <Select value={order || ""} onChange={(v) => { setOrder(String(v ?? "")); setPage(1); }} className="!w-32 shrink-0">
+          <Select.Option value="">最新动态</Select.Option>
+          <Select.Option value="amount">金额最大</Select.Option>
         </Select>
         <span className="shrink-0 whitespace-nowrap text-[12.5px] text-[var(--muted)]">共 {total} 条标讯</span>
         <Button

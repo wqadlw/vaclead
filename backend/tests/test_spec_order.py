@@ -4,6 +4,9 @@
 - order=capital desc 全库首行=注册资本最大（与 icp 序刻意错开，证明排序真的换了键）
 - order=capital asc；order=created；非法 order/dir 回退默认 icp desc
 - order+dir 与 URL 组合；page_size 强制分页时排序跨页连续（全库序，非页内序）
+
+SPEC-AMT 追加：标讯金额持久化 + /signals?order=amount 真排序（SQL ORDER BY
+Signal.amount_wan DESC NULLS LAST）——列回填 / 默认序不变 / 旧行惰性回填。
 """
 from __future__ import annotations
 
@@ -187,3 +190,91 @@ def test_order_url_combo_and_page(client, admin_headers, seeded):
     d_last = _list(client, admin_headers, order="capital", dir="asc",
                    province="江苏省", page_size=2, page=1)
     assert d_last["total"] == total
+
+
+# ===================================================================
+# SPEC-AMT 信号金额持久化 + 标讯金额真排序（/signals order=amount）
+# ===================================================================
+
+@pytest.fixture(scope="module")
+def amount_seed(client, admin_headers):
+    """4 条同企业信号：320.5 / 100 / 0 占位 / 无金额——确定性排序数据。
+
+    入库走 ORM 直构（采集/导入各写入点同路径）：列值由 models 的
+    before_insert 钩子（_signal_fill_amount_wan）从 raw_excerpt 抽取，
+    本 fixture 即"造 raw_excerpt=…成交价…入库→列有值"的数据源。
+    """
+    from app.db import SessionLocal
+    from app.models import Enterprise, Signal
+
+    with SessionLocal() as s:
+        ent = Enterprise(name="金额排序测试科技有限公司", province="江苏省", source="manual")
+        s.add(ent)
+        s.flush()
+        for title, excerpt, typ in [
+            ("金额排序大单镀膜机中标", "政府采购｜成交价320.5万元", "tender_win"),
+            ("金额排序小单泵阀中标", "中标｜成交价100万元", "tender_win"),
+            ("金额排序零占位中标", "中标｜成交价0万元", "tender_win"),  # 0 占位=未知
+            ("金额排序无金额公告", "", "tender"),
+        ]:
+            s.add(Signal(enterprise_id=ent.id, type=typ, title=title, url="",
+                         raw_excerpt=excerpt, base_score=60.0))
+        s.commit()
+        yield {"ent_id": ent.id}
+
+
+def test_amount_column_filled_on_insert(client, admin_headers, amount_seed):
+    """SPEC-AMT：raw_excerpt 带"成交价X万元"入库 → amount_wan 列有值；
+    0 占位（官方源空价惯例）与无金额文本保持 NULL——不污染金额排序。"""
+    from app.db import SessionLocal
+    from app.models import Signal
+
+    with SessionLocal() as s:
+        rows = {
+            r.title: r.amount_wan
+            for r in s.query(Signal).filter(Signal.title.like("金额排序%")).all()
+        }
+    assert rows["金额排序大单镀膜机中标"] == pytest.approx(320.5)
+    assert rows["金额排序小单泵阀中标"] == pytest.approx(100.0)
+    assert rows["金额排序零占位中标"] is None
+    assert rows["金额排序无金额公告"] is None
+
+
+def test_signals_order_amount_sql(client, admin_headers, amount_seed):
+    """SPEC-AMT：order=amount → SQL ORDER BY 金额 desc；无金额（NULL）排尾。"""
+    r = client.get("/api/signals", params={"q": "金额排序", "order": "amount"},
+                   headers=admin_headers)
+    assert r.status_code == 200, r.text
+    amounts = [i["amount_wan"] for i in r.json()["items"]]
+    assert amounts == [320.5, 100.0, None, None]
+
+
+def test_signals_default_order_unchanged(client, admin_headers, amount_seed):
+    """SPEC-AMT：不带 order → 默认 id desc（排序参数零侵入旧行为）。"""
+    r = client.get("/api/signals", params={"q": "金额排序"}, headers=admin_headers)
+    amounts = [i["amount_wan"] for i in r.json()["items"]]
+    assert amounts == [None, None, 100.0, 320.5]  # id 倒序
+
+
+def test_signals_amount_lazy_backfill(client, admin_headers, amount_seed):
+    """SPEC-AMT：列为空的旧行经 /signals 访问 → 正则兜底出值并回写列（惰性回填）。"""
+    from app.db import SessionLocal
+    from app.models import Signal
+
+    # 模拟迁移前存量：直接 UPDATE 清列（query.update 绕过入库钩子，语义=旧数据）
+    with SessionLocal() as s:
+        s.query(Signal).filter(Signal.title == "金额排序大单镀膜机中标").update(
+            {Signal.amount_wan: None}
+        )
+        s.commit()
+
+    # 列表访问：响应行金额由正则兜底给出（前端显示不缺）
+    r = client.get("/api/signals", params={"q": "金额排序大单"}, headers=admin_headers)
+    assert r.status_code == 200, r.text
+    items = [i for i in r.json()["items"] if i["title"] == "金额排序大单镀膜机中标"]
+    assert items and items[0]["amount_wan"] == pytest.approx(320.5)
+
+    # 回写落库：新会话读列有值（读路径自愈，下次 order=amount 直接 SQL 生效）
+    with SessionLocal() as s:
+        row = s.query(Signal).filter(Signal.title == "金额排序大单镀膜机中标").one()
+        assert row.amount_wan == pytest.approx(320.5)

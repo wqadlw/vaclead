@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import (
@@ -22,6 +23,26 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+# SPEC-AMT：标讯成交金额正则——全库唯一权威定义（bulletin/jobs/reports 等
+# 处的 _AMOUNT_RE 副本逐步收拢到这里；放 models 防 API 模块循环 import）
+AMOUNT_RE = re.compile(r"成交价([\d.]+)万元")
+
+
+def extract_amount_wan(text: str) -> float | None:
+    """SPEC-AMT：从证据句/原文抽成交价（万元）；无金额或 0 占位返回 None。
+
+    0 视为未知（ggzy 官方源常见 0/空占位，按 NULL 处理不污染金额排序）。
+    """
+    m = AMOUNT_RE.search(text or "")
+    if not m:
+        return None
+    try:
+        v = float(m.group(1))
+        return v if v > 0 else None
+    except ValueError:
+        return None
 
 
 class Base(DeclarativeBase):
@@ -178,6 +199,10 @@ class Signal(Base):
     # 证据位（学 AI_Find_Customer evidence：claim+source_url 配对），P2 联系人模块的展示基础
     evidence_claim: Mapped[str | None] = mapped_column(Text)  # "该公告要求采购真空镀膜机2套"
     base_score: Mapped[float] = mapped_column(REAL, nullable=False, default=0.0)
+    # SPEC-AMT 成交金额（万元，NULL=未知）：入库由 _signal_fill_amount_wan 钩子从
+    # raw_excerpt 抽"成交价X万元"持久化——标讯列表 SQL ORDER BY 用（此前每行渲染
+    # 时正则，无法下推数据库）；旧库存量行经 /signals 惰性回填（api/bulletin）
+    amount_wan: Mapped[float | None] = mapped_column(REAL)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
 
     def terms_list(self) -> list[str]:
@@ -188,6 +213,15 @@ class Signal(Base):
 
     def set_terms(self, terms: list[str]) -> None:
         self.matched_terms = json.dumps(terms, ensure_ascii=False)
+
+
+@event.listens_for(Signal, "before_insert")
+def _signal_fill_amount_wan(_mapper, _connection, target: "Signal") -> None:
+    """SPEC-AMT：入库即抽金额——映射器级钩子覆盖全部写入点（ggzy/ccgp 采集、
+    各省备案通道、CSV 导入、测试直构），杜绝"漏一个采集源缺金额"；
+    显式传入 amount_wan 的调用方不覆盖。"""
+    if target.amount_wan is None:
+        target.amount_wan = extract_amount_wan(target.raw_excerpt)
 
 
 class Lead(Base):
