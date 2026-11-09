@@ -488,7 +488,7 @@ ul{{margin:4px 0;padding-left:20px}}li{{margin-bottom:2px}}
 {sec5}
 <h2>六、下一步</h2>
 {sec6}
-<p class="note noprint">打印：浏览器 Ctrl+P / 另存为 PDF（A4 一页）。</p>
+<p class="note noprint">打印：浏览器 Ctrl+P / 另存为 PDF（A4 一页）· <a href="/">← 返回 vaclead</a></p>
 <!-- SPEC-BRF-AI: GLM Key 到位后在此注入 AI 摘要段 -->
 </body></html>"""
 

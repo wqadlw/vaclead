@@ -408,6 +408,18 @@ def list_notifications(
         .limit(page_size)
         .all()
     )
+    # 信号族通知回填 ent_id（SPEC 流程打磨 2026-11-10：通知点击直达企业详情——
+    # ref_id 存的是 signal.id，列表一次 in 查询换出 enterprise_id）
+    _SIGNAL_REF_TYPES = ("signal", "sub_signal", "owner_signal", "competitor_win")
+    sig_ids = [n.ref_id for n in rows if n.ref_type in _SIGNAL_REF_TYPES]
+    ent_map: dict[int, int] = {}
+    if sig_ids:
+        srows = (
+            session.query(Signal.id, Signal.enterprise_id)
+            .filter(Signal.id.in_(sig_ids))
+            .all()
+        )
+        ent_map = {sid: eid for sid, eid in srows}
     return {
         "unread_count": unread_count,
         "items": [
@@ -415,6 +427,7 @@ def list_notifications(
                 "id": n.id, "kind": n.kind, "title": n.title, "body": n.body,
                 "ref_type": n.ref_type, "ref_id": n.ref_id, "read": n.read,
                 "created_at": n.created_at,
+                "ent_id": ent_map.get(n.ref_id) if n.ref_type in _SIGNAL_REF_TYPES else None,
             }
             for n in rows
         ],

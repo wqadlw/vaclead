@@ -86,11 +86,11 @@ const ADMIN_NAV = [
 
 function NotificationBell() {
   const [unread, setUnread] = useState(0);
-  const [items, setItems] = useState<{ id: number; title: string; body: string; read: number }[]>([]);
+  const [items, setItems] = useState<{ id: number; title: string; body: string; read: number; ref_type: string; ref_id: number; ent_id: number | null }[]>([]);
   const [visible, setVisible] = useState(false);
 
   const load = useCallback(() => {
-    api.get<{ unread_count: number; items: { id: number; title: string; body: string; read: number }[] }>(
+    api.get<{ unread_count: number; items: { id: number; title: string; body: string; read: number; ref_type: string; ref_id: number; ent_id: number | null }[] }>(
       "/api/notifications?page_size=8",
     )
       .then((d) => {
@@ -99,6 +99,22 @@ function NotificationBell() {
       })
       .catch(() => undefined);
   }, []);
+
+  // 通知点击 = 标已读 + 直达（流程打磨 2026-11-10：点通知没反应是动线断点）
+  const openNotification = (n: { id: number; ref_type: string; ent_id: number | null }) => {
+    void markOne(n.id);
+    setVisible(false);
+    const target = n.ent_id
+      ? `/enterprises/view?id=${n.ent_id}`
+      : n.ref_type === "report"
+        ? "/reports"
+        : n.ref_type === "watchdog"
+          ? "/quality"
+          : n.ref_type === "digest"
+            ? "/notifications"
+            : null;
+    if (target) window.location.href = target;
+  };
 
   useEffect(() => {
     load();
@@ -162,7 +178,7 @@ function NotificationBell() {
           {items.map((n) => (
             <Dropdown.Item
               key={n.id}
-              onClick={() => void markOne(n.id)}
+              onClick={() => openNotification(n)}
               style={{ whiteSpace: "normal", padding: "8px 14px" }}
             >
               <div className={`text-[12.5px] leading-5 ${n.read ? "text-[var(--muted)]" : "font-medium text-[var(--ink)]"}`}>
