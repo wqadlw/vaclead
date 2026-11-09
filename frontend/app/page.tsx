@@ -291,11 +291,12 @@ export default function DashboardPage() {
 
   const trendWindow = (sum?.trend ?? []).slice(-7).map((t) => t.count);
   const toggleTodo = async (id: number) => {
+    // SPEC-UX 乐观更新：勾选先翻转 UI（划线即刻反馈），失败静默回滚
+    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, done: t.done ? 0 : 1 } : t)));
     try {
       await api.patch(`/api/todos/${id}/done`, {});
-      setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, done: t.done ? 0 : 1 } : t)));
     } catch {
-      /* 静默 */
+      setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, done: t.done ? 0 : 1 } : t)));
     }
   };
 

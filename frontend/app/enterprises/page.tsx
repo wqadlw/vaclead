@@ -183,7 +183,25 @@ export default function EnterprisesPage() {
     });
   }, [loadTrash]);
   const [applied, setApplied] = useState<Filters>(initFromUrl);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState<number>(() => {
+    if (typeof window === "undefined") return 1;
+    return Number(new URLSearchParams(window.location.search).get("page") ?? 1) || 1;
+  });
+  // SPEC-UX（attio views 惯例）：筛选+页码同步 URL——可分享/收藏/刷新返回不丢。
+  // initFromUrl 只在挂载跑一次，replace 静默写 URL 不触发数据重拉。
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams();
+    for (const [k, v] of Object.entries(applied)) {
+      if (v == null || v === "" || (k === "is_competitor" && Number(v) === -1)) continue;
+      sp.set(k, String(v));
+    }
+    if (page > 1) sp.set("page", String(page));
+    const qs = sp.toString();
+    if (window.location.search !== (qs ? `?${qs}` : "")) {
+      window.history.replaceState(null, "", qs ? `/enterprises?${qs}` : "/enterprises");
+    }
+  }, [applied, page]);
   const [data, setData] = useState<PageData<Enterprise> | null>(null);
   const [loading, setLoading] = useState(false);
   const fetchSeq = useRef(0);

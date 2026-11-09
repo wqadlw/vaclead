@@ -409,7 +409,7 @@ function IntelInner() {
     <AppShell>
       {/* 返回 + 头部档案条 */}
       <button
-        onClick={() => router.push("/enterprises")}
+        onClick={() => router.back()}
         className="-ml-2 flex cursor-pointer items-center gap-1 rounded border-0 bg-transparent px-2 py-2.5 text-[13px] text-[var(--muted)] hover:bg-[var(--raised)] hover:text-[var(--accent)]"
       >
         <ArrowLeft size={14} /> 返回企业列表
