@@ -263,7 +263,8 @@ def build_segments(session: Session) -> dict:
       "pending") 的"非未触达"判定完全等价；一次 join+group 聚合不逐企业回查。
     - by_industry：industry_key 计数、名称取 industry_name，value desc ×8。
     - by_province：省份 Top8（city→省 回填后的 province 列）。
-    - by_stage：Lead.status 分组计数，仅统计未删除企业下的线索。
+    - by_stage：Lead.status 分组计数，仅统计未删除企业下的线索；项带 key
+      （状态原键，SPEC-SEG 下钻 v2 → /leads?status=<key>）。
     """
     # ---- total：在管企业总数 ----
     total = (
@@ -366,13 +367,15 @@ def build_segments(session: Session) -> dict:
         .all()
     )
     by_status = {str(st): int(cnt) for st, cnt in stage_rows}
+    # SPEC-SEG 下钻 v2：by_stage 项带 key（状态原键）——reports 页管线卡
+    # 下钻拼 /leads?status=<key> 用，中文标签与状态键解耦
     by_stage = [
-        {"name": LEAD_STAGE_LABELS[s], "value": by_status.get(s, 0)}
+        {"name": LEAD_STAGE_LABELS[s], "value": by_status.get(s, 0), "key": s}
         for s in _LEAD_STAGE_ORDER
     ]
     # 防御：域外状态（不应发生，status 为受控枚举）原样呈现不丢数
     by_stage += [
-        {"name": str(st), "value": cnt}
+        {"name": str(st), "value": cnt, "key": str(st)}
         for st, cnt in sorted(stage_rows, key=lambda r: str(r[0]))
         if str(st) not in LEAD_STAGE_LABELS
     ]

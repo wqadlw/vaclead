@@ -78,6 +78,9 @@ def list_enterprises(
     tag: str | None = None,
     customer_role: str | None = None,
     call_status: str | None = None,
+    # SPEC-SEG 下钻 v2：意图分层区间（reports 页意图三卡下钻参数化）
+    intent_min: int | None = None,
+    intent_max: int | None = None,
     page: int = 1,
     page_size: int = 20,
     facets: int = 0,
@@ -85,14 +88,21 @@ def list_enterprises(
     user: User = Depends(current_user),
 ):
     # SPEC-M M2：新维度（成立年限/中标力）只支持 SQLite 路径——带参时跳过 Meili，
-    # 保证 total/分页语义正确（Meili 投影不含这两列）
-    sqlite_only = bool(established_within_years or bid_min or bid_amount_min or complete or tag or customer_role or call_status)
+    # 保证 total/分页语义正确（Meili 投影不含这两列）。
+    # SPEC-SEG 下钻 v2：intent_min/intent_max（Meili 无 intent_score 过滤字段）
+    # 与 has_contact=2（反向半连接，Meili 页内后过滤表达不了 NOT IN）同样强制 SQLite。
+    sqlite_only = bool(
+        established_within_years or bid_min or bid_amount_min or complete or tag
+        or customer_role or call_status
+        or intent_min is not None or intent_max is not None or has_contact == 2
+    )
     # Quick picks（gmaps-scraper 模式）：has_contact=1 → 只看有可拨打联系人的企业。
     # SPEC-I I5：不再物化全量 id 列表（limit(5000) 会静默漏企业）——
     # SQLite 路径走 IN 子查询半连接；Meili 路径只对当前页 id 做存活过滤。
-    if has_contact:
-        from ..models import Contact
-
+    # SPEC-SEG 下钻 v2：早退仅适用 =1（=2 无号码时联系人表为空反而全库命中）
+    # （Contact 已模块级导入，函数内不再局部 import——局部导入会把名字变成
+    # 函数局部变量，后面 SQLite 半连接处未绑定即用会 UnboundLocalError）
+    if has_contact == 1:
         if session.query(Contact.id).limit(1).scalar() is None:
             return {"items": [], "total": 0, "page": page, "page_size": page_size}
     # Meili 优先（毫秒级组合筛选+分面）；不可用回退 SQLite LIKE 路径
@@ -117,12 +127,15 @@ def list_enterprises(
                 ids = [it["id"] for it in r["items"]]
                 rows = {e.id: e for e in session.query(Enterprise).filter(Enterprise.id.in_(ids)).all()}
                 if has_contact:
-                    from ..models import Contact
-
+                    # SPEC-SEG 下钻 v2：与 SQLite 路径同口径——"有号码"按
+                    # phones_json 非空联系人判定（=2 已强制走 SQLite，到不了这）
                     allow = {
                         int(r[0])
                         for r in session.query(Contact.enterprise_id)
-                        .filter(Contact.enterprise_id.in_(ids))
+                        .filter(
+                            Contact.enterprise_id.in_(ids),
+                            Contact.phones_json != "[]",
+                        )
                         .distinct()
                     }
                     rows = {eid: e for eid, e in rows.items() if eid in allow}
@@ -180,10 +193,26 @@ def list_enterprises(
                     select(_C.enterprise_id).where(_C.call_result != "pending")
                 )
             )
-    if has_contact:
-        from ..models import Contact
-
-        stmt = stmt.where(Enterprise.id.in_(select(Contact.enterprise_id)))
+    # SPEC-SEG 下钻 v2：has_contact 语义收敛到"可拨号码"半连接（与报表
+    # by_dial"有号码"同口径）——=1 有 phones_json 非空联系人；=2 无号码
+    # （与 =1 互补的反向半连接，SQLite 路径精确表达 NOT IN）
+    if has_contact == 1:
+        stmt = stmt.where(
+            Enterprise.id.in_(
+                select(Contact.enterprise_id).where(Contact.phones_json != "[]")
+            )
+        )
+    elif has_contact == 2:
+        stmt = stmt.where(
+            ~Enterprise.id.in_(
+                select(Contact.enterprise_id).where(Contact.phones_json != "[]")
+            )
+        )
+    # SPEC-SEG 下钻 v2：意图分层区间过滤（intent_score 数值列，闭区间）
+    if intent_min is not None:
+        stmt = stmt.where(Enterprise.intent_score >= intent_min)
+    if intent_max is not None:
+        stmt = stmt.where(Enterprise.intent_score <= intent_max)
     if industry_key:
         stmt = stmt.where(Enterprise.industry_key == industry_key)
     if province:

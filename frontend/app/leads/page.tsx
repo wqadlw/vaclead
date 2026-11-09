@@ -25,8 +25,16 @@ const KANBAN_STAGES = ["new", "following", "intent", "won", "pool"] as const;
 type ViewMode = "board" | "table" | "calendar";
 
 export default function LeadsPage() {
-  const [view, setView] = useState<ViewMode>("board");
-  const [tab, setTab] = useState<string>("following");
+  // SPEC-SEG 下钻 v2：reports 管线阶段卡下钻 /leads?status=<key> ——
+  // 状态页签从 URL 恢复（合法键才吃，防脏参）；带 status 落地时直接进
+  // 列表视图（看板不展示状态页签，下钻会看不到效果）
+  const urlStatus = (): string | null => {
+    if (typeof window === "undefined") return null;
+    const s = new URLSearchParams(window.location.search).get("status");
+    return s && [...MY_TABS, "at_risk"].includes(s) ? s : null;
+  };
+  const [view, setView] = useState<ViewMode>(() => (urlStatus() ? "table" : "board"));
+  const [tab, setTab] = useState<string>(() => urlStatus() ?? "following");
   const [data, setData] = useState<PageData<Lead> | null>(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);

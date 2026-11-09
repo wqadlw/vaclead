@@ -3,7 +3,7 @@
 /**
  * 报表中心（SPEC-O O1）：经营周报（页面/CSV/邮件三处共用同一 payload）。
  * 周切换 + KPI 环比卡 + 漏斗 + Top 标讯/Top 新客户两表。
- * SPEC-SEG：客户分层（意图/可触达性/行业/省份/管线阶段五切面，行业+省份下钻企业列表）。
+ * SPEC-SEG 下钻 v2：客户分层（意图/可触达性/行业/省份/管线阶段五切面，五卡全部可点下钻）。
  */
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -72,7 +72,7 @@ function SourceRoiTable() {
   );
 }
 
-/** SPEC-SEG：客户分层五切面（意图/可触达性/行业/省份/管线阶段；行业+省份点条下钻企业列表） */
+/** SPEC-SEG 下钻 v2：客户分层五切面（意图/可触达性/行业/省份/管线阶段，五卡全部可点下钻） */
 function SegmentsSection() {
   const router = useRouter();
   const [seg, setSeg] = useState<SegmentsData | null>(null);
@@ -87,9 +87,40 @@ function SegmentsSection() {
   // 端点未上线/字段缺失时全零兜底，渲染空态不炸
   const safe: SegmentsData = seg ?? { total: 0, by_intent: [], by_dial: [], by_industry: [], by_province: [], by_stage: [] };
   const industryKeyByName = new Map(safe.by_industry.map((b) => [b.name, b.key]));
+  const stageKeyByName = new Map(safe.by_stage.map((b) => [b.name, b.key]));
   const cards: { title: string; n: number; span2?: boolean; body: ReactNode }[] = [
-    { title: "意图分层", n: safe.by_intent.length, body: <BarList items={safe.by_intent} /> },
-    { title: "可触达性", n: safe.by_dial.length, body: <BarList items={safe.by_dial} /> },
+    {
+      title: "意图分层",
+      n: safe.by_intent.length,
+      body: (
+        <BarList
+          items={safe.by_intent}
+          onPick={(name) => {
+            // SPEC-SEG 下钻 v2：意图三档 → enterprises 意图区间筛选
+            //（name 与 reports.py 意图档名称精确耦合，改档名需同步）
+            if (name === "高意图 ≥60") router.push("/enterprises?intent_min=60");
+            else if (name === "中意图 30-59") router.push("/enterprises?intent_min=30&intent_max=59");
+            else if (name === "低意图 <30") router.push("/enterprises?intent_max=29");
+          }}
+        />
+      ),
+    },
+    {
+      title: "可触达性",
+      n: safe.by_dial.length,
+      body: (
+        <BarList
+          items={safe.by_dial}
+          onPick={(name) => {
+            // SPEC-SEG 下钻 v2：可触达三桶 → has_contact/call_status 组合
+            //（=1 有号码 / =2 无号码；untouched/touched 与后端 AZ1 同语义）
+            if (name === "有号码·未触达") router.push("/enterprises?has_contact=1&call_status=untouched");
+            else if (name === "有号码·已触达") router.push("/enterprises?has_contact=1&call_status=touched");
+            else if (name === "无号码") router.push("/enterprises?has_contact=2");
+          }}
+        />
+      ),
+    },
     {
       title: "行业 Top8",
       n: safe.by_industry.length,
@@ -113,7 +144,22 @@ function SegmentsSection() {
         />
       ),
     },
-    { title: "管线阶段", n: safe.by_stage.length, span2: true, body: <BarList items={safe.by_stage} /> },
+    {
+      title: "管线阶段",
+      n: safe.by_stage.length,
+      span2: true,
+      body: (
+        <BarList
+          items={safe.by_stage}
+          onPick={(name) => {
+            // SPEC-SEG 下钻 v2：管线阶段 → /leads?status=<状态原键>
+            //（后端 build_segments by_stage 项带 key 字段）
+            const key = stageKeyByName.get(name);
+            if (key) router.push(`/leads?status=${encodeURIComponent(key)}`);
+          }}
+        />
+      ),
+    },
   ];
 
   return (

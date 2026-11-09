@@ -77,6 +77,10 @@ interface Filters {
   source?: string;
   has_contact?: number;
   customer_role?: string;
+  /** SPEC-SEG 下钻 v2：意图分层区间 + 触达状态（reports 五卡下钻 URL 参数） */
+  intent_min?: number | null;
+  intent_max?: number | null;
+  call_status?: string;
 }
 
 const ESTABLISHED_OPTIONS = [
@@ -128,6 +132,13 @@ export default function EnterprisesPage() {
     if (hc) f.has_contact = Number(hc);
     const cr = sp.get("customer_role");
     if (cr) f.customer_role = cr;
+    // SPEC-SEG 下钻 v2：意图区间/触达状态从 URL 恢复（reports 五卡下钻落地）
+    const imn = sp.get("intent_min");
+    if (imn) f.intent_min = Number(imn);
+    const imx = sp.get("intent_max");
+    if (imx) f.intent_max = Number(imx);
+    const cs = sp.get("call_status");
+    if (cs) f.call_status = cs;
     const sm = sp.get("score_min");
     if (sm) f.score_min = Number(sm);
     const ey = sp.get("established_within_years");
@@ -222,6 +233,8 @@ export default function EnterprisesPage() {
     filters.city, filters.district, filters.capital_min, filters.capital_max,
     filters.signal_days, filters.score_min, filters.established_within_years,
     filters.bid_min, filters.bid_amount_min, filters.tag,
+    // SPEC-SEG 下钻 v2：下钻参数计入激活筛选数
+    filters.intent_min, filters.intent_max, filters.call_status,
     filters.is_competitor !== undefined && filters.is_competitor !== -1 ? 1 : null,
     filters.source,
   ].filter((v) => v !== null && v !== undefined && v !== "").length;
@@ -383,8 +396,12 @@ export default function EnterprisesPage() {
       if (f.tag) params.set("tag", f.tag);
       params.set("is_competitor", String(f.is_competitor));
       if (f.source) params.set("source", f.source);
-      if (f.has_contact) params.set("has_contact", "1");
+      // SPEC-SEG 下钻 v2：has_contact 透传原值（=1 有号码 / =2 无号码）
+      if (f.has_contact) params.set("has_contact", String(f.has_contact));
       if (f.customer_role) params.set("customer_role", f.customer_role);
+      if (typeof f.intent_min === "number") params.set("intent_min", String(f.intent_min));
+      if (typeof f.intent_max === "number") params.set("intent_max", String(f.intent_max));
+      if (f.call_status) params.set("call_status", f.call_status);
       params.set("page", String(p));
       params.set("page_size", String(PAGE_SIZE));
       const next = await api.get<PageData<Enterprise>>(`/api/enterprises?${params.toString()}`);
@@ -408,25 +425,10 @@ export default function EnterprisesPage() {
       .catch(() => undefined);
   }, []);
 
-  // URL 状态同步（吸收 twenty useSetViewInUrl）：筛选变化写入 query，可分享/刷新恢复
-  useEffect(() => {
-    const sp = new URLSearchParams();
-    if (applied.q?.trim()) sp.set("q", applied.q.trim());
-    if (applied.industry_key) sp.set("industry_key", applied.industry_key);
-    if (applied.province?.trim()) sp.set("province", applied.province.trim());
-    if (applied.city?.trim()) sp.set("city", applied.city.trim());
-    if (applied.source) sp.set("source", applied.source);
-    if (applied.has_contact) sp.set("has_contact", String(applied.has_contact));
-    if (applied.customer_role) sp.set("customer_role", applied.customer_role);
-    if (typeof applied.score_min === "number") sp.set("score_min", String(applied.score_min));
-    if (typeof applied.established_within_years === "number") sp.set("established_within_years", String(applied.established_within_years));
-    if (typeof applied.bid_min === "number") sp.set("bid_min", String(applied.bid_min));
-    if (typeof applied.bid_amount_min === "number") sp.set("bid_amount_min", String(applied.bid_amount_min));
-    if (applied.tag) sp.set("tag", applied.tag);
-    if (applied.is_competitor !== -1) sp.set("is_competitor", String(applied.is_competitor));
-    const qs = sp.toString();
-    window.history.replaceState(null, "", qs ? `/enterprises?${qs}` : "/enterprises");
-  }, [applied]);
+  // URL 状态同步统一由上方遍历 applied 的 SPEC-UX effect 承担（含页码与
+  // 全部筛选键）；旧版白名单式同步 effect 已删除——它在同一 [applied] 依赖
+  // 上后执行，会把遍历版写入的 intent_min/intent_max/call_status/页码等
+  // 键从 URL 抹掉（SPEC-SEG 下钻 v2 落地时实证：下钻参数刷新即丢）。
 
   const set = (patch: Partial<Filters>) => setFilters((prev) => ({ ...prev, ...patch }));
 

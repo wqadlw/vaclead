@@ -3,6 +3,8 @@
 覆盖：结构契约/空态不炸、intent 三档 60/30 边界精确切、by_dial 有号码未触达/
 已触达计数、industry key 计数与排序、province Top、by_stage 中文标签、
 软删企业不计数、401（无 token）。
+SPEC-SEG 下钻 v2：enterprises intent_min/max 区间边界、has_contact=1/2
+有无号码半连接（+call_status 组合）、by_stage 项 key 字段。
 
 并发语义：conftest 各模块 setdefault 自己的 VACLEAD_DB，但全量跑时"首个导入
 模块定库"——共享库里有其他模块的数据，故本文件一律用「基线(播种前) → 播种 →
@@ -203,6 +205,61 @@ def test_segments_province_and_stage(seeded):
     assert _delta(seeded, "by_stage", "意向") == 1
     assert _delta(seeded, "by_stage", "新线索") == 1
     assert _delta(seeded, "by_stage", "成交") == 1
+
+
+# ---------------- SPEC-SEG 下钻 v2：enterprises intent_min/max 区间边界 ----------------
+def _seed_names(client, headers, params: dict) -> set[str]:
+    """q=分层回归 圈定本文件种子族（FTS 未命中走 LIKE 兜底，均落种子名），
+    规避共享库其他模块数据干扰——断言只看种子族内成员。"""
+    r = client.get("/api/enterprises", headers=headers, params={"q": "分层回归", **params})
+    assert r.status_code == 200, r.text
+    return {i["name"] for i in r.json()["items"]}
+
+
+def test_enterprises_intent_min_max_boundaries(client, admin_headers, seeded):
+    hi = "分层回归高意图半导体有限公司"      # intent=60
+    mid = "分层回归中意半导体有限公司"      # intent=59
+    mid2 = "分层回归边界三十机械有限公司"    # intent=30
+    low = "分层回归低意图新材料有限公司"     # intent=10
+    # 不带区间：四家种子全出（对照，证明过滤生效而非 q 漏召）
+    assert _seed_names(client, admin_headers, {}) == {hi, mid, mid2, low}
+    # intent_min=60：≥60 含边界 60，不含 59
+    assert _seed_names(client, admin_headers, {"intent_min": "60"}) == {hi}
+    # intent_min=30 & intent_max=59：中意图闭区间 [30, 59]
+    assert _seed_names(client, admin_headers, {"intent_min": "30", "intent_max": "59"}) == {mid, mid2}
+    # intent_max=29：低意图（<30 档的下钻参数）
+    assert _seed_names(client, admin_headers, {"intent_max": "29"}) == {low}
+
+
+# ---------------- SPEC-SEG 下钻 v2：has_contact=1/2 有无号码半连接 ----------------
+def test_enterprises_has_contact_buckets(client, admin_headers, seeded):
+    hi = "分层回归高意图半导体有限公司"      # 有号码联系人 call_result=connected
+    mid = "分层回归中意半导体有限公司"      # 有号码联系人 call_result=pending
+    mid2 = "分层回归边界三十机械有限公司"    # 无联系人
+    low = "分层回归低意图新材料有限公司"     # 无联系人
+    # =1 有号码：phones_json 非空联系人半连接（与报表 by_dial"有号码"同口径）
+    assert _seed_names(client, admin_headers, {"has_contact": "1"}) == {hi, mid}
+    # =2 无号码：与 =1 互补的反向半连接
+    assert _seed_names(client, admin_headers, {"has_contact": "2"}) == {mid2, low}
+    # 下钻组合：=1 × call_status（AZ1 语义 untouched/touched）
+    assert _seed_names(client, admin_headers, {"has_contact": "1", "call_status": "untouched"}) == {mid}
+    assert _seed_names(client, admin_headers, {"has_contact": "1", "call_status": "touched"}) == {hi}
+    # =2 与 untouched 互斥（无号码企业不可能落在"有号码未触达"桶）
+    assert _seed_names(client, admin_headers, {"has_contact": "2", "call_status": "untouched"}) == set()
+
+
+# ---------------- SPEC-SEG 下钻 v2：by_stage 项带 key（状态原键） ----------------
+def test_segments_by_stage_key_field(client, admin_headers):
+    d = _segments(client, admin_headers)
+    # key 与状态原键一一对应（顺序同 _LEAD_STAGE_ORDER），供 /leads?status= 下钻
+    assert [s["key"] for s in d["by_stage"]] == [
+        "new", "following", "intent", "won", "pool", "lost"
+    ]
+    # name 仍是中文标签，value 非负
+    assert [s["name"] for s in d["by_stage"]] == [
+        "新线索", "跟进中", "意向", "成交", "公海", "放弃"
+    ]
+    assert all(s["value"] >= 0 for s in d["by_stage"])
 
 
 # ---------------- 软删企业不计入（全局口径，SPEC-AM AM1） ----------------
