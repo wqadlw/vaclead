@@ -907,6 +907,15 @@ export default function DashboardPage() {
               </div>
             )}
           </section>
+        </>)}
+        </div>
+      </div>
+
+      {/* 分析卡阵（两列）+ 最新信号侧栏：PC 端左右平衡（旧版六卡全挤 360px 侧栏、
+          左列仅一张趋势卡 → 左侧大片空白实锤 2026-11-10） */}
+      <div className="mt-5 grid grid-cols-1 items-start gap-6 xl:grid-cols-[1fr_360px]">
+        {vis("analytics") && (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           {/* SPEC-N N4 本月业绩榜 */}
           <LeaderboardCard />
           <section className="rounded-lg border border-[var(--border)] bg-white p-4">
@@ -939,16 +948,8 @@ export default function DashboardPage() {
               }}
             />
           </section>
-        </>)}
         </div>
-      </div>
-
-      {/* 待跟进 + 最新信号 */}
-      <div className="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
-        <div>
-
-
-        </div>
+        )}
 
         {vis("signals") && (
         <aside>
