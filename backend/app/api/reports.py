@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from ..auth import admin_only, current_user
@@ -92,6 +92,17 @@ def _kpis(session: Session, lo: str, hi: str, prev_lo: str, prev_hi: str) -> lis
     return kpis
 
 
+#: Lead 状态中文标签（SPEC-SEG 1 by_stage 要求与 leads 页同源）——
+#: 与 frontend/lib/constants.ts 的 LEAD_STATUS 完全一致（grep 同源核对）；
+#: 后端原先仅在 _funnel 内联过同一映射，此处提取为常量供 _funnel /
+#: build_segments 两处共用，避免口径漂移。
+LEAD_STAGE_LABELS: dict[str, str] = {
+    "new": "新线索", "following": "跟进中", "intent": "意向",
+    "won": "成交", "pool": "公海", "lost": "放弃",
+}
+_LEAD_STAGE_ORDER = ["new", "following", "intent", "won", "pool", "lost"]
+
+
 def _funnel(session: Session, lo: str, hi: str) -> list[dict]:
     """本周内"有动静"的线索状态分布（created 或 updated 落在窗口）。"""
     rows = (
@@ -103,11 +114,11 @@ def _funnel(session: Session, lo: str, hi: str) -> list[dict]:
         .group_by(Lead.status)
         .all()
     )
-    label = {"new": "新线索", "following": "跟进中", "intent": "意向",
-             "won": "成交", "pool": "公海", "lost": "放弃"}
-    order = ["new", "following", "intent", "won", "pool", "lost"]
     by = {str(r[0]): int(r[1]) for r in rows}
-    return [{"status": s, "label": label.get(s, s), "value": by.get(s, 0)} for s in order]
+    return [
+        {"status": s, "label": LEAD_STAGE_LABELS.get(s, s), "value": by.get(s, 0)}
+        for s in _LEAD_STAGE_ORDER
+    ]
 
 
 def _top_signals(session: Session, lo: str, hi: str, limit: int = 10) -> list[dict]:
@@ -234,6 +245,148 @@ def _radar_section(session: Session) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# SPEC-SEG 1：客户分层看板（意图/可触达性/行业/省份/管线阶段五切面，全局口径）
+# ---------------------------------------------------------------------------
+def build_segments(session: Session) -> dict:
+    """客户分层五切面（页面「客户分层」区块单一数据源，全部只读聚合零新表）。
+
+    口径（SPEC-SEG.md §1）：
+    - total：在管企业总数（deleted_at 软删由 db.py 全局 with_loader_criteria
+      自动剔除，本函数不再逐查询补条件——SPEC-AM AM1）。
+    - by_intent：三档切点 ≥60 / 30-59 / <30，与作战简报 intent_band 同口径
+      （brief._intent_band：≥60 high / ≥30 mid / else low）。
+    - by_dial：has_phone 沿 contacts 列表口径（load_phones 非空 → SQL 侧
+      等价 phones_json 非 "[]"/""，与 enterprises.py 的 Contact.phones_json
+      != "[]" 过滤同式）；"已触达"=该企业存在 call_result != "pending" 的
+      联系人——SQL 里 NULL 参与比较不成立，与 contacts._UNTOUCHED=(None,
+      "pending") 的"非未触达"判定完全等价；一次 join+group 聚合不逐企业回查。
+    - by_industry：industry_key 计数、名称取 industry_name，value desc ×8。
+    - by_province：省份 Top8（city→省 回填后的 province 列）。
+    - by_stage：Lead.status 分组计数，仅统计未删除企业下的线索。
+    """
+    # ---- total：在管企业总数 ----
+    total = (
+        session.query(func.count()).select_from(Enterprise).scalar() or 0
+    )
+
+    # ---- by_intent：三档（60/30 精确切，边界分属上一档） ----
+    intent_bands = [
+        ("高意图 ≥60", Enterprise.intent_score >= 60),
+        ("中意图 30-59", (Enterprise.intent_score >= 30) & (Enterprise.intent_score < 60)),
+        ("低意图 <30", Enterprise.intent_score < 30),
+    ]
+    by_intent = [
+        {
+            "name": name,
+            "value": session.query(func.count())
+            .select_from(Enterprise)
+            .filter(cond)
+            .scalar()
+            or 0,
+        }
+        for name, cond in intent_bands
+    ]
+
+    # ---- by_dial：一次 join 聚合（outerjoin 保住零联系人企业=无号码） ----
+    contact_rows = (
+        session.query(
+            Enterprise.id,
+            func.max(case((Contact.phones_json.notin_(("", "[]")), 1), else_=0))
+            .label("has_phone"),
+            func.max(
+                case(
+                    (
+                        Contact.call_result.isnot(None)
+                        & (Contact.call_result != "pending"),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("dialed"),
+        )
+        .outerjoin(Contact, Contact.enterprise_id == Enterprise.id)
+        .group_by(Enterprise.id)
+        .all()
+    )
+    untouched = dialed = no_phone = 0
+    for _eid, has_phone, dialed_flag in contact_rows:
+        if has_phone:
+            if dialed_flag:
+                dialed += 1
+            else:
+                untouched += 1
+        else:
+            no_phone += 1
+    by_dial = [
+        {"name": "有号码·未触达", "value": untouched},
+        {"name": "有号码·已触达", "value": dialed},
+        {"name": "无号码", "value": no_phone},
+    ]
+
+    # ---- by_industry：Top8（key 计数、名称取 industry_name；同 key 下
+    # 名称取 max 保证确定性） ----
+    industry_rows = (
+        session.query(
+            Enterprise.industry_key,
+            func.max(Enterprise.industry_name),
+            func.count(),
+        )
+        .filter(Enterprise.industry_key.isnot(None), Enterprise.industry_key != "")
+        .group_by(Enterprise.industry_key)
+        .order_by(func.count().desc(), Enterprise.industry_key)
+        .limit(8)
+        .all()
+    )
+    by_industry = [
+        {"name": name or key, "value": int(cnt), "key": key}
+        for key, name, cnt in industry_rows
+    ]
+
+    # ---- by_province：Top8 ----
+    province_rows = (
+        session.query(Enterprise.province, func.count())
+        .filter(Enterprise.province.isnot(None), Enterprise.province != "")
+        .group_by(Enterprise.province)
+        .order_by(func.count().desc(), Enterprise.province)
+        .limit(8)
+        .all()
+    )
+    by_province = [{"name": name, "value": int(cnt)} for name, cnt in province_rows]
+
+    # ---- by_stage：仅未删除企业下的线索（join Enterprise 自动吃全局软删
+    # 过滤；显式补 deleted_at 条件与本文件 _radar_section / contacts 列表
+    # 既有写法一致，双保险） ----
+    stage_rows = (
+        session.query(Lead.status, func.count())
+        .select_from(Lead)
+        .join(Enterprise, Lead.enterprise_id == Enterprise.id)
+        .filter(Enterprise.deleted_at.is_(None))
+        .group_by(Lead.status)
+        .all()
+    )
+    by_status = {str(st): int(cnt) for st, cnt in stage_rows}
+    by_stage = [
+        {"name": LEAD_STAGE_LABELS[s], "value": by_status.get(s, 0)}
+        for s in _LEAD_STAGE_ORDER
+    ]
+    # 防御：域外状态（不应发生，status 为受控枚举）原样呈现不丢数
+    by_stage += [
+        {"name": str(st), "value": cnt}
+        for st, cnt in sorted(stage_rows, key=lambda r: str(r[0]))
+        if str(st) not in LEAD_STAGE_LABELS
+    ]
+
+    return {
+        "total": total,
+        "by_intent": by_intent,
+        "by_dial": by_dial,
+        "by_industry": by_industry,
+        "by_province": by_province,
+        "by_stage": by_stage,
+    }
+
+
 def build_weekly(session: Session, offset: int = 0) -> dict:
     """周报单一数据源（页面/CSV/邮件共用）。
 
@@ -293,6 +446,15 @@ def weekly_report(
     user: User = Depends(current_user),
 ):
     return build_weekly(session, max(0, offset))
+
+
+@router.get("/reports/segments")
+def segments_report(
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """SPEC-SEG：客户分层看板数据（登录即可，全局口径）。"""
+    return build_segments(session)
 
 
 @router.get("/reports/weekly/export")

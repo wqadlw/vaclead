@@ -4,6 +4,34 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-09 · SPEC-SEG 落地：客户分层看板（第四次双子 Agent 并行）
+
+**定位**：管理视角客户资产结构一屏——意图三档/可触达性/行业 Top8/
+省份 Top8/管线阶段五个切面，全部复用 charts.tsx 现成组件（BarList/
+ProvinceBars 均带 onPick）。零新表。
+
+**交付**（docs/SPEC-SEG.md 契约先行）：
+- 后端：`GET /reports/segments`。口径全部与现有模块同源（防漂移）：
+  has_phone=load_phones 语义（notin_(("", "[]"))比 enterprises.py 的
+  != "[]" 更精确）；已触达=存在 call_result 非 pending/NULL 联系人
+  （SQL NULL 语义坑一次 outerjoin+max(case) 聚合）；intent 三档与
+  brief.py intent_band 同切点；LEAD_STAGE_LABELS 常量与前端
+  lib/constants.ts 同源并把 _funnel 内联映射改引常量（两处共用）
+- 前端：reports 页「客户分层」区块五卡（雷达动态下方），行业/省份卡
+  onPick 下钻 `/enterprises?industry_key=…/province=…`（Agent 摸底确认
+  initFromUrl 支持这两个 query 且有 dashboard 下钻先例才接通）
+- Agent 摸底红利：软删全局过滤在 db.py（非 SPEC 猜的 models.py）被
+  grep 纠正；种子 created_at 锚 2024 预防周报窗口污染（test_spec_o
+  同款踩坑主动免疫）
+
+**真库实弹**：total 27446；意图 高48/中214/低27184；可拨未触达 13662
+（与历史 known 13658 连续）；行业 Top3 医疗设备 4910/机械加工 4157/
+环保水务 3469；管线 新线索12/跟进10/意向8/成交4。（终端 print GBK
+乱码仅显示层，API UTF-8 正常——python 控制台输出中文一律走
+ensure_ascii 或写文件，别 print 裸中文 JSON。）
+
+**门禁**：build ✓ + 后端 383（+7）+ E2E 12 ✓ + 实弹六切面数据合理。
+
 ## 2026-11-09 · SPEC-IMP 落地：企业 CSV 上传导入向导（第三次双子 Agent 并行）
 
 **选型**：摸底发现粘贴导入已有 twenty spreadsheet-import 式两步向导

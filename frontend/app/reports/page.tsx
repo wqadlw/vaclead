@@ -3,11 +3,14 @@
 /**
  * 报表中心（SPEC-O O1）：经营周报（页面/CSV/邮件三处共用同一 payload）。
  * 周切换 + KPI 环比卡 + 漏斗 + Top 标讯/Top 新客户两表。
+ * SPEC-SEG：客户分层（意图/可触达性/行业/省份/管线阶段五切面，行业+省份下钻企业列表）。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { Button, Skeleton, Table, Tag } from "@douyinfe/semi-ui";
 import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import { BarList, ProvinceBars } from "@/components/charts";
 import { api } from "@/lib/api";
 
 interface Kpi { key: string; label: string; value: number; prev: number; delta: number | null }
@@ -25,6 +28,17 @@ interface FunnelRow { status: string; label: string; value: number }
 interface TopSignal { title: string; ent_name: string; type: string; amount_wan: number | null; pub_date: string | null; base_score: number }
 interface TopCustomer { ent_name: string; industry: string | null; grade: string | null; composite: number }
 interface RoiRow { source: string; leads: number; won: number; won_amount_wan: number; win_rate: number | null }
+
+/** SPEC-SEG：客户分层聚合（GET /api/reports/segments，全局口径） */
+interface SegmentBar { name: string; value: number; key?: string }
+interface SegmentsData {
+  total: number;
+  by_intent: SegmentBar[];
+  by_dial: SegmentBar[];
+  by_industry: SegmentBar[];
+  by_province: SegmentBar[];
+  by_stage: SegmentBar[];
+}
 
 const SOURCE_CN_ROI: Record<string, string> = {
   ggzy: "官方中标数据", ccgp: "政采网公告", ccgp_buyer: "政采买家",
@@ -57,6 +71,79 @@ function SourceRoiTable() {
     />
   );
 }
+
+/** SPEC-SEG：客户分层五切面（意图/可触达性/行业/省份/管线阶段；行业+省份点条下钻企业列表） */
+function SegmentsSection() {
+  const router = useRouter();
+  const [seg, setSeg] = useState<SegmentsData | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    api.get<SegmentsData>("/api/reports/segments")
+      .then(setSeg)
+      .catch(() => undefined)
+      .finally(() => setLoaded(true));
+  }, []);
+
+  // 端点未上线/字段缺失时全零兜底，渲染空态不炸
+  const safe: SegmentsData = seg ?? { total: 0, by_intent: [], by_dial: [], by_industry: [], by_province: [], by_stage: [] };
+  const industryKeyByName = new Map(safe.by_industry.map((b) => [b.name, b.key]));
+  const cards: { title: string; n: number; span2?: boolean; body: ReactNode }[] = [
+    { title: "意图分层", n: safe.by_intent.length, body: <BarList items={safe.by_intent} /> },
+    { title: "可触达性", n: safe.by_dial.length, body: <BarList items={safe.by_dial} /> },
+    {
+      title: "行业 Top8",
+      n: safe.by_industry.length,
+      body: (
+        <BarList
+          items={safe.by_industry}
+          onPick={(name) => {
+            const key = industryKeyByName.get(name);
+            if (key) router.push(`/enterprises?industry_key=${encodeURIComponent(key)}`);
+          }}
+        />
+      ),
+    },
+    {
+      title: "省份 Top8",
+      n: safe.by_province.length,
+      body: (
+        <ProvinceBars
+          items={safe.by_province.map((p) => ({ province: p.name, count: p.value }))}
+          onPick={(province) => router.push(`/enterprises?province=${encodeURIComponent(province)}`)}
+        />
+      ),
+    },
+    { title: "管线阶段", n: safe.by_stage.length, span2: true, body: <BarList items={safe.by_stage} /> },
+  ];
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-[15px] font-medium text-[var(--ink)]">客户分层</h2>
+        {seg && (
+          <span className="rounded-full bg-[var(--raised)] px-2.5 py-0.5 text-[11.5px] text-[var(--muted)]">
+            共 {seg.total.toLocaleString()} 家在管企业
+          </span>
+        )}
+      </div>
+      {!seg ? (
+        <div className="rounded-lg border border-[var(--border)] bg-white p-4 text-[13px] text-[var(--muted)]">
+          {loaded ? "暂无数据" : "加载中…"}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {cards.map((c) => (
+            <div key={c.title} className={`rounded-lg border border-[var(--border)] bg-white p-4 ${c.span2 ? "md:col-span-2" : ""}`}>
+              <div className="mb-3 text-[13.5px] font-medium text-[var(--ink)]">{c.title}</div>
+              {c.n > 0 ? c.body : <div className="text-[12.5px] text-[var(--muted)]">暂无数据</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 interface WeeklyReport {
   period: { start: string; end: string; label: string };
   kpis: Kpi[];
@@ -222,6 +309,9 @@ export default function ReportsPage() {
               </div>
             </section>
           )}
+
+          {/* SPEC-SEG：客户分层（五切面，行业/省份下钻） */}
+          <SegmentsSection />
 
           {/* 漏斗 */}
           <section className="rounded-lg border border-[var(--border)] bg-white p-4">
