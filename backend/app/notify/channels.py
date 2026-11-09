@@ -205,6 +205,20 @@ def _platform_base_url(session: Session) -> str:
     return (row.value if row and row.value else "http://127.0.0.1:8000").rstrip("/")
 
 
+def _webhook_url_for(session: Session, ref_type: str) -> str | None:
+    """按通知类型路由到不同群（SPEC-WH3 分群版）：
+
+    competitor_win → 竞对群（notify_webhook_competitor_url，老板看竞对动态）；
+    未配竞对群 → 落回默认群（notify_webhook_url）；其余一律默认群。"""
+    url_row = session.get(SettingsKV, "notify_webhook_url")
+    base_url = url_row.value if url_row else None
+    if ref_type == "competitor_win":
+        comp_row = session.get(SettingsKV, "notify_webhook_competitor_url")
+        if comp_row and comp_row.value:
+            return comp_row.value
+    return base_url
+
+
 def _deliver_webhook(session: Session, user_id: int, *, kind: str, title: str,
                      body: str, ref_type: str, ref_id: int) -> str:
     """群机器人渠道（SPEC-WH）：全局一个群，销售不打开平台群里就能看到新信号。
@@ -216,7 +230,7 @@ def _deliver_webhook(session: Session, user_id: int, *, kind: str, title: str,
     - 响应码非 0 → f"failed:{code}"；网络异常直接抛（notify_dispatch per-channel try 兜）
     """
     url_row = session.get(SettingsKV, "notify_webhook_url")
-    url = url_row.value if url_row else None
+    url = _webhook_url_for(session, ref_type)
     if not url:
         return "skipped:not-configured"
     dup = (

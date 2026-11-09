@@ -259,6 +259,7 @@ def get_notify_prefs(
             "type": _get(session, "notify_webhook_type") or "wecom",
             "configured": bool(wh_url),
             "platform_base_url": _get(session, "platform_base_url") or "",
+            "competitor_url": _mask_webhook_url(_get(session, "notify_webhook_competitor_url")) or "",
         },
     }
 
@@ -288,6 +289,7 @@ class NotifyWebhookIn(BaseModel):
     url: str
     type: str = "wecom"
     platform_base_url: str | None = None  # SPEC-WH v2：群消息跳转链接用（可选）
+    competitor_url: str | None = None  # SPEC-WH3：竞对中标分群（可选，""=清除）
 
 
 @router.put("/notify-webhook")
@@ -317,6 +319,8 @@ def put_notify_webhook(
         ("notify_webhook_type", body.type),
         # SPEC-WH v2：群消息跳转链接用（可选，空串=用缺省本地地址）
         ("platform_base_url", (body.platform_base_url or "").rstrip("/")),
+        # SPEC-WH3：竞对分群（可选，空串=清除竞对群落回默认群）
+        ("notify_webhook_competitor_url", body.competitor_url or ""),
     ):
         row = session.get(SettingsKV, key)
         if row is None:

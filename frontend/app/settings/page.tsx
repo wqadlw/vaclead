@@ -1345,6 +1345,7 @@ export default function SettingsPage() {
   const [whType, setWhType] = useState("wecom");
   const [whUrl, setWhUrl] = useState("");
   const [whBase, setWhBase] = useState("");
+  const [whCompUrl, setWhCompUrl] = useState("");
   const [whSaving, setWhSaving] = useState(false);
   const [whTesting, setWhTesting] = useState(false);
   // 当前登录角色（与 AppShell / competitors 页同源：localStorage）
@@ -1357,7 +1358,7 @@ export default function SettingsPage() {
         channels: { key: string; label: string; available: boolean }[];
         preferences: string[];
         /** SPEC-WH：群机器人配置（url 已脱敏）；后端并行上线中，容错可选 */
-        webhook?: { url: string; type: string; configured: boolean; platform_base_url?: string };
+        webhook?: { url: string; type: string; configured: boolean; platform_base_url?: string; competitor_url?: string };
       }>("/api/notify-preferences")
       .then((d) => {
         setNotifyChannels(d.channels);
@@ -1366,6 +1367,7 @@ export default function SettingsPage() {
           setWhUrl(d.webhook.url || "");
           if (d.webhook.type) setWhType(d.webhook.type);
           setWhBase(d.webhook.platform_base_url || "");
+          setWhCompUrl(d.webhook.competitor_url || "");
         }
       })
       .catch(() => undefined);
@@ -1389,7 +1391,7 @@ export default function SettingsPage() {
     }
     setWhSaving(true);
     try {
-      await api.put("/api/notify-webhook", { url: whUrl.trim(), type: whType, platform_base_url: whBase.trim() });
+      await api.put("/api/notify-webhook", { url: whUrl.trim(), type: whType, platform_base_url: whBase.trim(), competitor_url: whCompUrl.trim() });
       Toast.success("已保存，群里收测试消息试试");
       loadNotifyPrefs(); // 重拉 prefs：渠道列表 available 翻绿 + 回填脱敏 url
     } catch (e) {
@@ -1786,6 +1788,16 @@ export default function SettingsPage() {
                     value={whBase}
                     placeholder="http://127.0.0.1:8000"
                     onChange={setWhBase}
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 text-[12.5px] text-[var(--muted)]">
+                    竞对中标分群（可选）——竞对抢单动态单独推这个群（比如老板群），不填则全部进上面的默认群
+                  </div>
+                  <Input
+                    value={whCompUrl}
+                    placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…（可留空）"
+                    onChange={setWhCompUrl}
                   />
                 </div>
                 <div className="flex gap-2 pt-1">

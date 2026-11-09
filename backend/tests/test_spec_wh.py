@@ -95,7 +95,10 @@ def test_prefs_webhook_unconfigured_default(client, admin_headers):
     assert ch["webhook"]["available"] is False  # 未配置 → available=False
     # 其他渠道保持注册表 enabled 逻辑
     assert ch["in_app"]["available"] is True
-    assert d["webhook"] == {"url": None, "type": "wecom", "configured": False, "platform_base_url": ""}
+    assert d["webhook"] == {
+        "url": None, "type": "wecom", "configured": False,
+        "platform_base_url": "", "competitor_url": "",
+    }
 
 
 # ---------------- payload 三格式 + 出站参数 ----------------
@@ -279,3 +282,52 @@ def test_post_webhook_test_endpoint(client, admin_headers, monkeypatch):
     r4 = client.post("/api/notify-webhook/test", headers=admin_headers)
     assert r4.status_code == 200
     assert r4.json() == {"ok": False, "detail": "skipped:not-configured"}
+
+
+COMP_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=" + "c" * 32
+
+
+def test_webhook_competitor_routing(client, monkeypatch):
+    """SPEC-WH3 分群路由：_deliver_webhook 按 ref_type 选群——
+    competitor_win → 竞对群；未配竞对群 → 落回默认群。"""
+    from app.db import SessionLocal
+    from app.models import SettingsKV
+    from app.notify.channels import _deliver_webhook
+
+    sent: list[str] = []
+
+    def fake_post(url, json=None, timeout=None, proxies=None, allow_redirects=False):
+        sent.append(url)
+        return _FakeResp({"errcode": 0})
+
+    monkeypatch.setattr(requests_mod, "post", fake_post)
+
+    def set_kv(s, key: str, value: str | None) -> None:
+        row = s.get(SettingsKV, key)
+        if row is None:
+            if value is not None:
+                s.add(SettingsKV(key=key, value=value))
+        else:
+            if value is None:
+                s.delete(row)
+            else:
+                row.value = value
+
+    with SessionLocal() as s:
+        _set_webhook(s, TEST_URL, "wecom")
+        set_kv(s, "notify_webhook_competitor_url", COMP_URL)
+        s.commit()
+        # 竞对 ref → 竞对群
+        r1 = _deliver(s, "competitor_win", 91001)
+        assert r1 == "ok"
+        assert sent[-1].endswith("c" * 32)
+        # 普通信号 → 默认群
+        r2 = _deliver(s, "signal", 91002)
+        assert r2 == "ok"
+        assert sent[-1].endswith("k" * 32)
+        # 清除竞对群 → 竞对 ref 落回默认群
+        set_kv(s, "notify_webhook_competitor_url", None)
+        s.commit()
+        r3 = _deliver(s, "competitor_win", 91003)
+        assert r3 == "ok"
+        assert sent[-1].endswith("k" * 32)
