@@ -252,7 +252,7 @@ export default function DashboardPage() {
   const [sum, setSum] = useState<SummaryData | null>(null);
   // SPEC-CC 晨检行：三雷达一数首屏快照
   const [radarStrip, setRadarStrip] = useState<{ competitor_wins_30d: number; proposals_window_now: number; contact_untouched: number } | null>(null);
-  const [health, setHealth] = useState<{ next_action?: { hint?: string } } | null>(null);
+  const [health, setHealth] = useState<{ next_action?: { action?: string; hint?: string } } | null>(null);
   const [todos, setTodos] = useState<TodoItem[]>([]);
   // 今日作战清单（SPEC-G G5）：四源合并排序
   const [myDay, setMyDay] = useState<
@@ -513,7 +513,17 @@ export default function DashboardPage() {
               cta: "去设置规则",
               href: "/settings",
             },
-          ].map((s) => (
+          ].concat(
+            health?.next_action?.action === "configure_amap"
+              ? [{
+                  step: 4,
+                  title: "解锁地图拓客",
+                  desc: "配一个高德 Key，客户地图按城市打点、POI 采集自动跑——设置页两分钟",
+                  cta: "去配置",
+                  href: "/settings",
+                }]
+              : [],
+          ).map((s) => (
             <a
               key={s.step}
               href={s.href}
@@ -992,4 +1002,4 @@ export default function DashboardPage() {
   );
 }
 
-type HealthData2 = { next_action?: { hint?: string } };
+type HealthData2 = { next_action?: { action?: string; hint?: string } };

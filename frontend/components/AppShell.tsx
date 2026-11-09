@@ -10,6 +10,7 @@ import {
   Database,
   FileText,
   Gauge,
+  GitCompare,
   Inbox,
   LogOut,
   Map,
@@ -55,7 +56,10 @@ const RADAR_NAV = [
   { href: "/outreach", label: "序列触达", icon: Send },
   { href: "/outreach/inbox", label: "收件箱", icon: Inbox },
 ];
-const TOOL_NAV = [{ href: "/products", label: "产品目录", icon: Package }];
+const TOOL_NAV = [
+  { href: "/products", label: "产品目录", icon: Package },
+  { href: "/compare", label: "企业对比", icon: GitCompare },  // 流程打磨：孤儿页收编（原仅 Toast 提示可及）
+];
 
 const NAV_GROUPS: {
   key: string;
