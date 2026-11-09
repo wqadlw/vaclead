@@ -6,11 +6,11 @@
  * 头部平台（Apollo/Revenue.io）daily call list 的对位形态。
  */
 import { useCallback, useEffect, useState } from "react";
-import { Button, Input, Select, SideSheet, Tag, Toast } from "@douyinfe/semi-ui";
+import { Button, Input, Modal, Select, Tag, Toast } from "@douyinfe/semi-ui";
 import { Download, Phone } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import LoadMoreSensor from "@/components/LoadMoreSensor";
-import CallResultTag from "@/components/CallResultTag";
+import CallResultTag, { CALL_RESULTS } from "@/components/CallResultTag";
 import { api } from "@/lib/api";
 
 interface ContactRow {
@@ -317,125 +317,148 @@ export default function ContactsPage() {
       </div>
 
       {/* SPEC-CH 通话驾驶舱：为什么现在打 / 怎么聊 / 动作区 */}
-      <SideSheet
-        title={prep ? `${prep.contact.name} · 通话准备` : "通话准备"}
+      {/* 通话驾驶舱：居中作战面板（2026-11-10 用户定稿弃侧边栏）——桌面双栏
+          （左情报右动作），移动端全站 Modal 兜底自动收窄单列 */}
+      <Modal
         visible={prepId !== null}
         onCancel={() => setPrepId(null)}
-        width={460}
-        bodyStyle={{ padding: "16px 20px" }}
+        footer={null}
+        closeOnEsc
+        width={920}
+        style={{ maxWidth: "calc(100vw - 24px)" }}
+        bodyStyle={{ padding: 0 }}
       >
         {prepLoading || !prep ? (
-          <div className="py-10 text-center text-[13px] text-[var(--muted)]">加载中…</div>
+          <div className="py-14 text-center text-[13px] text-[var(--muted)]">加载中…</div>
         ) : (
-          <div className="space-y-5">
-            {/* 企业档案行 */}
-            <div className="rounded-lg border border-[var(--border)] px-3.5 py-3">
-              <a href={`/enterprises/view?id=${prep.enterprise.id}`} className="text-[14.5px] font-medium text-[var(--accent)] hover:underline">
-                {prep.enterprise.name}
-              </a>
-              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12.5px] text-[var(--muted)]">
-                <Tag color="cyan" type="light" size="small">{ROLE_CN[prep.contact.role] ?? prep.contact.role}</Tag>
-                {prep.contact.decision_role === "decision_maker" && <Tag color="orange" type="light" size="small">决策链</Tag>}
-                {prep.contact.verify_state === "verified" && <Tag color="green" type="light" size="small">公告验证</Tag>}
-                <span>{[prep.enterprise.industry_name, prep.enterprise.province, prep.enterprise.city].filter(Boolean).join(" · ")}</span>
-                <span>· 意图 {prep.enterprise.intent_score}</span>
-              </div>
-            </div>
-
-            {/* 为什么现在打 */}
-            <div>
-              <div className="mb-1.5 text-[13px] font-medium text-[var(--ink)]">为什么现在打</div>
-              {prep.signals.length === 0 ? (
-                <div className="text-[12.5px] text-[var(--muted)]">暂无公开动态——可从企业近况切入</div>
-              ) : (
-                <div className="space-y-2">
-                  {prep.signals.map((s, i) => (
-                    <div key={i} className="border-l-2 border-[var(--accent)] pl-2.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] tabular-nums text-[var(--muted)]">{s.pub_date}</span>
-                        {s.url && (
-                          <a href={s.url} target="_blank" rel="noreferrer" className="text-[11px] text-[var(--accent)] hover:underline">原文 ↗</a>
-                        )}
-                      </div>
-                      <div className="text-[12.5px] leading-4 text-[var(--ink)]">{s.title}</div>
-                      {s.evidence && (
-                        <div className="text-[11.5px] leading-4 text-[var(--muted)]">{s.evidence.slice(0, 80)}</div>
-                      )}
-                    </div>
-                  ))}
+          <div className="min-w-0 overflow-hidden">
+            {/* 头部：人物区（姓名大字 + 电话即拨打） */}
+            <div className="flex min-w-0 max-w-full flex-col gap-3 overflow-hidden border-b border-[var(--border)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[19px] font-semibold text-[var(--ink)]">{prep.contact.name}</span>
+                  <Tag color="cyan" type="light" size="small">{ROLE_CN[prep.contact.role] ?? prep.contact.role}</Tag>
+                  {prep.contact.decision_role === "decision_maker" && <Tag color="orange" type="light" size="small">决策链</Tag>}
+                  {prep.contact.verify_state === "verified" && <Tag color="green" type="light" size="small">公告验证</Tag>}
+                  {prep.contact.call_result && prep.contact.call_result !== "pending" && (
+                    <Tag color="grey" type="light" size="small">
+                      {CALL_RESULTS.find((x) => x.key === prep.contact.call_result)?.label ?? "已拨"}
+                    </Tag>
+                  )}
                 </div>
-              )}
-            </div>
-
-            {/* 怎么聊 */}
-            <div>
-              <div className="mb-1.5 text-[13px] font-medium text-[var(--ink)]">怎么聊</div>
-              {prep.product_match ? (
-                <div className="rounded-lg bg-[var(--accent-weak,rgba(94,106,210,0.08))] px-3 py-2 text-[12.5px] leading-5 text-[var(--ink)]">
-                  「{prep.product_match}」适配其{prep.enterprise.industry_name ?? ""}工艺——从它现在的工序痛点切入，报型号与节能账。
-                </div>
-              ) : (
-                <div className="text-[12.5px] text-[var(--muted)]">
-                  暂无产品适配记录——通用开场：确认设备现状与真空工艺需求。
-                </div>
-              )}
-              {prep.last_followup && (
-                <div className="mt-1.5 text-[11.5px] text-[var(--muted)]">
-                  上次跟进（{prep.last_followup.created_at.replace("T", " ")}）：{prep.last_followup.content.slice(0, 50)}
-                </div>
-              )}
-            </div>
-
-            {/* 动作区 */}
-            <div className="rounded-lg border border-[var(--border)] px-3.5 py-3">
-              <div className="text-[13px] font-medium text-[var(--ink)]">动作</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                {prep.contact.phones[0] && (
-                  <a
-                    href={`tel:${prep.contact.phones[0]}`}
-                    className="flex h-9 items-center gap-1.5 rounded-lg bg-[#131416] px-4 text-[13.5px] font-medium text-white"
-                  >
-                    <Phone size={14} /> 拨打 {prep.contact.phones[0]}
+                <div className="mt-1 w-full min-w-0 break-all text-[12.5px] leading-5 text-[var(--muted)]">
+                  <a href={`/enterprises/view?id=${prep.enterprise.id}`} className="text-[var(--accent)] hover:underline">
+                    {prep.enterprise.name}
                   </a>
-                )}
-                <div onClick={(ev) => ev.stopPropagation()}>
-                  <CallResultTag
-                    result={(prep.contact.call_result as string) ?? "pending"}
-                    onChange={(r) => {
-                      void mark(prep.contact.id, r).then(() => {
-                        setPrep({ ...prep, contact: { ...prep.contact, call_result: r } });
-                      });
-                    }}
-                  />
+                  {" · "}{[prep.enterprise.industry_name, prep.enterprise.province, prep.enterprise.city].filter(Boolean).join(" · ")}
+                  {" · 意图 "}{prep.enterprise.intent_score}
                 </div>
               </div>
-              {prep.lead ? (
-                <div className="mt-3">
-                  <textarea
-                    value={fuText}
-                    onChange={(e) => setFuText(e.target.value)}
-                    placeholder="打完记一句：聊了什么/下一步…"
-                    rows={2}
-                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-[12.5px] outline-none focus:border-[var(--accent)]"
-                  />
-                  <div className="mt-1.5 flex justify-end">
-                    <Button size="small" theme="solid" loading={fuBusy} disabled={!fuText.trim()} onClick={() => void submitFollowup()}>
-                      记跟进
-                    </Button>
+              {prep.contact.phones[0] && (
+                <a
+                  href={`tel:${prep.contact.phones[0]}`}
+                  className="flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#131416] px-5 text-[14px] font-medium text-white transition-opacity active:opacity-70"
+                >
+                  <Phone size={15} /> 拨打 {prep.contact.phones[0]}
+                </a>
+              )}
+            </div>
+
+            {/* 双栏：左情报（为什么现在打 + 怎么聊）/ 右动作（快标 + 跟进 + 转线索） */}
+            <div className="grid grid-cols-1 gap-0 md:grid-cols-[1fr_280px]">
+              <div className="space-y-5 px-5 py-4 md:border-r md:border-[var(--border)]">
+                {/* 为什么现在打 */}
+                <div>
+                  <div className="mb-2 text-[13.5px] font-medium text-[var(--ink)]">为什么现在打</div>
+                  {prep.signals.length === 0 ? (
+                    <div className="text-[12.5px] text-[var(--muted)]">暂无公开动态——可从企业近况切入</div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {prep.signals.map((s, i) => (
+                        <div key={i} className="border-l-2 border-[var(--accent)] pl-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] tabular-nums text-[var(--muted)]">{s.pub_date}</span>
+                            {s.url && (
+                              <a href={s.url} target="_blank" rel="noreferrer" className="text-[11px] text-[var(--accent)] hover:underline">原文 ↗</a>
+                            )}
+                          </div>
+                          <div className="text-[13px] leading-5 text-[var(--ink)]">{s.title}</div>
+                          {s.evidence && (
+                            <div className="text-[11.5px] leading-4 text-[var(--muted)]">{s.evidence.slice(0, 100)}</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 怎么聊 */}
+                <div>
+                  <div className="mb-2 text-[13.5px] font-medium text-[var(--ink)]">怎么聊</div>
+                  {prep.product_match ? (
+                    <div className="rounded-lg bg-[var(--accent-weak,rgba(94,106,210,0.08))] px-3.5 py-2.5 text-[13px] leading-5 text-[var(--ink)]">
+                      「{prep.product_match}」适配其{prep.enterprise.industry_name ?? ""}工艺——从它现在的工序痛点切入，报型号与节能账。
+                    </div>
+                  ) : (
+                    <div className="text-[12.5px] text-[var(--muted)]">
+                      暂无产品适配记录——通用开场：确认设备现状与真空工艺需求。
+                    </div>
+                  )}
+                  {prep.last_followup && (
+                    <div className="mt-2 rounded-lg bg-[var(--raised)] px-3 py-2 text-[12px] leading-4 text-[var(--muted)]">
+                      上次跟进（{prep.last_followup.created_at.replace("T", " ").slice(0, 16)}）：{prep.last_followup.content.slice(0, 60)}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 动作栏 */}
+              <div className="border-t border-[var(--border)] bg-[var(--raised)] px-5 py-4 md:border-t-0">
+                <div className="text-[13px] font-medium text-[var(--ink)]">打完之后</div>
+                <div className="mt-2.5 flex items-center gap-2">
+                  <span className="text-[12px] text-[var(--muted)]">标记结果</span>
+                  <div onClick={(ev) => ev.stopPropagation()}>
+                    <CallResultTag
+                      result={(prep.contact.call_result as string) ?? "pending"}
+                      onChange={(r) => {
+                        void mark(prep.contact.id, r).then(() => {
+                          setPrep({ ...prep, contact: { ...prep.contact, call_result: r } });
+                        });
+                      }}
+                    />
                   </div>
                 </div>
-              ) : (
-                <div className="mt-3 flex items-center justify-between gap-2">
-                  <span className="text-[12px] text-[var(--muted)]">意向不错？转成线索开始正式跟进：</span>
-                  <Button size="small" theme="outline" onClick={() => void convertFromPrep()}>
-                    转线索
-                  </Button>
+                {prep.lead ? (
+                  <div className="mt-3">
+                    <textarea
+                      value={fuText}
+                      onChange={(e) => setFuText(e.target.value)}
+                      placeholder="打完记一句：聊了什么/下一步…"
+                      rows={4}
+                      className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-[12.5px] outline-none focus:border-[var(--accent)]"
+                    />
+                    <div className="mt-1.5 flex justify-end">
+                      <Button size="small" theme="solid" loading={fuBusy} disabled={!fuText.trim()} onClick={() => void submitFollowup()}>
+                        记跟进
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4">
+                    <p className="text-[12px] leading-5 text-[var(--muted)]">意向不错？转成线索开始正式跟进：</p>
+                    <Button size="small" theme="outline" className="!mt-2" onClick={() => void convertFromPrep()}>
+                      转为线索
+                    </Button>
+                  </div>
+                )}
+                <div className="mt-4 border-t border-[var(--border)] pt-3 text-[11.5px] leading-4 text-[var(--muted)]">
+                  挂断就标结果——推荐引擎按接通/空号自动调排序。
                 </div>
-              )}
+              </div>
             </div>
           </div>
         )}
-      </SideSheet>
+      </Modal>
     </AppShell>
   );
 }
