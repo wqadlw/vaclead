@@ -26,6 +26,16 @@ ROLE_CN_EXPORT: dict[str, str] = {
     "代理机构": "代理机构",
 }
 
+# SPEC-ORDER 表头排序白名单：前端传 order=键 / dir=asc|desc，服务端全库排序。
+# 只放行这四列——排序键必须映射到真实 ORM 列，杜绝 order_by 注入任意表达式。
+# 非法 order 值一律回退默认排序（icp desc, id desc），与旧行为逐字节一致。
+ORDER_COLS: dict[str, object] = {
+    "icp": Enterprise.icp_score,
+    "intent": Enterprise.intent_score,
+    "capital": Enterprise.registered_capital_wan,
+    "created": Enterprise.created_at,
+}
+
 
 def _iso_days_ago(days: int) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
@@ -81,6 +91,10 @@ def list_enterprises(
     # SPEC-SEG 下钻 v2：意图分层区间（reports 页意图三卡下钻参数化）
     intent_min: int | None = None,
     intent_max: int | None = None,
+    # SPEC-ORDER 表头服务端真排序：order=白名单键（icp/intent/capital/created），
+    # dir=asc/desc。order 为空时保持默认 icp desc, id desc（行为与旧版逐字节一致）。
+    order: str = "",
+    dir: str = "desc",
     page: int = 1,
     page_size: int = 20,
     facets: int = 0,
@@ -95,6 +109,10 @@ def list_enterprises(
         established_within_years or bid_min or bid_amount_min or complete or tag
         or customer_role or call_status
         or intent_min is not None or intent_max is not None or has_contact == 2
+        # SPEC-ORDER：显式排序也强制 SQLite——Meili sortableAttributes 未含
+        # created_at（且双路径排序语义难保证逐字节一致），简单正确优先：
+        # 只要 order 非空（含非法值，同样会落到默认序）就走 SQLite 单一路径。
+        or bool(order)
     )
     # Quick picks（gmaps-scraper 模式）：has_contact=1 → 只看有可拨打联系人的企业。
     # SPEC-I I5：不再物化全量 id 列表（limit(5000) 会静默漏企业）——
@@ -283,10 +301,21 @@ def list_enterprises(
         )
 
     total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    # SPEC-ORDER：排序键白名单映射——order 空或非法值回退默认（icp desc, id desc，
+    # 与旧行为逐字节一致）；dir 仅认 "asc"，其余（含空串/非法）一律 desc。
+    # 稳定尾键 id desc 保证同值行分页不重不漏。
+    _sort_col = ORDER_COLS.get(order.strip().lower()) if order else None
+    if _sort_col is not None:
+        # NULL 恒排最后（实弹 2026-11-10：注册资本 asc 时未填值企业打头，
+        # 用户想看"最小的"却先看到一堆没填的——NULLS LAST 才符合直觉）
+        _sort_expr = (
+            _sort_col.asc().nulls_last() if dir.strip().lower() == "asc" else _sort_col.desc().nulls_last()
+        )
+        stmt = stmt.order_by(_sort_expr, Enterprise.id.desc())
+    else:
+        stmt = stmt.order_by(Enterprise.icp_score.desc(), Enterprise.id.desc())
     rows = session.scalars(
-        stmt.order_by(Enterprise.icp_score.desc(), Enterprise.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
+        stmt.offset((page - 1) * page_size).limit(page_size)
     ).all()
 
     ent_ids = [e.id for e in rows]

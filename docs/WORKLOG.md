@@ -4,6 +4,27 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-10 · 企业列表真排序（好用性第四轮：伪排序清账）
+
+**审查发现**：表头排序是**页内伪排序**（Semi sorter 比较函数只重排当前
+页 20 行——想看全库注册资本最大的，实际只重排本页，误导性强于没有）；
+后端列表 order_by 固定 icp desc。
+
+**交付**（Agent 单链路）：
+- 后端：`order/dir` 参数 + **ORDER_COLS 白名单**（icp/intent/capital/
+  created，非法值回退默认——注入测试 `1=1`/`DROP TABLE` 逐字节等于
+  不传参）；order 非空进 sqlite_only 集（Meili SORTABLE 不含这些字段）
+- 前端：三列表头 `sorter: true` 服务端模式 + **受控 sortOrder**（URL
+  直达时箭头与真实排序一致）；onChange 判 changeType 防分页事件误判；
+  排序随 applied 持久（翻页保持+URL 同步）
+- 实弹修正：**NULLS LAST**——asc 时注册资本未填企业打头（想看"最小的"
+  先看到一堆没填的），asc/desc 双向 nulls_last；复测 asc 前 5 全为
+  有值（180→300 万）
+- 门禁：后端 **393**（+7 含注入尝试用例）+ build + E2E 12 ✓
+
+**Agent 附带观察**：data-demo/demo.db.master mtime 变化=长驻 uvicorn
+进程写入（非测试污染），与既有认知一致不回滚。
+
 ## 2026-11-10 · "看了做不了"清账：KPI 五卡下钻（好用性第三轮）
 
 **审查线**：顺手度排查顺位——保存视图已有（saveView+chips 不重做）、

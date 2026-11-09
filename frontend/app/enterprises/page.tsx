@@ -81,6 +81,9 @@ interface Filters {
   intent_min?: number | null;
   intent_max?: number | null;
   call_status?: string;
+  /** SPEC-ORDER 表头服务端真排序：order=icp|intent|capital|created，dir=asc|desc（空=默认 icp desc） */
+  order?: string;
+  dir?: string;
 }
 
 const ESTABLISHED_OPTIONS = [
@@ -151,6 +154,11 @@ export default function EnterprisesPage() {
     if (cp) f.complete = Number(cp);
     const tg = sp.get("tag");
     if (tg) f.tag = tg;
+    // SPEC-ORDER：排序键/方向从 URL 恢复（分享/刷新返回排序不丢）
+    const od = sp.get("order");
+    if (od) f.order = od;
+    const dr = sp.get("dir");
+    if (dr) f.dir = dr;
     return f;
   };
   const [filters, setFilters] = useState<Filters>(initFromUrl);
@@ -369,6 +377,25 @@ export default function EnterprisesPage() {
     icp_score: "ICP", intent_score: "意图", signal_count: "信号", source: "来源", address: "地址",
   };
 
+  // SPEC-ORDER 表头服务端真排序：dataIndex → 后端 order 白名单键（须与
+  // app/api/enterprises.py 的 ORDER_COLS 一致，后端对非法值回退默认序）。
+  const SORT_KEY_BY_DATAINDEX: Record<string, string> = {
+    icp_score: "icp",
+    intent_score: "intent",
+    registered_capital_wan: "capital",
+  };
+  // 列排序配置：sorter:true（服务端模式，废除页内 20 行假排序）；sortOrder
+  // 受控跟随 applied——URL 直达 / 刷新 / 翻页后表头箭头与真实排序一致。
+  const serverSort = (key: string) => ({
+    sorter: true as const,
+    sortOrder:
+      applied.order === key
+        ? applied.dir === "asc"
+          ? ("ascend" as const)
+          : ("descend" as const)
+        : undefined,
+  });
+
   const fetchData = useCallback(async (f: Filters, p: number) => {
     // 请求序号守卫：挂载请求与点击筛选请求几乎同时发出时，慢的旧响应
     // 会覆盖新结果（E2E 旅程复现：筛选后仍显示未筛选计数）——只让最新请求落账
@@ -402,6 +429,9 @@ export default function EnterprisesPage() {
       if (typeof f.intent_min === "number") params.set("intent_min", String(f.intent_min));
       if (typeof f.intent_max === "number") params.set("intent_max", String(f.intent_max));
       if (f.call_status) params.set("call_status", f.call_status);
+      // SPEC-ORDER：表头排序透传后端（全库排序；order 空=默认 icp desc 不传参）
+      if (f.order) params.set("order", f.order);
+      if (f.order && f.dir) params.set("dir", f.dir);
       params.set("page", String(p));
       params.set("page_size", String(PAGE_SIZE));
       const next = await api.get<PageData<Enterprise>>(`/api/enterprises?${params.toString()}`);
@@ -688,6 +718,8 @@ export default function EnterprisesPage() {
       dataIndex: "registered_capital_wan",
       width: 150,
       align: "right" as const,
+      // SPEC-ORDER：服务端全库排序（capital），页内假排序已废除
+      ...serverSort("capital"),
       render: (v: number | null, r: Enterprise) => {
         const key = `registered_capital_wan:${r.id}`;
         if (editingKey === key) {
@@ -730,7 +762,8 @@ export default function EnterprisesPage() {
       dataIndex: "icp_score",
       width: 70,
       align: "right" as const,
-      sorter: (a: Enterprise, b: Enterprise) => a.icp_score - b.icp_score,
+      // SPEC-ORDER：服务端全库排序（icp），页内假排序已废除
+      ...serverSort("icp"),
       render: (v: number) => <span className="tabular-nums text-[var(--ink)]">{v}</span>,
     },
     {
@@ -738,7 +771,8 @@ export default function EnterprisesPage() {
       dataIndex: "intent_score",
       width: 70,
       align: "right" as const,
-      sorter: (a: Enterprise, b: Enterprise) => a.intent_score - b.intent_score,
+      // SPEC-ORDER：服务端全库排序（intent），页内假排序已废除
+      ...serverSort("intent"),
       render: (v: number) => (
         <span className={`tabular-nums ${v > 0 ? "font-medium text-[var(--accent)]" : "text-[#9ca0a3]"}`}>{v}</span>
       ),
@@ -1080,6 +1114,29 @@ export default function EnterprisesPage() {
             pageSize: PAGE_SIZE,
             total: data?.total ?? 0,
             onPageChange: (p: number) => setPage(p),
+          }}
+          onChange={(ci) => {
+            // SPEC-ORDER：表头排序 → 服务端全库排序。排序属于 applied 层（与
+            // "应用"按钮同语义：点表头立即生效、页码回 1，URL 同步 effect 自动
+            // 带上 order/dir）。只响应 changeType=sorter——分页/筛选事件也走
+            // 这个回调，不设防会把翻页误判成"取消排序"。
+            if (ci.extra?.changeType !== "sorter") return;
+            const s = ci.sorter;
+            const key = s?.dataIndex ? SORT_KEY_BY_DATAINDEX[String(s.dataIndex)] : undefined;
+            const so = s?.sortOrder;
+            if (!key || (so !== "ascend" && so !== "descend")) {
+              // 取消排序 / 非白名单列：order/dir 从 applied 移除（undefined 不写
+              // URL），回到默认序 icp desc
+              const next = { ...filters, order: undefined, dir: undefined };
+              setFilters(next);
+              setApplied(next);
+              setPage(1);
+              return;
+            }
+            const next = { ...filters, order: key, dir: so === "ascend" ? "asc" : "desc" };
+            setFilters(next);
+            setApplied(next);
+            setPage(1);
           }}
         />
         </div>
