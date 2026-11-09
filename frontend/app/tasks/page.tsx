@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button, Card, InputNumber, Progress, Select, Toast, Modal } from "@douyinfe/semi-ui";
 import { Building2, ClipboardPaste, CloudUpload, FileSpreadsheet, Globe2, Rocket, ScrollText } from "lucide-react";
 import AppShell from "@/components/AppShell";
@@ -18,6 +19,42 @@ const DONE_LABELS: Record<string, string> = {
   announcements: "公告",
   suppliers: "供应商",
 };
+
+/** SPEC-IMP：上传导入向导的目标字段选项（比粘贴路径多 established_at / legal_rep） */
+const UPLOAD_FIELDS: { value: string; label: string }[] = [
+  { value: "name", label: "企业名称（必填）" },
+  { value: "province", label: "省" },
+  { value: "city", label: "城市" },
+  { value: "district", label: "区县" },
+  { value: "address", label: "地址" },
+  { value: "business_scope", label: "经营范围" },
+  { value: "established_at", label: "成立日期" },
+  { value: "legal_rep", label: "法定代表人" },
+  { value: "registered_capital_wan", label: "注册资本(万)" },
+  { value: "industry_key", label: "行业键" },
+  { value: "skip", label: "忽略此列" },
+];
+
+interface ImportPreviewResp {
+  headers_raw?: string[];
+  headers_synonymized?: string[];
+  mapping_suggestion?: { col: number; field: string }[];
+  preview_rows?: Record<string, string>[];
+  total_rows?: number;
+  dup_preview?: { existing: number; new: number };
+}
+
+interface ImportSkippedDetail {
+  row: number;
+  reason: string;
+}
+
+interface ImportResultResp {
+  inserted?: number;
+  merged?: number;
+  skipped?: number;
+  skipped_details?: ImportSkippedDetail[];
+}
 
 function formatDone(summary: Record<string, unknown> | undefined): string {
   if (!summary || typeof summary !== "object") return "任务完成";
@@ -46,12 +83,26 @@ export default function TasksPage() {
   const [pasteStep, setPasteStep] = useState<1 | 2>(1);
   const [pasteHeaders, setPasteHeaders] = useState<string[]>([]);
   const [pasteMapping, setPasteMapping] = useState<{ col: number; field: string }[]>([]);
+  // 上传导入两步向导（SPEC-IMP）：选文件→preview→映射确认→导入
+  const [upOpen, setUpOpen] = useState(false);
+  const [upFile, setUpFile] = useState<File | null>(null);
+  const [upBusy, setUpBusy] = useState(false);
+  const [upConfirming, setUpConfirming] = useState(false);
+  const [upHeaders, setUpHeaders] = useState<string[]>([]);
+  const [upMapping, setUpMapping] = useState<{ col: number; field: string }[]>([]);
+  const [upPreviewRows, setUpPreviewRows] = useState<Record<string, string>[]>([]);
+  const [upTotalRows, setUpTotalRows] = useState(0);
+  const [upDup, setUpDup] = useState<{ existing: number; new: number } | null>(null);
+  const [upResult, setUpResult] = useState<{
+    inserted: number; merged: number; skipped: number; skipped_details: ImportSkippedDetail[];
+  } | null>(null);
   // 运行态
   const [starting, setStarting] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [taskId, setTaskId] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     api
@@ -272,13 +323,98 @@ export default function TasksPage() {
     }
   };
 
+  /** SPEC-IMP 第一步：企业 CSV 先走 preview（去重预演 + 映射建议），再弹向导确认 */
+  const startEnterpriseUpload = async (file: File) => {
+    setUpFile(file);
+    setUpOpen(true);
+    setUpResult(null);
+    setUpBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await api.post<ImportPreviewResp>("/api/import/enterprises/preview", fd);
+      const headers = res.headers_raw ?? [];
+      setUpHeaders(headers);
+      setUpMapping(
+        headers.map((_, i) => ({
+          col: i,
+          field:
+            res.mapping_suggestion?.find((m) => m.col === i)?.field ??
+            (i === 0 ? "name" : "skip"),
+        })),
+      );
+      setUpPreviewRows(res.preview_rows ?? []);
+      setUpTotalRows(res.total_rows ?? 0);
+      setUpDup(res.dup_preview ?? null);
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "解析文件失败");
+      closeUpWizard();
+    } finally {
+      setUpBusy(false);
+    }
+  };
+
+  /** SPEC-IMP 第二步：确认导入（file + 显式 mapping JSON，下标=列序） */
+  const confirmEnterpriseImport = async () => {
+    if (!upFile) return;
+    setUpConfirming(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", upFile);
+      const ordered = [...upMapping].sort((a, b) => a.col - b.col).map((m) => m.field);
+      fd.append("mapping", JSON.stringify(ordered));
+      const res = await api.post<ImportResultResp>("/api/import/enterprises", fd);
+      const inserted = res.inserted ?? 0;
+      const merged = res.merged ?? 0;
+      const skipped = res.skipped ?? 0;
+      const details = res.skipped_details ?? [];
+      Toast.success(`导入完成：新增 ${inserted} 家，合并 ${merged} 家，跳过 ${skipped} 家`);
+      setLogs((prev) => [...prev, `导入成功：${upFile.name}（新增 ${inserted}，合并 ${merged}，跳过 ${skipped}）`]);
+      if (details.length > 0) {
+        // 有跳过明细：弹窗停留展示（行号+原因），点「完成」再关
+        setUpResult({ inserted, merged, skipped, skipped_details: details });
+      } else {
+        finishEnterpriseImport();
+      }
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "导入失败");
+    } finally {
+      setUpConfirming(false);
+    }
+  };
+
+  const closeUpWizard = () => {
+    setUpOpen(false);
+    setUpFile(null);
+    setUpHeaders([]);
+    setUpMapping([]);
+    setUpPreviewRows([]);
+    setUpTotalRows(0);
+    setUpDup(null);
+    setUpResult(null);
+  };
+
+  const finishEnterpriseImport = () => {
+    closeUpWizard();
+    router.refresh();
+  };
+
+  /** Dropzone 分流：企业 CSV 走两步向导，招标 CSV 保持直传 */
+  const pickDropzoneFile = (file: File, kind: "enterprises" | "tenders") => {
+    if (kind === "enterprises") {
+      void startEnterpriseUpload(file);
+    } else {
+      void uploadCsv(file, kind);
+    }
+  };
+
   const Dropzone = ({ kind, title, hint }: { kind: "enterprises" | "tenders"; title: string; hint: string }) => (
     <label
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
         const f = e.dataTransfer.files?.[0];
-        if (f) void uploadCsv(f, kind);
+        if (f) pickDropzoneFile(f, kind);
       }}
       className="block border-[1.5px] border-dashed border-slate-200 hover:border-[color:var(--accent)] hover:bg-[color:var(--accent)]/5 rounded-xl px-4 py-5 text-center cursor-pointer transition-colors"
     >
@@ -288,7 +424,7 @@ export default function TasksPage() {
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) void uploadCsv(f, kind);
+          if (f) pickDropzoneFile(f, kind);
           e.currentTarget.value = "";
         }}
       />
@@ -297,6 +433,14 @@ export default function TasksPage() {
       <div className="text-[11.5px] text-slate-400 mt-1 leading-5">{hint}</div>
     </label>
   );
+
+  // 上传向导预览表的列 = 前 5 行字段按出现顺序去重（映射后字段横向展示）
+  const upPreviewCols: string[] = [];
+  for (const row of upPreviewRows.slice(0, 5)) {
+    for (const k of Object.keys(row)) {
+      if (!upPreviewCols.includes(k)) upPreviewCols.push(k);
+    }
+  }
 
   return (
     <AppShell>
@@ -574,6 +718,145 @@ export default function TasksPage() {
                 </Button>
                 <Button theme="solid" block loading={pasteBusy} onClick={() => void submitPaste()}>
                   确认并导入
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+      {/* 上传导入弹窗（SPEC-IMP：对齐粘贴向导的两步模式） */}
+      <Modal
+        title="上传导入企业"
+        visible={upOpen}
+        onCancel={() => (upResult ? finishEnterpriseImport() : closeUpWizard())}
+        footer={null}
+        width={640}
+      >
+        <div className="space-y-3 pt-1">
+          {/* 顶部：文件名 + 行数 + 去重预演徽章 */}
+          <div className="flex items-center flex-wrap gap-2">
+            <span
+              className="max-w-[260px] truncate text-[13px] font-medium text-[var(--ink)]"
+              title={upFile?.name ?? ""}
+            >
+              {upFile?.name ?? "（未选择文件）"}
+            </span>
+            <span className="text-[12px] text-[var(--muted)]">共 {upTotalRows} 行</span>
+            {upDup && (
+              <span className="ml-auto shrink-0 rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11.5px] text-amber-700">
+                库内已有 {upDup.existing} 家，将新增 {upDup.new} 家
+              </span>
+            )}
+          </div>
+
+          {upBusy ? (
+            <div className="py-10 text-center text-[12.5px] text-[var(--muted)]">正在解析文件…</div>
+          ) : upResult ? (
+            <>
+              <p className="text-[12.5px] leading-5 text-[var(--muted)]">
+                导入完成：新增 {upResult.inserted} 家，合并 {upResult.merged} 家，跳过 {upResult.skipped} 家。
+              </p>
+              <div>
+                <p className="mb-1.5 text-[12.5px] font-medium text-[var(--ink)]">
+                  跳过明细（{upResult.skipped_details.length} 条）
+                </p>
+                <div className="max-h-[200px] overflow-auto rounded-lg border border-[var(--border)]">
+                  {upResult.skipped_details.map((d, i) => (
+                    <div
+                      key={i}
+                      className={`flex items-start gap-2 px-3 py-1.5 text-[12px] leading-5 ${
+                        i > 0 ? "border-t border-[var(--border)]" : ""
+                      }`}
+                    >
+                      <span className="shrink-0 text-[var(--muted)]">第 {d.row} 行</span>
+                      <span className="text-[var(--ink)]">{d.reason}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <Button theme="solid" block onClick={finishEnterpriseImport}>
+                完成
+              </Button>
+            </>
+          ) : (
+            <>
+              <p className="text-[12.5px] leading-5 text-[var(--muted)]">
+                第 2 步：确认列映射（已按表头自动匹配，可调整；「忽略此列」的列不导入）。
+              </p>
+              <div className="max-h-[260px] space-y-2 overflow-auto">
+                {upHeaders.map((h, i) => {
+                  const field = upMapping.find((m) => m.col === i)?.field ?? "skip";
+                  return (
+                    <div key={i} className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2">
+                      <span className="w-28 shrink-0 truncate text-[12.5px] font-medium text-[var(--ink)]" title={h}>
+                        {h || `（第 ${i + 1} 列）`}
+                      </span>
+                      <span className="text-[var(--control)]">→</span>
+                      <Select
+                        size="small"
+                        style={{ flex: 1 }}
+                        value={field}
+                        optionList={UPLOAD_FIELDS}
+                        onChange={(v) =>
+                          setUpMapping((prev) => {
+                            const next = prev.filter((m) => m.col !== i);
+                            next.push({ col: i, field: v as string });
+                            return next;
+                          })
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              {upPreviewRows.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-[12px] text-[var(--muted)]">
+                    数据预览（按建议映射，前 {Math.min(upPreviewRows.length, 5)} 行，横向滚动查看）
+                  </p>
+                  <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+                    <table className="min-w-full text-[11.5px]">
+                      <thead>
+                        <tr className="bg-slate-50">
+                          {upPreviewCols.map((c) => (
+                            <th
+                              key={c}
+                              className="whitespace-nowrap border-b border-[var(--border)] px-2.5 py-1.5 text-left font-medium text-[var(--muted)]"
+                            >
+                              {c}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {upPreviewRows.slice(0, 5).map((row, ri) => (
+                          <tr key={ri}>
+                            {upPreviewCols.map((c) => (
+                              <td
+                                key={c}
+                                className="whitespace-nowrap border-b border-[var(--border)] px-2.5 py-1.5 text-[var(--ink)]"
+                              >
+                                {row[c] ?? ""}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button theme="light" block onClick={closeUpWizard}>
+                  取消
+                </Button>
+                <Button
+                  theme="solid"
+                  block
+                  loading={upConfirming}
+                  onClick={() => void confirmEnterpriseImport()}
+                >
+                  确认导入 {upTotalRows} 行
                 </Button>
               </div>
             </>

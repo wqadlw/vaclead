@@ -4,6 +4,36 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-09 · SPEC-IMP 落地：企业 CSV 上传导入向导（第三次双子 Agent 并行）
+
+**选型**：摸底发现粘贴导入已有 twenty spreadsheet-import 式两步向导
+（映射确认），但**上传路径裸直传**（Dropzone→/import/enterprises 零向导）
+——本轮对齐两路体验，直接服务"对照表 5271"批量入库。
+
+**交付**（docs/SPEC-IMP.md 契约先行）：
+- 后端：`POST /import/enterprises/preview`（delimiter 探测/表头同义词
+  归一/映射建议/首 5 行预览/**dup_preview 去重预演** name.in_ 单查询）；
+  正式导入增可选 Form `mapping`（显式列→字段，缺省同义词路径不破坏
+  旧调用）；行落库抽公共函数（粘贴/上传两路共用防漂移）；返回加
+  `skipped_details`（行号+原因 ≤10 条）
+- 前端：tasks 页 enterprises Dropzone 两步化（选文件→预览向导：
+  库内已有 X 家将新增 Y 家 amber 徽章 + 逐列映射 Select + 预览表 +
+  确认导入 + skipped 明细滚动区）；tenders 直传不动；确认 api.post
+  FormData 原生支持（lib/api.ts xhr isForm 分支）
+- Agent 契约偏离点（合理）：preview 用 csv.reader 解析（引号包裹含
+  逗号单元格正确展开，与 DictReader 对齐）；401/403 双断言；正式导入
+  不加 delimiter 探测（tab 源靠显式 mapping 兜住，避免引号转义回归）
+
+**真库实弹**（全流程走通）：构造 3 行中文表头 CSV → preview（"公司名称
+/省份/注册资本(万)"全命中同义词、dup 0/3）→ 带 mapping 正式导入
+（inserted 2 + skipped 1 + skipped_details 行号 4 精确）→ **清理测试
+企业防真库污染**（中文 query curl 编码损坏老坑复现→改 Python requests
+一次完成）。**教训固化：凡实弹导入测试，测完必清理**。
+
+**门禁**：build ✓ + 后端 376（+7）+ E2E 12 ✓。三次双子 Agent 并行
+（WH/BRF/IMP）流程稳定：SPEC 契约先行 → A 后端/B 前端零冲突 →
+主线程门禁+实弹+沉淀。
+
 ## 2026-11-09 · SPEC-BRF 落地：客户作战简报（打单前一页纸）
 
 **定位**：第十二次差距调研"AI 研究员"域的**确定性版**——不卡 GLM Key，

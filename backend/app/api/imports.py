@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import logging
 import math
 import re
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from urllib.parse import quote
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -238,6 +239,67 @@ _HEADER_SYNONYMS: dict[str, str] = {
 }
 
 
+def _import_headers(raw_fields: list[str], mapping: list[str] | None) -> list[str]:
+    """表头→目标字段归一公共函数（SPEC-IMP 1.2：两条入口共用一份行→字段逻辑）。
+
+    - 显式 mapping 存在时优先：列序=下标，"skip" 表示忽略该列（skip 键落不进
+      任何企业字段，dict(zip) 后自然被丢弃）；
+    - 缺省走 _HEADER_SYNONYMS 同义词归一：命中→字段名，未命中→保留原表头名
+      （落库时只读已知字段键，原名键自然忽略——与既有上传/粘贴路径语义一致）。
+    """
+    if mapping:
+        return list(mapping)
+    return [_HEADER_SYNONYMS.get(f.lower(), _HEADER_SYNONYMS.get(f, f)) for f in raw_fields]
+
+
+def _parse_mapping_form(mapping: str | None) -> list[str] | None:
+    """SPEC-IMP 1.2：multipart Form field `mapping` 解析（JSON 数组字符串）。
+
+    缺省/空串返回 None（走同义词路径）；非法 JSON 或非字符串数组 422。
+    """
+    if mapping is None or not mapping.strip():
+        return None
+    try:
+        parsed = json.loads(mapping)
+    except json.JSONDecodeError:
+        raise HTTPException(422, "mapping 需为 JSON 数组字符串")
+    if not isinstance(parsed, list) or not all(isinstance(x, str) for x in parsed):
+        raise HTTPException(422, "mapping 需为字符串数组")
+    return parsed
+
+
+def apply_enterprise_row_fields(session: Session, ent: Enterprise, row: dict, batch_id: str) -> None:
+    """行→企业字段落库公共函数（SPEC-IMP 1.2：粘贴/上传两条导入路径共用）。
+
+    约定：row 的键是归一后的目标字段名（name 已由调用方 resolve，不在此处理）。
+    语义与两条路径的既有行为对齐：文本字段非空覆盖；established_at/legal_rep
+    仅空值补填不覆盖；注册资本浮点容错（非数字静默跳过，SPEC 非目标）；
+    industry_key 命中行业表时补 industry_name；最后 ICP 重打分并 flush。
+    """
+    ent.source_batch_id = batch_id
+    for field in ("province", "city", "district", "address", "business_scope"):
+        if row.get(field):
+            setattr(ent, field, row[field])
+    if row.get("established_at") and not ent.established_at:
+        ent.established_at = str(row["established_at"])[:10]  # YYYY-MM-DD 前缀容错
+    if row.get("legal_rep") and not ent.legal_rep:
+        ent.legal_rep = row["legal_rep"]
+    if row.get("registered_capital_wan"):
+        try:
+            ent.registered_capital_wan = float(row["registered_capital_wan"])
+        except (TypeError, ValueError):
+            pass
+    provided_key = (row.get("industry_key") or "").strip()
+    if provided_key:
+        ent.industry_key = provided_key
+        for ind in downstream_industries():
+            if ind["key"] == provided_key:
+                ent.industry_name = ind["name"]
+                break
+    apply_icp(ent)
+    session.flush()
+
+
 @router.post("/import/paste")
 async def import_paste(
     body: PasteImportIn,
@@ -267,9 +329,8 @@ async def import_paste(
         skip_first = True  # 两种模式首行都是表头；confirm 的表头是前端回显的原文
     else:
         headers_raw = [h.strip() for h in header_line.split(delim)]
-        headers = [
-            _HEADER_SYNONYMS.get(h.lower(), _HEADER_SYNONYMS.get(h, "")) for h in headers_raw
-        ]
+        # SPEC-IMP 1.2：同义词归一走公共函数（未命中列保留原名键，落库时自然忽略）
+        headers = _import_headers(headers_raw, None)
         skip_first = False
 
     if "name" not in headers:
@@ -280,7 +341,7 @@ async def import_paste(
     for line in lines[1:]:
         cells = [c.strip() for c in line.split(delim)]
         row = dict(zip(headers, cells))
-        name = row.get("name", "")
+        name = (row.get("name") or "").strip()
         if not name:
             skipped += 1
             continue
@@ -289,27 +350,8 @@ async def import_paste(
             inserted += 1
         else:
             merged += 1
-        ent.source_batch_id = batch_id
-        for field in ("province", "city", "district", "address", "business_scope"):
-            if row.get(field):
-                setattr(ent, field, row[field])
-        if row.get("established_at") and not ent.established_at:
-            ent.established_at = row["established_at"][:10]  # YYYY-MM-DD 前缀容错
-        if row.get("legal_rep") and not ent.legal_rep:
-            ent.legal_rep = row["legal_rep"]
-        if row.get("registered_capital_wan"):
-            try:
-                ent.registered_capital_wan = float(row["registered_capital_wan"])
-            except ValueError:
-                pass
-        if row.get("industry_key"):
-            ent.industry_key = row["industry_key"]
-            for ind in downstream_industries():
-                if ind["key"] == row["industry_key"]:
-                    ent.industry_name = ind["name"]
-                    break
-        apply_icp(ent)
-        session.flush()
+        # SPEC-IMP 1.2：行→字段落库走公共函数（与上传路径共用一份逻辑）
+        apply_enterprise_row_fields(session, ent, row, batch_id)
     session.commit()
     try:
         from .. import search as meili
@@ -325,57 +367,127 @@ async def import_paste(
     }
 
 
+@router.post("/import/enterprises/preview")
+async def preview_import_enterprises(
+    file: UploadFile,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """企业 CSV 上传预演（SPEC-IMP 1.1）：选文件→映射确认前的探测接口。
+
+    返回：分隔符探测 / 原始表头 / 同义词归一表头 / 映射建议（首列兜底 name、
+    未命中列 skip）/ 按建议映射后的前 5 行预览 / 总数据行数 / 库内重名预演
+    （dup_preview：单查询 Enterprise.name.in_(names) 计数，不做逐行 resolve；
+    空名行不计入 existing，由正式导入按 skipped 落明细）。
+    """
+    raw = await file.read()
+    text_content = _decode_csv_bytes(raw)
+    lines = [ln for ln in text_content.splitlines() if ln.strip()]
+    if not lines:
+        raise HTTPException(422, "文件内容为空")
+
+    # 分隔符探测：与粘贴路径同规则（SPEC-IMP 1.1）——首行 Tab 数 ≥ 逗号数取 Tab
+    header_line = lines[0]
+    delim = "\t" if header_line.count("\t") >= header_line.count(",") else ","
+
+    # csv.reader 按探测分隔符解析（引号包裹的单元格正确展开；空行跳过）
+    parsed_rows = [
+        [c.strip() for c in r]
+        for r in csv.reader(io.StringIO(text_content), delimiter=delim)
+        if any(c.strip() for c in r)
+    ]
+    if not parsed_rows:
+        raise HTTPException(422, "CSV 需包含表头行")
+    headers_raw = parsed_rows[0]
+    data_rows = parsed_rows[1:]
+
+    # 同义词归一 + 映射建议：命中→字段；首列未命中→兜底 name；其余未命中→skip
+    headers_syn = [
+        _HEADER_SYNONYMS.get(h.lower(), _HEADER_SYNONYMS.get(h, "")) for h in headers_raw
+    ]
+    mapping_suggestion: list[dict] = []
+    for i, field in enumerate(headers_syn):
+        if field:
+            mapping_suggestion.append({"col": i, "field": field})
+        elif i == 0:
+            mapping_suggestion.append({"col": 0, "field": "name"})  # 首列兜底 name
+        else:
+            mapping_suggestion.append({"col": i, "field": "skip"})
+    col_field = {m["col"]: m["field"] for m in mapping_suggestion}
+
+    def _map_row(cells: list[str]) -> dict:
+        """按建议映射取一行（skip 列丢弃；越界列忽略）。"""
+        return {
+            field: cells[i]
+            for i, field in col_field.items()
+            if field != "skip" and i < len(cells)
+        }
+
+    # 首行预览（≤5 行）+ 全量行名收集（dup 预演用）
+    preview_rows: list[dict] = []
+    row_names: list[str] = []
+    for cells in data_rows:
+        mapped = _map_row(cells)
+        row_names.append((mapped.get("name") or "").strip())
+        if len(preview_rows) < 5:
+            preview_rows.append(mapped)
+
+    # dup_preview（SPEC-IMP 1.1）：一次 in_ 查询拿库内同名集合，再按行计数
+    nonempty_names = [n for n in row_names if n]
+    db_names: set[str] = set()
+    if nonempty_names:
+        db_names = {
+            r[0]
+            for r in session.query(Enterprise.name).filter(Enterprise.name.in_(nonempty_names)).all()
+        }
+    existing = sum(1 for n in row_names if n and n in db_names)
+    new_count = len(row_names) - existing  # 空名行计入 new 侧（正式导入按 skipped 处理）
+
+    return {
+        "detected_delimiter": delim,
+        "headers_raw": headers_raw,
+        "headers_synonymized": headers_syn,
+        "mapping_suggestion": mapping_suggestion,
+        "preview_rows": preview_rows,
+        "total_rows": len(data_rows),
+        "dup_preview": {"existing": existing, "new": new_count},
+    }
+
+
 @router.post("/import/enterprises")
 async def import_enterprises(
     file: UploadFile,
+    mapping: str | None = Form(None),  # SPEC-IMP 1.2：JSON 数组字符串，下标=列序
     session: Session = Depends(get_session),
     user: User = Depends(admin_only),
 ):
     raw = await file.read()
     text_content = _decode_csv_bytes(raw)
 
+    # SPEC-IMP 1.2：显式 mapping 优先（skip 列跳过）；缺省走 _HEADER_SYNONYMS 同义词路径
+    mapping_list = _parse_mapping_form(mapping)
+
     reader = csv.DictReader(io.StringIO(text_content))
-    # 表头同义词归一（SPEC-M：与粘贴路径同语义——此前上传路径只有英文表头能命中映射）
+    # 表头归一走公共函数（SPEC-M 同义词语义 + SPEC-IMP 1.2 显式 mapping，共用一份行→字段逻辑）
     raw_fields = reader.fieldnames or []
-    reader.fieldnames = [
-        _HEADER_SYNONYMS.get(f.lower(), _HEADER_SYNONYMS.get(f, f)) for f in raw_fields
-    ]
+    reader.fieldnames = _import_headers(raw_fields, mapping_list)
     inserted, merged, skipped = 0, 0, 0
+    skipped_details: list[dict] = []  # SPEC-IMP 1.2：无名称行明细（≤10 条）
     batch_id = uuid.uuid4().hex[:12]
-    for row in reader:
+    for row_no, row in enumerate(reader, start=2):  # 行号从 2 起算（表头=第 1 行）
         name = (row.get("name") or "").strip()
         if not name:
             skipped += 1
+            if len(skipped_details) < 10:
+                skipped_details.append({"row": row_no, "reason": "缺少企业名称"})
             continue
         ent, is_new = resolve_enterprise(session, name, source="csv")
         if is_new:
             inserted += 1
         else:
             merged += 1
-        ent.source_batch_id = batch_id
-        ent.province = row.get("province") or ent.province
-        ent.city = row.get("city") or ent.city
-        ent.district = row.get("district") or ent.district
-        ent.address = row.get("address") or ent.address
-        ent.business_scope = row.get("business_scope") or ent.business_scope
-        if row.get("established_at") and not ent.established_at:
-            ent.established_at = row["established_at"][:10]
-        if row.get("legal_rep") and not ent.legal_rep:
-            ent.legal_rep = row["legal_rep"]
-        if row.get("registered_capital_wan"):
-            try:
-                ent.registered_capital_wan = float(row["registered_capital_wan"])
-            except ValueError:
-                pass
-        provided_key = (row.get("industry_key") or "").strip()
-        if provided_key:
-            ent.industry_key = provided_key
-            for ind in downstream_industries():
-                if ind["key"] == provided_key:
-                    ent.industry_name = ind["name"]
-                    break
-        apply_icp(ent)
-        session.flush()
+        # SPEC-IMP 1.2：行→字段落库走公共函数（与粘贴路径共用）
+        apply_enterprise_row_fields(session, ent, row, batch_id)
     session.commit()
     # 检索投影：导入后全量同步（导入是批量操作，逐条增量反而慢）
     try:
@@ -386,7 +498,10 @@ async def import_enterprises(
             meili.sync_all(s2)
     except Exception:  # noqa: BLE001 — 检索层失败不影响导入结果（SQLite 为真源）
         logger.warning("导入后 Meili 同步失败，检索投影滞后", exc_info=True)
-    return {"inserted": inserted, "merged": merged, "skipped": skipped, "batch_id": batch_id}
+    return {
+        "inserted": inserted, "merged": merged, "skipped": skipped,
+        "skipped_details": skipped_details, "batch_id": batch_id,
+    }
 
 
 @router.post("/import/tenders")
