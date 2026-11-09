@@ -258,6 +258,7 @@ def get_notify_prefs(
             "url": _mask_webhook_url(wh_url),
             "type": _get(session, "notify_webhook_type") or "wecom",
             "configured": bool(wh_url),
+            "platform_base_url": _get(session, "platform_base_url") or "",
         },
     }
 
@@ -286,6 +287,7 @@ def put_notify_prefs(
 class NotifyWebhookIn(BaseModel):
     url: str
     type: str = "wecom"
+    platform_base_url: str | None = None  # SPEC-WH v2：群消息跳转链接用（可选）
 
 
 @router.put("/notify-webhook")
@@ -310,7 +312,12 @@ def put_notify_webhook(
         raise HTTPException(422, f"机器人域名须为官方地址（企微/钉钉/飞书），拒绝 {host or '空'}")
     if body.type not in WEBHOOK_TYPES:
         raise HTTPException(422, "type 须为 wecom/dingtalk/feishu")
-    for key, value in (("notify_webhook_url", body.url), ("notify_webhook_type", body.type)):
+    for key, value in (
+        ("notify_webhook_url", body.url),
+        ("notify_webhook_type", body.type),
+        # SPEC-WH v2：群消息跳转链接用（可选，空串=用缺省本地地址）
+        ("platform_base_url", (body.platform_base_url or "").rstrip("/")),
+    ):
         row = session.get(SettingsKV, key)
         if row is None:
             session.add(SettingsKV(key=key, value=value))

@@ -16,9 +16,10 @@ import logging
 import socket
 
 import requests
+from sqlalchemy import select as sa_select
 from sqlalchemy.orm import Session
 
-from ..models import Notification, SettingsKV, User, utcnow
+from ..models import Notification, SettingsKV, Signal, User, utcnow
 
 logger = logging.getLogger("vaclead.notify")
 
@@ -197,6 +198,13 @@ def _webhook_code(wh_type: str, data: dict) -> int:
     return int(data.get("code", 0) if wh_type == "feishu" else data.get("errcode", 0))
 
 
+def _platform_base_url(session: Session) -> str:
+    """平台访问地址（SPEC-WH v2：群消息带跳转链接——群里看到信号要能点进平台）。
+    settings_kv.platform_base_url，缺省本地地址。"""
+    row = session.get(SettingsKV, "platform_base_url")
+    return (row.value if row and row.value else "http://127.0.0.1:8000").rstrip("/")
+
+
 def _deliver_webhook(session: Session, user_id: int, *, kind: str, title: str,
                      body: str, ref_type: str, ref_id: int) -> str:
     """群机器人渠道（SPEC-WH）：全局一个群，销售不打开平台群里就能看到新信号。
@@ -204,6 +212,7 @@ def _deliver_webhook(session: Session, user_id: int, *, kind: str, title: str,
     - 未配置 URL → skipped:not-configured（渠道列表 available 跟随）
     - dedup：Notification 存在同 (ref_type, ref_id) 行 → skipped:duplicate
       （群消息不可轰炸；调用方水位防重之上再兜一层）
+    - 信号族消息尾带企业详情链接（群→平台动线闭环，SPEC-WH v2）
     - 响应码非 0 → f"failed:{code}"；网络异常直接抛（notify_dispatch per-channel try 兜）
     """
     url_row = session.get(SettingsKV, "notify_webhook_url")
@@ -221,7 +230,16 @@ def _deliver_webhook(session: Session, user_id: int, *, kind: str, title: str,
     if dup is not None:
         return "skipped:duplicate"
     wh_type = _webhook_type_of(session)
-    payload = _webhook_payload(wh_type, render_group_message(title, body), title)
+    msg = render_group_message(title, body)
+    # 信号族 → 附企业详情链接（ref_id=signal.id → Signal.enterprise_id）
+    if ref_type in ("signal", "sub_signal", "owner_signal", "competitor_win"):
+        row = session.execute(
+            sa_select(Signal.enterprise_id).where(Signal.id == ref_id)
+        ).first()
+        if row and row[0]:
+            base = _platform_base_url(session)
+            msg += f"\n[查看企业档案 →]({base}/enterprises/view?id={row[0]})"
+    payload = _webhook_payload(wh_type, msg, title)
     resp = _webhook_post(url, payload)
     code = _webhook_code(wh_type, resp.json())
     if code != 0:

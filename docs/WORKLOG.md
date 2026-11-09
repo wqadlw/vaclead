@@ -4,6 +4,24 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-10 · SPEC-WH v2：群→平台动线闭环 + contacts 骨架屏（好用性第六轮）
+
+**审查发现**：群机器人消息**没有链接**——销售在群里看到"中标：xxx"
+点不进平台，动线断在最后一步。补：
+
+1. **群消息带企业档案链接**：_deliver_webhook 信号族查 Signal→ent_id，
+   markdown 尾加 `[查看企业档案 →](base/enterprises/view?id=N)`；
+   base=settings_kv.platform_base_url（缺省本地，demo 部署填公网域名后
+   手机点开直达）——wecom/dingtalk markdown 均支持链接，feishu text
+   版本不带（纯文本渲染不了链接，留链接文本无害）
+2. **settings 配置卡加「平台访问地址」输入**（回填/保存随 webhook 一并），
+   PUT body 加可选 platform_base_url
+3. **contacts 骨架屏**：数据 3s+ 加载期渲染 4 条 animate-pulse 骨架卡
+   （纯 CSS，aria-hidden），替代白屏
+
+**门禁**：后端 397 全绿（webhook prefs 断言同步 +platform_base_url）+
+build ✓ + E2E 12 ✓ + 390 扫描 12 页双零 ✓。
+
 ## 2026-11-10 · SPEC-AMT：信号金额持久化 + 标讯金额真排序（好用性第五轮）
 
 **背景**：signals 页金额排序被 Mimosa 三次拦（对新增 execute(stmt) 模式

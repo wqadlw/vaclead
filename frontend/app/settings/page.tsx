@@ -1344,6 +1344,7 @@ export default function SettingsPage() {
   // SPEC-WH 群机器人配置（webhook 渠道，仅管理员可见）
   const [whType, setWhType] = useState("wecom");
   const [whUrl, setWhUrl] = useState("");
+  const [whBase, setWhBase] = useState("");
   const [whSaving, setWhSaving] = useState(false);
   const [whTesting, setWhTesting] = useState(false);
   // 当前登录角色（与 AppShell / competitors 页同源：localStorage）
@@ -1356,7 +1357,7 @@ export default function SettingsPage() {
         channels: { key: string; label: string; available: boolean }[];
         preferences: string[];
         /** SPEC-WH：群机器人配置（url 已脱敏）；后端并行上线中，容错可选 */
-        webhook?: { url: string; type: string; configured: boolean };
+        webhook?: { url: string; type: string; configured: boolean; platform_base_url?: string };
       }>("/api/notify-preferences")
       .then((d) => {
         setNotifyChannels(d.channels);
@@ -1364,6 +1365,7 @@ export default function SettingsPage() {
         if (d.webhook) {
           setWhUrl(d.webhook.url || "");
           if (d.webhook.type) setWhType(d.webhook.type);
+          setWhBase(d.webhook.platform_base_url || "");
         }
       })
       .catch(() => undefined);
@@ -1387,7 +1389,7 @@ export default function SettingsPage() {
     }
     setWhSaving(true);
     try {
-      await api.put("/api/notify-webhook", { url: whUrl.trim(), type: whType });
+      await api.put("/api/notify-webhook", { url: whUrl.trim(), type: whType, platform_base_url: whBase.trim() });
       Toast.success("已保存，群里收测试消息试试");
       loadNotifyPrefs(); // 重拉 prefs：渠道列表 available 翻绿 + 回填脱敏 url
     } catch (e) {
@@ -1774,6 +1776,16 @@ export default function SettingsPage() {
                           : "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…"
                     }
                     onChange={setWhUrl}
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 text-[12.5px] text-[var(--muted)]">
+                    平台访问地址（群消息里「查看企业档案」链接指向这里；手机上能点开就填公网地址）
+                  </div>
+                  <Input
+                    value={whBase}
+                    placeholder="http://127.0.0.1:8000"
+                    onChange={setWhBase}
                   />
                 </div>
                 <div className="flex gap-2 pt-1">

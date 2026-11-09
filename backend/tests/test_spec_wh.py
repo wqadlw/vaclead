@@ -95,7 +95,7 @@ def test_prefs_webhook_unconfigured_default(client, admin_headers):
     assert ch["webhook"]["available"] is False  # 未配置 → available=False
     # 其他渠道保持注册表 enabled 逻辑
     assert ch["in_app"]["available"] is True
-    assert d["webhook"] == {"url": None, "type": "wecom", "configured": False}
+    assert d["webhook"] == {"url": None, "type": "wecom", "configured": False, "platform_base_url": ""}
 
 
 # ---------------- payload 三格式 + 出站参数 ----------------

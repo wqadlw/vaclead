@@ -233,7 +233,19 @@ export default function ContactsPage() {
 
       {/* 拨打名单 */}
       <div className="mt-2.5 space-y-2">
-        {(data?.items ?? []).slice(0, visibleCount).map((c) => (
+        {!data && (
+          <div className="space-y-2" aria-hidden>
+            {/* SPEC-UX 骨架屏：数据 3s+ 加载期的空白感知（animate-pulse 纯 CSS） */}
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="animate-pulse rounded-lg border border-[var(--border)] bg-white px-4 py-3">
+                <div className="h-4 w-40 rounded bg-[var(--raised)]" />
+                <div className="mt-2 h-3.5 w-56 rounded bg-[var(--raised)]" />
+                <div className="mt-2 h-3 w-full max-w-[420px] rounded bg-[var(--raised)]" />
+              </div>
+            ))}
+          </div>
+        )}
+        {data && (data?.items ?? []).slice(0, visibleCount).map((c) => (
           <div
             key={c.id}
             className="cursor-pointer rounded-lg border border-[var(--border)] bg-white px-4 py-3 transition-colors hover:border-[var(--accent)]"
