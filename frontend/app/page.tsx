@@ -405,6 +405,7 @@ export default function DashboardPage() {
       delta: sum?.kpis.enterprises.delta ?? 0,
       spark: trendWindow,
       caption: "官方中标 + 政采 + 导入累积",
+      href: "/enterprises",
     },
     {
       label: "意图信号",
@@ -412,6 +413,7 @@ export default function DashboardPage() {
       delta: sum?.kpis.signals.delta ?? 0,
       spark: trendWindow,
       caption: "公告 × 设备词表命中",
+      href: "/signals",
     },
     {
       label: "线索",
@@ -419,6 +421,7 @@ export default function DashboardPage() {
       delta: sum?.kpis.leads.delta ?? 0,
       spark: [],
       caption: myLeadsCaption,
+      href: "/leads",
     },
     {
       label: "可联系联系人",
@@ -426,6 +429,7 @@ export default function DashboardPage() {
       delta: sum?.kpis.contacts.delta ?? 0,
       spark: [],
       caption: "政采公告法定公开联系方式",
+      href: "/contacts",
     },
     {
       label: "流失预警",
@@ -433,6 +437,7 @@ export default function DashboardPage() {
       delta: 0,
       spark: [],
       caption: "健康分<40 或已降级 · 每日 06:15 刷新",
+      href: "/leads?status=at_risk",
     },
   ];
 
@@ -588,11 +593,13 @@ export default function DashboardPage() {
         {kpis.map((k, i) => (
           <div
             key={k.label}
+            onClick={() => k.href && router.push(k.href)}
+            title={k.href ? `查看${k.label}` : undefined}
             className={`flex items-center justify-between gap-2 bg-white px-4 py-4 sm:px-5 ${
               i > 0 ? "border-l border-[var(--rule)]" : ""
             } ${i >= 2 ? "max-lg:border-t max-lg:border-[var(--rule)]" : ""} ${
               i === 2 || i === 4 ? "max-lg:border-l-0" : ""
-            }`}
+            } ${k.href ? "cursor-pointer transition-colors hover:bg-[var(--raised)]" : ""}`}
           >
             <div className="min-w-0">
               <div className="text-[13px] text-[var(--muted)]">{k.label}</div>
