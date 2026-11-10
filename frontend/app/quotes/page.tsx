@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button, Input, Modal, Select, SideSheet, Table, Tag, Toast } from "@douyinfe/semi-ui";
 import { Plus, Printer } from "lucide-react";
 import AppShell from "@/components/AppShell";
-import { api } from "@/lib/api";
+import { api, getToken } from "@/lib/api";
 
 interface QuoteItem {
   id?: number;
@@ -190,8 +190,15 @@ export default function QuotesPage() {
                   → {(STATUS_TAG[st] ?? { label: st }).label}
                 </Button>
               ))}
-              <Button icon={<Printer size={14} />} onClick={() => window.open(`/quotes/print?id=${detail.id}`, "_blank")}>
-                打印
+              <Button
+                icon={<Printer size={14} />}
+                onClick={() => {
+                  // SPEC-QTE：后端 A4 打印页（?token= 回退鉴权，proposal 同款）
+                  const qs = new URLSearchParams({ token: getToken() ?? "" });
+                  window.open(`/api/quotes/${detail.id}/print?${qs}`, "_blank");
+                }}
+              >
+                打印报价单
               </Button>
             </div>
           </div>

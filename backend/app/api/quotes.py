@@ -126,6 +126,57 @@ class QuoteIn(BaseModel):
     items: list[QuoteItemIn] = Field(default_factory=list, max_length=50)
 
 
+@router.get("/quotes/{qid}/print")
+def quote_print(
+    qid: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """报价单打印页（SPEC-QTE：客户视角 A4，浏览器 Ctrl+P / 另存 PDF）。
+    模式照抄 proposal_print；?token= 回退由 auth.current_user 统一支持。"""
+    from fastapi.responses import HTMLResponse
+
+    q = session.get(Quote, qid)
+    if q is None:
+        raise HTTPException(404, "报价单不存在")
+    p = _quote_payload(session, q)
+    rows_html = "".join(
+        f"<tr><td>{i + 1}</td><td>{it['name']}</td>"
+        f"<td>{(it.get('spec') or '')[:40]}</td><td class='num'>{it['qty']} {it['price_unit']}</td>"
+        f"<td class='num'>{it['price']:,.2f}</td><td class='num'>{it['subtotal']:,.2f}</td></tr>"
+        for i, it in enumerate(p["items"])
+    )
+    valid = p["valid_until"] or "—"
+    remark = p["remark"] or ""
+    html = f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>报价单 #{p['id']} · {p['enterprise_name'] or ''}</title><style>
+body{{font-family:"Microsoft YaHei","PingFang SC",sans-serif;color:#1a1a1a;margin:40px;font-size:14px}}
+h1{{font-size:20px;margin:0 0 4px}}.sub{{color:#666;font-size:12px;margin-bottom:18px}}
+.head{{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1b6c80;padding-bottom:10px;margin-bottom:16px}}
+.co{{font-size:16px;font-weight:700;color:#1b6c80}}.meta{{color:#666;font-size:12px;text-align:right}}
+table{{width:100%;border-collapse:collapse;margin-top:8px}}
+th,td{{border:1px solid #ddd;padding:7px 10px;text-align:left;font-size:13px}}
+th{{background:#f2f6f7;color:#444}}td.num{{text-align:right;font-variant-numeric:tabular-nums}}
+.total{{margin-top:14px;text-align:right;font-size:18px;font-weight:700}}.total span{{color:#1b6c80}}
+.note{{margin-top:10px;color:#555;font-size:12.5px;line-height:1.7}}
+.foot{{margin-top:26px;color:#888;font-size:11.5px}}
+@media print{{.noprint{{display:none}}}}</style></head><body>
+<div class="head">
+  <div><div class="co">昊志机械设备（山东）有限公司</div>
+  <div class="sub">工业真空系统解决方案 · 报价单</div></div>
+  <div class="meta">报价单编号：#{p['id']}<br>创建日期：{(p['created_at'] or '')[:10]}</div>
+</div>
+<div><b>客户：</b>{p['enterprise_name'] or '—'}</div>
+<div class="total">报价总额：<span>{p['total_wan']:,.2f}</span> 万元</div>
+<table><thead><tr><th>#</th><th>产品</th><th>规格</th><th>数量</th><th>单价(万)</th><th>小计(万)</th></tr></thead>
+<tbody>{rows_html}</tbody></table>
+<div class="note">{('有效期至 ' + valid + '。<br>') if valid != '—' else ''}{('备注：' + remark) if remark else ''}</div>
+<p class="foot">本报价由昊志机械设备（山东）有限公司出具 · 联系您的销售顾问获取选型计算书与安装方案</p>
+<p class="note noprint">打印：浏览器 Ctrl+P / 另存为 PDF（A4）· <a href="/quotes">← 返回报价单列表</a></p>
+</body></html>"""
+    return HTMLResponse(html)
+
+
 def _quote_payload(session: Session, q: Quote) -> dict:
     lead = session.get(Lead, q.lead_id)
     ent = session.get(Enterprise, lead.enterprise_id) if lead else None
