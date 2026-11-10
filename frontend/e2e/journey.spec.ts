@@ -90,3 +90,17 @@ test("完整销售旅程", async ({ page }) => {
   await page.getByPlaceholder(/搜企业 \/ 联系人 \/ 标讯/).fill("长晶");
   await expect(page.getByText("苏州长晶半导体有限公司").first()).toBeVisible();
 });
+
+// SPEC-CUX CUX1 键盘流：Enter 打开选中行驾驶舱，Esc 关闭（纯前端，无新端点）
+test("联系人中心键盘流：Enter 打开驾驶舱", async ({ page }) => {
+  await login(page);
+  await page.goto("/contacts");
+  await expect(page.getByText("今日拨打名单")).toBeVisible({ timeout: 15000 });
+  // 等首行列表渲染（tel: 拨号链即行内容）
+  await expect(page.locator('a[href^="tel:"]').first()).toBeVisible();
+  // 焦点在 body（非输入框）→ Enter 打开选中行（默认第 0 行）驾驶舱
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("为什么现在打")).toBeVisible({ timeout: 10000 });
+  await page.keyboard.press("Escape");
+  await expect(page.getByText("为什么现在打")).toBeHidden();
+});

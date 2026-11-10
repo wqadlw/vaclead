@@ -6,8 +6,8 @@
  * 头部平台（Apollo/Revenue.io）daily call list 的对位形态。
  */
 import { useCallback, useEffect, useState } from "react";
-import { Button, Input, Modal, Select, Tag, Toast } from "@douyinfe/semi-ui";
-import { Download, Phone } from "lucide-react";
+import { Button, Input, Modal, Select, Tag, Toast, Tooltip } from "@douyinfe/semi-ui";
+import { Download, Keyboard, Phone } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import LoadMoreSensor from "@/components/LoadMoreSensor";
 import CallResultTag, { CALL_RESULTS } from "@/components/CallResultTag";
@@ -59,6 +59,8 @@ interface PrepData {
   product_match: string | null;
   lead: { id: number; status: string; next_action: string | null; next_time: string } | null;
   last_followup: { content: string; created_at: string } | null;
+  /** SPEC-CUX CUX3 通话时间线：拨打 + 跟进合流（时间倒序） */
+  timeline?: { kind: "call" | "followup"; at: string; label?: string; content?: string }[];
 }
 
 interface Worklist {
@@ -89,11 +91,21 @@ export default function ContactsPage() {
   const [prepLoading, setPrepLoading] = useState(false);
   const [fuText, setFuText] = useState("");
   const [fuBusy, setFuBusy] = useState(false);
+  // SPEC-CUX CUX1 键盘流选中行（索引夹取见下方 effect）；CUX3 时间线折叠态
+  const [selIdx, setSelIdx] = useState(0);
+  const [tlOpen, setTlOpen] = useState(false);
+  // SPEC-CUX CUX2 排序切换：order 从 URL 挂载恢复（白名单校验，非法回退智能推荐）
+  const [order, setOrder] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const v = new URLSearchParams(window.location.search).get("order") ?? "";
+    return ["newest", "intent", "recent_called"].includes(v) ? v : "";
+  });
 
   const openPrep = async (cid: number) => {
     setPrepId(cid);
     setPrep(null);
     setFuText("");
+    setTlOpen(false);
     setPrepLoading(true);
     try {
       const d = await api.get<PrepData>(`/api/contacts/${cid}/prep`);
@@ -142,11 +154,25 @@ export default function ContactsPage() {
     if (decisionRole) p.set("decision_role", decisionRole);
     if (province) p.set("province", province);
     if (q.trim()) p.set("q", q.trim());
+    if (order) p.set("order", order);
     api.get<Worklist>(`/api/contacts?${p}`)
       .then((d) => { setData(d); setVisibleCount(30); })
       .catch(() => undefined);
-  }, [callStatus, decisionRole, province, q]);
+  }, [callStatus, decisionRole, province, q, order]);
   useEffect(load, [load]);
+
+  // SPEC-CUX CUX2：order 轻量同步 URL（replaceState 静默写，参照 enterprises 页惯例；
+  // 保留 search 里既有的其它参数，分享/刷新/返回排序不丢）
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    if (order) sp.set("order", order);
+    else sp.delete("order");
+    const qs = sp.toString();
+    if (window.location.search !== (qs ? `?${qs}` : "")) {
+      window.history.replaceState(null, "", qs ? `/contacts?${qs}` : "/contacts");
+    }
+  }, [order]);
 
   const mark = async (cid: number, result: string) => {
     setMarking(cid);
@@ -161,7 +187,48 @@ export default function ContactsPage() {
     }
   };
 
+  // SPEC-CUX CUX1 键盘流（Close 拨号器惯例）：J/K/↓/↑ 导航、Enter 打开选中行驾驶舱。
+  // 守卫照抄 KeyboardShortcuts 同款：输入框/文本域/下拉/按钮聚焦时全部跳过（不干扰打字）；
+  // 驾驶舱开着时让位（Esc 关闭已有），修饰键组合一律不劫持。
+  useEffect(() => {
+    const rows = data?.items.slice(0, visibleCount) ?? [];
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const inField =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.tagName === "BUTTON" ||
+          target.isContentEditable);
+      if (inField || e.ctrlKey || e.metaKey || e.altKey || prepId !== null) return;
+      if (rows.length === 0) return;
+      if (e.key === "j" || e.key === "J" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelIdx((i) => Math.min(i + 1, rows.length - 1));
+      } else if (e.key === "k" || e.key === "K" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelIdx((i) => Math.max(i - 1, 0));
+      } else if (e.key === "Enter") {
+        const row = rows[selIdx] ?? rows[0];
+        if (row) {
+          e.preventDefault();
+          void openPrep(row.id);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [data, visibleCount, selIdx, prepId]);
+
+  // SPEC-CUX CUX1：筛选/加载更多后选中越界自动夹取（越界回 0）
+  useEffect(() => {
+    setSelIdx((i) => (i >= (data?.items.slice(0, visibleCount).length ?? 0) ? 0 : i));
+  }, [data, visibleCount]);
+
   const st = data?.stats;
+  // SPEC-CUX CUX3：时间线渲染列表（默认最近 5 条，>5 折叠可展开）
+  const tl = prep?.timeline ?? [];
 
   return (
     <AppShell>
@@ -206,6 +273,12 @@ export default function ContactsPage() {
               <Select.Option key={p} value={p}>{p}</Select.Option>
             ))}
           </Select>
+          {/* SPEC-CUX CUX2 排序切换：服务端 order 白名单（空=智能推荐默认序） */}
+          <Select value={order || undefined} placeholder="智能推荐" showClear onChange={(v) => setOrder(String(v ?? ""))} className="!w-32 shrink-0">
+            <Select.Option value="newest">最新入库</Select.Option>
+            <Select.Option value="intent">意图最高</Select.Option>
+            <Select.Option value="recent_called">最近拨打</Select.Option>
+          </Select>
           <Input
             prefix={<Phone size={13} className="text-slate-400" />}
             placeholder="搜联系人/企业名"
@@ -230,8 +303,14 @@ export default function ContactsPage() {
             导出名单
           </Button>
         </div>
-        <span className="hidden text-[12.5px] text-[var(--muted)] md:inline md:ml-auto">
-          共 {data?.total ?? 0} 人 · 排序：可拨优先 → 意图分 → 未拨优先
+        <span className="hidden items-center gap-1.5 text-[12.5px] text-[var(--muted)] md:inline-flex md:ml-auto">
+          {/* SPEC-CUX CUX1：键盘流提示（hover 显示） */}
+          <Tooltip content="J/K 导航 · Enter 打开">
+            <Keyboard size={14} className="cursor-help" />
+          </Tooltip>
+          共 {data?.total ?? 0} 人 · 排序：{order
+            ? { newest: "最新入库", intent: "意图最高", recent_called: "最近拨打" }[order]
+            : "可拨优先 → 意图分 → 未拨优先"}
         </span>
       </div>
 
@@ -249,10 +328,15 @@ export default function ContactsPage() {
             ))}
           </div>
         )}
-        {data && (data?.items ?? []).slice(0, visibleCount).map((c) => (
+        {data && (data?.items ?? []).slice(0, visibleCount).map((c, i) => (
           <div
             key={c.id}
-            className="cursor-pointer rounded-lg border border-[var(--border)] bg-white px-4 py-3 transition-colors hover:border-[var(--accent)]"
+            className={`cursor-pointer rounded-lg border px-4 py-3 transition-colors ${
+              i === selIdx
+                ? // SPEC-CUX CUX1：选中行 accent 左边条（内阴影实现不挤压布局）+ raised 底色
+                  "border-[var(--accent)] bg-[var(--raised)] shadow-[inset_3px_0_0_var(--accent)]"
+                : "border-[var(--border)] bg-white hover:border-[var(--accent)]"
+            }`}
             onClick={() => void openPrep(c.id)}
           >
             <div className="flex items-start justify-between gap-3">
@@ -433,6 +517,30 @@ export default function ContactsPage() {
                   {prep.last_followup && (
                     <div className="mt-2 rounded-lg bg-[var(--raised)] px-3 py-2 text-[12px] leading-4 text-[var(--muted)]">
                       上次跟进（{prep.last_followup.created_at.replace("T", " ").slice(0, 16)}）：{prep.last_followup.content.slice(0, 60)}
+                    </div>
+                  )}
+                  {/* SPEC-CUX CUX3 通话时间线：拨打 + 跟进合流，最近 5 条，>5 折叠可展开 */}
+                  {tl.length > 0 && (
+                    <div className="mt-3">
+                      <div className="mb-1.5 text-[13.5px] font-medium text-[var(--ink)]">通话时间线</div>
+                      <div className="space-y-1.5">
+                        {(tlOpen ? tl : tl.slice(0, 5)).map((t, i) => (
+                          <div key={i} className="flex items-start gap-2 text-[12.5px] leading-5">
+                            <span className="shrink-0">{t.kind === "call" ? "☎" : "💬"}</span>
+                            <span className="min-w-0 flex-1 break-words text-[var(--ink)]">
+                              {t.kind === "call" ? (t.label ?? "已拨") : (t.content ?? "")}
+                            </span>
+                            <span className="shrink-0 tabular-nums text-[11.5px] text-[var(--muted)]">
+                              {(t.at ?? "").replace("T", " ")}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      {tl.length > 5 && (
+                        <Button size="small" theme="borderless" className="!mt-1 !px-0" onClick={() => setTlOpen((v) => !v)}>
+                          {tlOpen ? "收起" : `展开全部 ${tl.length} 条`}
+                        </Button>
+                      )}
                     </div>
                   )}
                 </div>

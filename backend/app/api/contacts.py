@@ -20,6 +20,17 @@ router = APIRouter(tags=["contacts"])
 
 _UNTOUCHED = (None, "pending")
 
+# SPEC-CUX CUX3：拨打结果中文标签（与前端 CallResultTag 的 CALL_RESULTS 对齐）
+_CALL_RESULT_CN = {
+    "pending": "未拨",
+    "no_answer": "无人接",
+    "voicemail": "语音信箱",
+    "invalid": "空号",
+    "connected": "已接通",
+    "interested": "有意向",
+    "not_interested": "无需求",
+}
+
 
 @router.get("/contacts")
 def contacts_worklist(
@@ -28,6 +39,8 @@ def contacts_worklist(
     decision_role: str = "",
     province: str = "",
     q: str = "",
+    # SPEC-CUX CUX2 排序切换：白名单 ""/newest/intent/recent_called，非法值回退默认
+    order: str = "",
     limit: int = 50,
     offset: int = 0,
     session: Session = Depends(get_session),
@@ -36,6 +49,8 @@ def contacts_worklist(
     """跨企业联系人工作列表（SPEC-BQ BQ1）。
 
     排序=作业面语义：可拨优先 → 企业意图分降序 → 未拨优先 → id 降序。
+    SPEC-CUX：order 白名单覆写——newest 最近入库先打 / intent 企业意图分降序 /
+    recent_called 已拨在前按拨打时间倒序（未拨垫尾，回访视角）。
     """
     limit = max(1, min(limit, 200))
     # SPEC-DQ：号码共享标记（拨打现场前置——疑似代理/中介总机 ≥3 家挂靠）
@@ -118,7 +133,7 @@ def contacts_worklist(
             # SPEC-DQ：该联系人号码在共享地图中的最大挂靠数（≥3 = 疑似代理）
             "_shared_ent_count": max((len(sharing.get(p, ())) for p in phones), default=0),
         })
-    # 作业面排序：可拨 → 意图分 → 未拨 → id
+    # 作业面排序：可拨 → 意图分 → 未拨 → id（默认智能推荐序，现状逐字节保留）
     items.sort(
         key=lambda x: (
             0 if x["_dialable"] else 1,
@@ -127,6 +142,18 @@ def contacts_worklist(
             -x["id"],
         )
     )
+    # SPEC-CUX CUX2 排序切换：白名单键覆写；非法值不进分支（自然回退默认序）。
+    # called_at 是 ISO 文本串无法取负 → recent_called 用两趟稳定排序：
+    # 先按 id desc 打底（尾键），再按 called_at 文本倒序排（reverse 下
+    # None 归空串最小、自然垫尾，等价 SQL 的 is_not(None) desc 双键口径）。
+    _order = order.strip().lower()
+    if _order == "newest":
+        items.sort(key=lambda x: -x["id"])  # 最近入库先打
+    elif _order == "intent":
+        items.sort(key=lambda x: (-(x["enterprise"]["intent_score"] or 0), -x["id"]))
+    elif _order == "recent_called":
+        items.sort(key=lambda x: -x["id"])
+        items.sort(key=lambda x: x["called_at"] or "", reverse=True)
     total = len(items)
     provinces = Counter(
         i["enterprise"]["province"] for i in items if i["enterprise"]["province"]
@@ -253,6 +280,33 @@ def contact_prep(
                 "content": f.content, "created_at": (f.created_at or "")[:16]
             }
 
+    # SPEC-CUX CUX3 通话时间线：拨打事件 + 跟进记录合流。
+    # lead-contact 关联口径：Lead 无 contact_id，靠共享 enterprise_id 关联
+    # （Lead.enterprise_id == Contact.enterprise_id，模型层 UQ enterprise_id+tenant_id）；
+    # 该企业名下全部线索的跟进都要进时间线，不止 .first() 那一条。
+    timeline: list[dict] = []
+    if c.called_at:
+        timeline.append({
+            "kind": "call",
+            "at": c.called_at[:16],
+            "label": _CALL_RESULT_CN.get(c.call_result or "", "已拨"),
+        })
+    followups = (
+        session.query(Followup)
+        .join(Lead, Lead.id == Followup.lead_id)
+        .filter(Lead.enterprise_id == e.id)
+        .order_by(Followup.id.desc())
+        .all()
+    )
+    for f in followups:
+        timeline.append({
+            "kind": "followup",
+            "at": (f.created_at or "")[:16],
+            "content": f.content,
+        })
+    # 合流按时间字符串倒序（ISO 截断到分钟，字典序即时间序）
+    timeline.sort(key=lambda ev: ev["at"], reverse=True)
+
     match = _product_match(session, e.industry_key)
     phones = load_phones(c.phones_json)
     # SPEC-DQ：拨打现场共享号码提示（疑似代理/中介总机 ≥3 家挂靠）
@@ -298,4 +352,6 @@ def contact_prep(
             else None
         ),
         "last_followup": last_followup,
+        # SPEC-CUX CUX3：通话时间线（拨打 + 跟进合流，时间倒序）
+        "timeline": timeline,
     }
