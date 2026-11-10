@@ -26,6 +26,8 @@ interface ContactRow {
   called_at: string | null;
   source: string;
   evidence_claim: string | null;
+  /** SPEC-DQ：号码共享（≥3 家挂靠 = 疑似代理/中介总机） */
+  _shared_ent_count?: number;
   enterprise: {
     id: number;
     name: string;
@@ -44,6 +46,8 @@ interface PrepData {
     phones: string[]; decision_role: string | null;
     verify_state: string; call_result: string | null;
     evidence_claim: string | null;
+    /** SPEC-DQ：号码共享（≥3 家挂靠 = 疑似代理/中介总机） */
+    shared_ent_count?: number;
   };
   enterprise: {
     id: number; name: string; industry_name: string | null;
@@ -262,6 +266,11 @@ export default function ContactsPage() {
                   {c.verify_state === "verified" && (
                     <Tag color="green" type="light" size="small">公告验证</Tag>
                   )}
+                  {(c._shared_ent_count ?? 0) >= 3 && (
+                    <span title="该号码同时挂在多家企业名下，可能是招标代理/中介总机">
+                      <Tag color="amber" type="light" size="small">疑似代理 · 挂{c._shared_ent_count}家</Tag>
+                    </span>
+                  )}
                   {c.title && <span className="text-[12px] text-[var(--muted)]">{c.title}</span>}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[13px]">
@@ -352,6 +361,11 @@ export default function ContactsPage() {
                   <Tag color="cyan" type="light" size="small">{ROLE_CN[prep.contact.role] ?? prep.contact.role}</Tag>
                   {prep.contact.decision_role === "decision_maker" && <Tag color="orange" type="light" size="small">决策链</Tag>}
                   {prep.contact.verify_state === "verified" && <Tag color="green" type="light" size="small">公告验证</Tag>}
+                  {(prep.contact.shared_ent_count ?? 0) >= 3 && (
+                    <span title="该号码同时挂在多家企业名下，可能是招标代理/中介总机">
+                      <Tag color="amber" type="light" size="small">疑似代理 · 挂{prep.contact.shared_ent_count}家</Tag>
+                    </span>
+                  )}
                   {prep.contact.call_result && prep.contact.call_result !== "pending" && (
                     <Tag color="grey" type="light" size="small">
                       {CALL_RESULTS.find((x) => x.key === prep.contact.call_result)?.label ?? "已拨"}

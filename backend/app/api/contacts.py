@@ -38,6 +38,10 @@ def contacts_worklist(
     排序=作业面语义：可拨优先 → 企业意图分降序 → 未拨优先 → id 降序。
     """
     limit = max(1, min(limit, 200))
+    # SPEC-DQ：号码共享标记（拨打现场前置——疑似代理/中介总机 ≥3 家挂靠）
+    from .quality import phone_sharing_map
+
+    sharing = phone_sharing_map(session, min_ents=3)
     rows = (
         session.query(Contact, Enterprise)
         .join(Enterprise, Enterprise.id == Contact.enterprise_id)
@@ -111,6 +115,8 @@ def contacts_worklist(
             },
             "_dialable": dialable,
             "_untouched": untouched,
+            # SPEC-DQ：该联系人号码在共享地图中的最大挂靠数（≥3 = 疑似代理）
+            "_shared_ent_count": max((len(sharing.get(p, ())) for p in phones), default=0),
         })
     # 作业面排序：可拨 → 意图分 → 未拨 → id
     items.sort(
@@ -248,14 +254,21 @@ def contact_prep(
             }
 
     match = _product_match(session, e.industry_key)
+    phones = load_phones(c.phones_json)
+    # SPEC-DQ：拨打现场共享号码提示（疑似代理/中介总机 ≥3 家挂靠）
+    from .quality import phone_sharing_map
+
+    sharing = phone_sharing_map(session, min_ents=3)
+    shared_ent_count = max((len(sharing.get(p, set())) for p in phones), default=0)
     return {
         "contact": {
             "id": c.id, "name": c.name, "role": c.role, "title": c.title,
-            "phones": load_phones(c.phones_json),
+            "phones": phones,
             "decision_role": c.decision_role,
             "verify_state": c.verify_state,
             "call_result": c.call_result,
             "evidence_claim": c.evidence_claim,
+            "shared_ent_count": shared_ent_count,
         },
         "enterprise": {
             "id": e.id, "name": e.name,

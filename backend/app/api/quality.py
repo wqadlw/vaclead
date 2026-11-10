@@ -13,6 +13,29 @@ from sqlalchemy.orm import Session
 from ..auth import admin_only, current_user
 from ..db import get_session
 from ..models import Contact
+
+
+def phone_sharing_map(session: Session, min_ents: int = 3) -> dict[str, set[int]]:
+    """号码 → 挂靠企业 id 集（SPEC-DQ：≥min_ents 即疑似招标代理/中介总机）。
+
+    公共函数：quality 页分析卡与 contacts/prep 拨打现场共用同一口径。"""
+    import json as _json
+
+    phone_ents: dict[str, set[int]] = {}
+    contact_rows = (
+        session.query(Contact)
+        .filter(Contact.phones_json.is_not(None), Contact.phones_json != "[]")
+        .all()
+    )
+    for ct in contact_rows:
+        try:
+            phones = _json.loads(ct.phones_json or "[]")
+        except ValueError:
+            continue
+        for p in phones if isinstance(phones, list) else []:
+            if isinstance(p, str) and len(p) >= 7:
+                phone_ents.setdefault(p, set()).add(ct.enterprise_id)
+    return {p: ents for p, ents in phone_ents.items() if len(ents) >= min_ents}
 from ..models import Contact, Enterprise, ReviewQueue, Signal, User
 from ..phones import load_phones
 
@@ -103,28 +126,10 @@ def quality_overview(
             unclassified_by_source[k] = unclassified_by_source.get(k, 0) + 1
 
     # SPEC-DQ：号码共享分析——同一号码挂 ≥N 家企业 = 疑似招标代理/中介
-    # （销售打了发现是中介的根因；不删除，标注供人工判断）
-    import json as _json
-
-    phone_ents: dict[str, set[int]] = {}
-    contact_rows = (
-        session.query(Contact)
-        .filter(Contact.phones_json.is_not(None), Contact.phones_json != "[]")
-        .all()
-    )
-    for ct in contact_rows:
-        try:
-            phones = _json.loads(ct.phones_json or "[]")
-        except ValueError:
-            continue
-        for p in phones if isinstance(phones, list) else []:
-            if isinstance(p, str) and len(p) >= 7:
-                phone_ents.setdefault(p, set()).add(ct.enterprise_id)
-    shared = {
-        p: sorted(ents)
-        for p, ents in phone_ents.items()
-        if len(ents) >= 3
-    }
+    # （销售打了发现是中介的根因；不删除，标注供人工判断）。
+    # 口径统一走 phone_sharing_map 公共函数（拨打现场同源）。
+    shared_map = phone_sharing_map(session, min_ents=3)
+    shared = {p: sorted(ents) for p, ents in shared_map.items()}
     shared_top = sorted(shared.items(), key=lambda x: -len(x[1]))[:10]
 
     return {
