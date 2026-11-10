@@ -1,7 +1,9 @@
 "use client";
 
-/** 商机卡片（从 leads/page.tsx 提取——修内嵌组件每次渲染重建问题，SPEC-E E4）。 */
-import { Tag } from "@douyinfe/semi-ui";
+/** 商机卡片（从 leads/page.tsx 提取——修内嵌组件每次渲染重建问题，SPEC-E E4）。
+ *  SPEC-CUX2 移动端流转补丁：拖拽在触屏不可用——卡片加「⋯」阶段切换菜单，
+ *  桌面成为拖拽之外的第二路径（点菜单即流转，防误触 stopPropagation）。 */
+import { Dropdown, Tag } from "@douyinfe/semi-ui";
 import type { Lead } from "@/lib/api";
 
 const GRADE_TAG: Record<string, "red" | "orange" | "blue"> = { S: "red", A: "orange", B: "blue" };
@@ -12,12 +14,18 @@ export default function LeadCard({
   onDragStart,
   onDragEnd,
   onOpen,
+  stageKey,
+  stages,
+  onStatusChange,
 }: {
   lead: Lead;
   dragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
   onOpen: () => void;
+  stageKey: string;
+  stages: { key: string; label: string }[];
+  onStatusChange: (status: string) => void;
 }) {
   return (
     <div
@@ -41,6 +49,35 @@ export default function LeadCard({
             {lead.grade}
           </Tag>
         )}
+        <Dropdown
+          trigger="click"
+          position="bottomRight"
+          render={
+            <Dropdown.Menu>
+              {stages
+                .filter((s) => s.key !== stageKey)
+                .map((s) => (
+                  <Dropdown.Item
+                    key={s.key}
+                    onClick={(e) => {
+                      e?.stopPropagation?.();
+                      onStatusChange(s.key);
+                    }}
+                  >
+                    → {s.label}
+                  </Dropdown.Item>
+                ))}
+            </Dropdown.Menu>
+          }
+        >
+          <span
+            className="cursor-pointer rounded px-1 text-[var(--muted)] hover:bg-[var(--raised)] hover:text-[var(--ink)]"
+            onClick={(e) => e.stopPropagation()}
+            title="移动阶段（触屏友好，桌面可继续用拖拽）"
+          >
+            ⋯
+          </span>
+        </Dropdown>
       </div>
       <div className="mt-1.5 flex items-center justify-between text-[11.5px] text-[var(--muted)]">
         <span className="tabular-nums">

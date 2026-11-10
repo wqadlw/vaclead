@@ -435,6 +435,9 @@ export default function LeadsPage() {
                       key={l.id}
                       lead={l}
                       dragging={dragId === l.id}
+                      stageKey={s}
+                      stages={KANBAN_STAGES.map((k) => ({ key: k, label: LEAD_STATUS[k]?.label ?? k }))}
+                      onStatusChange={(next) => void patchStatus(l, next)}
                       onDragStart={() => setDragId(l.id)}
                       onDragEnd={() => {
                         setDragId(null);
