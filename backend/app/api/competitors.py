@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import admin_only, current_user
 from ..db import get_session
-from ..models import Contract, Enterprise, Lead, Signal, User
+from ..models import Contract, Enterprise, Lead, Signal, User, Watch
 
 router = APIRouter(tags=["competitors"])
 
@@ -229,3 +229,105 @@ def mark_competitor(
     e.is_competitor = int(bool(flag))
     session.commit()
     return {"ok": True, "id": eid, "is_competitor": e.is_competitor}
+
+
+# ---- SPEC-RADAR：官网变更监控雷达（工业获客前兆，借鉴 changedetection.io） ----
+# 盯竞对/重点客户的官网页面：新闻页更新=新产线/中标/扩建；招聘页更新=扩张。
+# 运行时层（fetch/词表/check_one）在 jobs.py（sweep 与端点共用，防漂移）；
+# 端点只做参数校验与持久化编排。
+
+from ..jobs import watch_fetch_text as _watch_fetch  # noqa: E402
+from ..jobs import watch_check_one  # noqa: E402
+
+
+@router.get("/watches")
+def list_watches(
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """监控列表（含最近变更预览）。"""
+    rows = (
+        session.query(Watch, Enterprise)
+        .join(Enterprise, Enterprise.id == Watch.enterprise_id)
+        .filter(Watch.enabled == 1)
+        .order_by(Watch.last_changed_at.desc().nulls_last(), Watch.id.desc())
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": w.id, "label": w.label, "url": w.url,
+                "ent_id": e.id, "ent_name": e.name,
+                "last_checked_at": w.last_checked_at,
+                "last_changed_at": w.last_changed_at,
+                "snapshot_head": w.snapshot_head,
+                "check_count": w.check_count,
+                "error_last": w.error_last,
+            }
+            for w, e in rows
+        ]
+    }
+
+
+@router.post("/watches")
+def add_watch(
+    body: dict,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """添加监控：立即首采建基线（SSRF 守卫失败 → 400 可读错误）。"""
+    import hashlib
+    from datetime import datetime
+
+    eid = int(body.get("enterprise_id") or 0)
+    label = str(body.get("label") or "").strip()
+    url = str(body.get("url") or "").strip()
+    if not eid or not label or not url:
+        raise HTTPException(422, "enterprise_id / label / url 必填")
+    e = session.get(Enterprise, eid)
+    if e is None or e.deleted_at is not None:
+        raise HTTPException(404, "企业不存在")
+    try:
+        text = _watch_fetch(url)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except Exception as exc:  # noqa: BLE001 — 网络/HTTP 错误转可读
+        raise HTTPException(400, f"首采失败：{exc}")
+    w = Watch(
+        enterprise_id=eid, label=label, url=url,
+        content_hash=hashlib.sha256(text.encode()).hexdigest(),
+        snapshot_head=text[:300] or None,
+        last_checked_at=datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+        check_count=1,
+    )
+    session.add(w)
+    session.commit()
+    return {"ok": True, "id": w.id}
+
+
+@router.delete("/watches/{wid}")
+def delete_watch(
+    wid: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    w = session.get(Watch, wid)
+    if w is None:
+        raise HTTPException(404, "监控不存在")
+    w.enabled = 0
+    session.commit()
+    return {"ok": True}
+
+
+@router.post("/watches/{wid}/check")
+def check_watch(
+    wid: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """手动立即检查（与 sweep 同逻辑，返回是否变更）。"""
+    w = session.get(Watch, wid)
+    if w is None or w.enabled != 1:
+        raise HTTPException(404, "监控不存在")
+    changed = watch_check_one(session, w)
+    return {"ok": True, "changed": changed}

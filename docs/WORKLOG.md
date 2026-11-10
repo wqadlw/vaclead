@@ -4,6 +4,44 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-11 · SPEC-EXT 企业情报直达系统 + SPEC-RADAR 官网变更监控雷达（第十八/十九次功能轮）
+
+**用户指令合并**：完善的企业信息获取系统（可链接跳转不拉本地，全流程
+闭环）+ 企业情报雷达系统（GitHub 可学）+ **昊志机械（山东）获客导向
+不做歪**。调研：[changedetection.io](https://github.com/dgtlmoon/changedetection.io)
+（Watch=URL+快照 hash+变更通知）、企查查/天眼查/爱企查 deep link 模式。
+
+### SPEC-EXT：外部情报直达矩阵（导航层，不爬不存）
+- 详情页「外部情报直达」卡：8 源四类目（工商：风鸟直连详情页/爱企查/
+  企查查/天眼查；涉诉失信：信用中国/裁判文书；电话：必应组合搜索；
+  招投标：必应搜中标）+ **招聘类目**（BOSS/猎聘——招真空泵工程师=
+  扩张前兆）
+- 后端模板常量 `{name}` urlencode，加新源=追加一项（v2 UI 自定义）
+- 闭环：查（直达）→ 搬（粘贴框/书签）→ 存（工商补数批量回填）→ 用
+  （推荐/简报）
+
+### SPEC-RADAR：官网变更监控雷达（借鉴 changedetection.io 本地化）
+- models：Watch 表（enterprise 绑定/label/url/content_hash/快照头/
+  检查次数/error_last/enabled）
+- **netguard.py**：watch 可添加任意官网 URL——SSRF 三层守卫（https+
+  解析 IP 全公网+禁重定向，实弹内网 URL 422 拦截）
+- jobs.py 运行时层：watch_fetch_text（httpx 禁代理）/watch_check_one
+  （hash 对比→变更→**web_change 信号**+通知+群播报；昊志获客词表
+  ——通用扩张词+真空应用工艺词（半导体/光伏/镀膜/干燥/灭菌/检漏/
+  涂布）命中=高优推群）/watch_sweep（30 分钟 cron）
+- 端点：GET/POST/DELETE /watches + POST /{id}/check（手动检查）
+- UI：竞对雷达页「官网监控雷达」区块（搜索企业+标签+URL 添加行，
+  列表带快照预览/变更时间/立即检查/移除）
+
+**踩坑**：①router 无 prefix——路由真身 /api/watches 而非
+/api/competitors/watches（前端四处调用 405 后 openapi 定案改齐）；
+②signals 端点文件误认重演（bulletin vs brief）——**文件定位先 grep
+@router 再动手**。
+
+**实弹**：添加（首采 httpbin 基线）→ 手动检查 changed=False（hash
+一致）→ 列表快照 → SSRF 内网 422 → 清理。**门禁**：后端 **414** +
+build + E2E 13 + 390 双零 ✓。
+
 ## 2026-11-11 · SPEC-QTE：报价单创建流程升级（主线程直做轮）
 
 **摸底**：创建 Modal 六处摩擦——线索 Select 只拉 50 条（过百选不到）/

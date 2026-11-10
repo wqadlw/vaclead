@@ -20,6 +20,7 @@ from .models import (  # SPEC-AMT：金额抽取唯一实现在 models，此处 
     EnterpriseStat,
     Signal,
     SyncWatermark,
+    Watch,
     extract_amount_wan,
     utcnow,
 )
@@ -1516,3 +1517,108 @@ def run_automation_rules(session: Session) -> dict:
             rule.last_result = last_result
         session.commit()
     return {"rules": len(rules), "matched": matched, "actions": actions}
+
+
+# ---------------------------------------------------------------------------
+
+
+# SPEC-RADAR：昊志获客词表——通用扩张词 + 真空应用工艺词（半导体/光伏/镀膜/
+# 医药灭菌/食品干燥等工艺企业扩产 = 新真空泵采购前兆）
+_RADAR_KEYWORDS = (
+    "中标", "投产", "扩建", "新建", "开工", "竣工", "技改",
+    "招聘", "采购", "签约", "奠基", "新产线", "扩产", "一期", "二期",
+    "真空", "镀膜", "半导体", "光伏", "洁净", "实验室", "干燥",
+    "灭菌", "包装", "检漏", "涂布",
+)
+
+
+def watch_fetch_text(url: str) -> str:
+    """抓页面正文文本（httpx 禁代理 + netguard 三层 SSRF 守卫 + 禁重定向）。"""
+    import httpx
+    import re as _re
+
+    from .netguard import guard_public_https
+
+    guard_public_https(url)
+    resp = httpx.get(
+        url, timeout=15, follow_redirects=False, trust_env=False,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; vaclead-radar/0.1)"},
+    )
+    resp.raise_for_status()
+    text = _re.sub(r"<(script|style)[\s\S]*?</\1>", " ", resp.text, flags=_re.I)
+    text = _re.sub(r"<[^>]+>", " ", text)
+    return _re.sub(r"\s+", " ", text).strip()
+
+
+def watch_check_one(session, w) -> bool:
+    """检查单个 watch：hash 变化 → 更新快照 + web_change 信号 + 通知。
+
+    返回是否变更。昊志获客词命中 → base 70 高优；否则 45 静默入流。
+    网络错误落 error_last 不炸 sweep。"""
+    import hashlib
+    from datetime import datetime as _dt
+
+    ent = session.get(Enterprise, w.enterprise_id)
+    if ent is None or ent.deleted_at is not None:
+        return False
+    try:
+        text = watch_fetch_text(w.url)
+        err = None
+    except Exception as exc:  # noqa: BLE001 — 网络/守卫错误落 error_last
+        w.error_last = str(exc)[:200]
+        w.last_checked_at = _dt.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+        session.commit()
+        return False
+    del err
+    new_hash = hashlib.sha256(text.encode()).hexdigest()
+    w.last_checked_at = _dt.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+    w.check_count = (w.check_count or 0) + 1
+    changed = w.content_hash is not None and new_hash != w.content_hash
+    if not changed and w.content_hash is not None:
+        w.error_last = None
+        session.commit()
+        return False
+    # 首采建基线 或 变更
+    w.content_hash = new_hash
+    w.snapshot_head = text[:300] or None
+    w.error_last = None
+    if changed:
+        w.last_changed_at = w.last_checked_at
+        hit = next((k for k in _RADAR_KEYWORDS if k in text), None)
+        sig = Signal(
+            enterprise_id=ent.id, type="web_change",
+            title=f"官网更新（{w.label}）" + (f"：命中「{hit}」" if hit else ""),
+            url=w.url, raw_excerpt=text[:300],
+            evidence_claim=(text[:150] or None),
+            base_score=70 if hit else 45,
+        )
+        session.add(sig)
+        session.flush()
+        from .notify.channels import notify_dispatch
+
+        notify_dispatch(
+            session, ent.owner_id or 1,
+            kind="signal", title=f"官网更新：{ent.name}",
+            body=f"「{w.label}」页面有更新——{text[:100]}",
+            ref_type="signal", ref_id=sig.id,
+        )
+    session.commit()
+    return changed
+
+
+def watch_sweep() -> dict:
+    """官网监控雷达定时扫播（SPEC-RADAR：每 30 分钟，水位防呆惯例）。"""
+    from .db import SessionLocal
+
+    with SessionLocal() as session:
+        watches = session.query(Watch).filter(Watch.enabled == 1).all()
+        changed = 0
+        failed = 0
+        for w in watches:
+            try:
+                if watch_check_one(session, w):
+                    changed += 1
+            except Exception as exc:  # noqa: BLE001
+                failed += 1
+                logger.warning("watch %s 检查失败: %s", w.id, exc)
+        return {"watches": len(watches), "changed": changed, "failed": failed}

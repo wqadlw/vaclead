@@ -519,6 +519,15 @@ async def lifespan(app: FastAPI):
                 return scan_duplicates(_sd)
 
         _register_cron("dup_scan", _dup_scan_sweep, 5, 0, day_of_week="sat")
+
+        # SPEC-RADAR：官网变更监控雷达（昊志获客前兆——竞对/重点客户官网
+        # 新闻/招聘页更新，工业词命中即推通知与群播报）
+        def _watch_sweep() -> dict:
+            from .jobs import watch_sweep
+
+            return watch_sweep()
+
+        _register_cron("watch_radar", _watch_sweep, "*/30", "*")
         scheduler.start()
     except Exception:  # noqa: BLE001 — APScheduler 不可用时跳过定时任务（不影响主功能）
         import logging

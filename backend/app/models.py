@@ -448,6 +448,30 @@ class SyncWatermark(Base):
     stats_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
 
 
+class Watch(Base):
+    """官网变更监控（SPEC-RADAR，借鉴 changedetection.io 的 Watch 模型）：
+    盯竞对/重点客户的官网页面——内容 hash 变化即生成 web_change 信号+
+    通知（新品发布/中标新闻/招聘页更新都是获客前兆）。"""
+
+    __tablename__ = "watch"
+    __table_args__ = (Index("ix_watch_enterprise", "enterprise_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    enterprise_id: Mapped[int] = mapped_column(
+        ForeignKey("enterprise.id", ondelete="CASCADE"), nullable=False
+    )
+    label: Mapped[str] = mapped_column(Text, nullable=False)  # 如 "官网新闻页"
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str | None] = mapped_column(Text)  # 首采前为 NULL
+    snapshot_head: Mapped[str | None] = mapped_column(Text)  # 变更后正文头部预览
+    last_checked_at: Mapped[str | None] = mapped_column(Text)
+    last_changed_at: Mapped[str | None] = mapped_column(Text)
+    check_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_last: Mapped[str | None] = mapped_column(Text)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
 class Contact(Base):
     """关键联系人（SPEC-D）：法人/采购联系人/代理机构，全部带证据溯源，不发明数据。"""
 

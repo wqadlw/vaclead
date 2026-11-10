@@ -54,11 +54,30 @@ const TYPE_TAG: Record<string, { label: string; color: "cyan" | "green" | "blue"
   proposal: { label: "项目备案", color: "amber" },
 };
 
+interface WatchRow {
+  id: number;
+  label: string;
+  url: string;
+  ent_id: number;
+  ent_name: string;
+  last_checked_at: string | null;
+  last_changed_at: string | null;
+  snapshot_head: string | null;
+  check_count: number;
+  error_last: string | null;
+}
+
 export default function CompetitorsPage() {
   const [ov, setOv] = useState<Overview | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [feedTotal, setFeedTotal] = useState(0);
   const [ranks, setRanks] = useState<RankItem[]>([]);
+  // SPEC-RADAR：官网变更监控（昊志获客前兆——竞对/重点客户官网盯防）
+  const [watches, setWatches] = useState<WatchRow[]>([]);
+  const [wLabel, setWLabel] = useState("");
+  const [wUrl, setWUrl] = useState("");
+  const [wEntId, setWEntId] = useState<number | null>(null);
+  const [wBusy, setWBusy] = useState(false);
   const [type, setType] = useState("");
   const [days, setDays] = useState(90);
   const [q, setQ] = useState("");
@@ -84,8 +103,45 @@ export default function CompetitorsPage() {
     api.get<{ items: RankItem[] }>(`/api/competitors${listQ}`)
       .then((d) => setRanks(d.items))
       .catch(() => undefined);
+    api.get<{ items: WatchRow[] }>("/api/watches")
+      .then((d) => setWatches(d.items))
+      .catch(() => undefined);
   }, [days, type, q]);
   useEffect(load, [load]);
+
+  // SPEC-RADAR：添加监控（首采建基线，SSRF 守卫失败给可读错误）
+  const addWatch = async () => {
+    if (!wEntId || !wLabel.trim() || !wUrl.trim()) {
+      Toast.warning("选企业、起标签、填 URL");
+      return;
+    }
+    setWBusy(true);
+    try {
+      await api.post("/api/watches", {
+        enterprise_id: wEntId, label: wLabel.trim(), url: wUrl.trim(),
+      });
+      Toast.success("监控已添加（首次抓取已建基线）");
+      setWLabel(""); setWUrl(""); setWEntId(null);
+      load();
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "添加失败");
+    } finally {
+      setWBusy(false);
+    }
+  };
+  const checkWatch = async (id: number) => {
+    try {
+      const r = await api.post<{ changed: boolean }>(`/api/watches/${id}/check`, {});
+      Toast.success(r.changed ? "有变更——已生成信号！" : "无变化");
+      load();
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "检查失败");
+    }
+  };
+  const delWatch = async (id: number) => {
+    await api.delete(`/api/watches/${id}`).catch(() => undefined);
+    load();
+  };
 
   const mark = async (id: number, flag: 0 | 1) => {
     setMarking(id);
@@ -334,6 +390,97 @@ export default function CompetitorsPage() {
           </div>
         )}
       </div>
+
+      {/* SPEC-RADAR：官网变更监控（昊志获客前兆）——盯竞对/重点客户官网
+          新闻/招聘页，工业词命中即推信号+群播报（借鉴 changedetection.io） */}
+      <section className="mt-6 rounded-lg border border-[var(--border)] bg-white p-4">
+        <h2 className="text-[15px] font-medium text-[var(--ink)]">官网监控雷达</h2>
+        <p className="mt-1 text-[12.5px] leading-5 text-[var(--muted)]">
+          盯竞对和重点客户的官网页面——新闻页更新（新产线/中标/扩建）、
+          招聘页更新（扩张）都是获客前兆，命中工业词自动推信号和群播报。
+        </p>
+        {/* 添加行 */}
+        <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-center">
+          <Input
+            size="small"
+            placeholder="搜企业名加监控"
+            value={searchName}
+            onChange={setSearchName}
+            onEnterPress={searchEnterprise}
+            className="!w-52"
+          />
+          <Select
+            size="small"
+            placeholder="选企业（搜索后选择）"
+            value={wEntId ?? undefined}
+            onChange={(v) => setWEntId(Number(v))}
+            className="!w-56"
+          >
+            {hits.map((h) => (
+              <Select.Option key={h.id} value={h.id}>{h.name}</Select.Option>
+            ))}
+          </Select>
+          <Input
+            size="small"
+            placeholder="监控标签（如：官网新闻页）"
+            value={wLabel}
+            onChange={setWLabel}
+            className="!w-44"
+          />
+          <Input
+            size="small"
+            placeholder="https://官网页面地址"
+            value={wUrl}
+            onChange={setWUrl}
+            className="!w-64"
+          />
+          <Button size="small" theme="solid" loading={wBusy} onClick={() => void addWatch()}>
+            添加监控
+          </Button>
+        </div>
+        {/* 监控列表 */}
+        <div className="mt-3 space-y-2">
+          {watches.map((w) => (
+            <div key={w.id} className="rounded-lg border border-[var(--border)] px-3.5 py-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="text-[13.5px] font-medium text-[var(--ink)]">{w.label}</span>
+                  <a
+                    href={`/enterprises/view?id=${w.ent_id}`}
+                    className="ml-2 text-[12.5px] text-[var(--accent)] hover:underline"
+                  >
+                    {w.ent_name}
+                  </a>
+                  {w.error_last && (
+                    <Tag color="red" type="light" size="small" className="!ml-2">抓取失败</Tag>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button size="small" onClick={() => void checkWatch(w.id)}>立即检查</Button>
+                  <Button size="small" type="tertiary" onClick={() => void delWatch(w.id)}>移除</Button>
+                </div>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] text-[var(--muted)]">
+                <span className="truncate" title={w.url}>{w.url}</span>
+                <span>检查 {w.check_count} 次 · 上次 {w.last_checked_at?.replace("T", " ") ?? "—"}</span>
+                {w.last_changed_at && (
+                  <span className="text-[#c2801b]">变更于 {w.last_changed_at.replace("T", " ")}</span>
+                )}
+              </div>
+              {w.snapshot_head && (
+                <div className="mt-1 line-clamp-2 text-[11.5px] leading-4 text-[var(--muted)]">
+                  快照：{w.snapshot_head}
+                </div>
+              )}
+            </div>
+          ))}
+          {watches.length === 0 && (
+            <div className="py-6 text-center text-[13px] text-[var(--muted)]">
+              还没有监控 —— 搜企业名加一个试试（建议先盯竞对官网和大客户新闻页）
+            </div>
+          )}
+        </div>
+      </section>
     </AppShell>
   );
 }

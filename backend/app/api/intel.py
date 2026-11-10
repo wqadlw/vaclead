@@ -465,3 +465,80 @@ def gongshang_paste(
         filled[label] = value
     session.commit()
     return {"filled": filled, "skipped": skipped, "phone_added": phone_added}
+
+
+# ---- SPEC-EXT：企业情报直达系统（外部权威源深链矩阵） ----
+# 设计立场（用户定稿）：不爬（公示站有验证码）、不买 API（企查查付费）——
+# 平台做"导航层"：每家企业一键直达各权威源的搜索/详情页，查到后经
+# 工商补数粘贴框 / 批量回填通道入库——查→搬→存→用四步闭环。
+# 模板 {name}=企业名 urlencode；加新源只需追加一项（v2 再做 UI 自定义）。
+_EXT_SOURCE_TEMPLATES: list[dict] = [
+    {"key": "riskbird", "label": "风鸟", "category": "工商",
+     "what": "工商全要素 + 电话（已登录直连企业页）",
+     "url": "https://www.riskbird.com/ent/{name}"},
+    {"key": "aiqicha", "label": "爱企查", "category": "工商",
+     "what": "工商全要素（百度系，免费额度大，登录门槛低）",
+     "url": "https://aiqicha.baidu.com/s?q={name}"},
+    {"key": "qcc", "label": "企查查", "category": "工商",
+     "what": "工商 + 股东 + 电话（需登录）",
+     "url": "https://www.qcc.com/web/search?key={name}"},
+    {"key": "tianyancha", "label": "天眼查", "category": "工商",
+     "what": "工商 + 关联企业 + 涉诉（需登录）",
+     "url": "https://www.tianyancha.com/search?key={name}"},
+    {"key": "creditchina", "label": "信用中国", "category": "涉诉失信",
+     "what": "行政处罚 / 失信记录（官方免费）",
+     "url": "https://public.creditchina.gov.cn/credit-check/index.html?searchtype=0&keyword={name}"},
+    {"key": "wenshu", "label": "裁判文书", "category": "涉诉失信",
+     "what": "涉诉判决（合同纠纷/货款——合作前必查）",
+     "url": "https://wenshu.court.gov.cn/website/wenshu/181217CFMTKH42837/index.html?pageId=&s21={name}"},
+    {"key": "bing_phone", "label": "必应搜电话", "category": "电话",
+     "what": "企业名+电话 组合搜索（官网/黄页/B2B 站常挂公开电话）",
+     "url": "https://www.bing.com/search?q={name}+电话"},
+    {"key": "bing_bid", "label": "必应搜中标", "category": "招投标",
+     "what": "企业名+中标 组合搜索（各交易平台的公开中标公告）",
+     "url": "https://www.bing.com/search?q={name}+中标"},
+    {"key": "boss_zp", "label": "BOSS 直聘", "category": "招聘信号",
+     "what": "招真空泵/售后工程师 = 扩张与装机增长前兆（人工浏览，不爬）",
+     "url": "https://www.zhipin.com/web/job/search?query={name}"},
+    {"key": "liepin_zp", "label": "猎聘", "category": "招聘信号",
+     "what": "企业招聘页——新增岗位=产能/服务扩张的获客前兆",
+     "url": "https://www.liepin.com/zhaopin/?key={name}"},
+]
+
+
+@router.get("/enterprises/{eid}/external-links")
+def enterprise_external_links(
+    eid: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """SPEC-EXT：按企业生成外部权威源深链矩阵（导航层，不爬不存）。"""
+    from urllib.parse import quote
+
+    e = session.get(Enterprise, eid)
+    if e is None or e.deleted_at is not None:
+        raise HTTPException(404, "企业不存在")
+    name = e.name or ""
+    qname = quote(name)
+    # SPEC-RADAR：招聘类目——企业招"真空泵工程师/售后工程师"= 扩张/装机
+    # 增长的获客前兆（跳转形态，不爬招聘站）
+    sources = [
+        {**t, "url": t["url"].replace("{name}", qname)}
+        for t in _EXT_SOURCE_TEMPLATES
+    ]
+    # 按类目分组（前端卡片矩阵渲染）
+    categories: dict[str, list] = {}
+    for s in sources:
+        categories.setdefault(s["category"], []).append(s)
+    return {
+        "enterprise": {"id": e.id, "name": name},
+        "categories": [
+            {"category": cat, "sources": items}
+            for cat, items in categories.items()
+        ],
+        # 闭环提示：查到 → 这两个入库通道
+        "backfill_hint": {
+            "paste": f"/enterprises/view?id={e.id}#gongshang",
+            "batch": "/tasks",
+        },
+    }

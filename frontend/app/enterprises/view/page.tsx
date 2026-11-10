@@ -165,6 +165,10 @@ function IntelInner() {
   const [graph, setGraph] = useState<GraphEdge[]>([]);
   const [related, setRelated] = useState<RelatedData | null>(null);
   const [contacts, setContacts] = useState<ContactRow[]>([]);
+  // SPEC-EXT：外部情报直达矩阵
+  const [extLinks, setExtLinks] = useState<{
+    categories: { category: string; sources: { key: string; label: string; what: string; url: string }[] }[];
+  } | null>(null);
   // SPEC-AS AS1 装机台账
   const [units, setUnits] = useState<UnitRow[]>([]);
   // SPEC-AT 节能账
@@ -214,6 +218,9 @@ function IntelInner() {
     api.get<{ items: NoteRow[] }>(`/api/enterprises/${eid}/notes`).then((d) => setNotes(d.items)).catch(() => undefined);
     api.get<{ items: JourneyItem[] }>(`/api/enterprises/${eid}/timeline?limit=120`).then((d) => setJourney(d.items)).catch(() => undefined);
     api.get<{ items: SimilarItem[] }>(`/api/enterprises/${eid}/similar`).then((d) => setSimilar(d.items)).catch(() => undefined);
+    api.get<{ categories: { category: string; sources: { key: string; label: string; what: string; url: string }[] }[] }>(
+      `/api/enterprises/${eid}/external-links`,
+    ).then((d) => setExtLinks({ categories: d.categories })).catch(() => undefined);
   }, [eid]);
 
   useEffect(() => load(), [load]);
@@ -742,6 +749,44 @@ function IntelInner() {
             )}
 
             {/* SPEC-CM：从风鸟粘贴工商资料——吃原始"字段名 值"格式，仅补空 */}
+            {/* SPEC-EXT：企业情报直达系统——权威源深链矩阵（不爬不存，查到经
+                粘贴框/批量回填入库，查→搬→存→用四步闭环） */}
+            {extLinks && (
+              <div className="mt-6 rounded-lg border border-[var(--border)] bg-white px-4 py-3">
+                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[12.5px] font-medium text-[var(--ink)]">外部情报直达</span>
+                  <span className="text-[11.5px] text-[var(--muted)]">
+                    查到工商/电话后 → 贴进下方粘贴框，或走拓客任务页批量回填
+                  </span>
+                </div>
+                <div className="mt-2.5 space-y-2.5">
+                  {extLinks.categories.map((cat) => (
+                    <div key={cat.category}>
+                      <div className="mb-1.5 text-[11px] font-medium tracking-wide text-[var(--muted)]">
+                        {cat.category}
+                      </div>
+                      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                        {cat.sources.map((s) => (
+                          <a
+                            key={s.key}
+                            href={s.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="group rounded-lg border border-[var(--border)] px-3 py-2 transition-colors hover:border-[var(--accent)]"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[13px] font-medium text-[var(--ink)]">{s.label}</span>
+                              <span className="text-[var(--accent)] transition-transform group-hover:translate-x-0.5">↗</span>
+                            </div>
+                            <div className="mt-0.5 text-[11.5px] leading-4 text-[var(--muted)]">{s.what}</div>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="mt-6 rounded-lg border border-[var(--border)] bg-[var(--raised)] px-4 py-3">
               <div className="mb-1.5 flex items-center justify-between gap-2">
                 <span className="text-[12.5px] font-medium text-[var(--ink)]">从风鸟补工商资料</span>
