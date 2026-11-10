@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session
 from ..auth import admin_only
 from ..collectors.tender import _decode_csv_bytes
 from ..db import get_session
-from ..models import Enterprise, Signal, User, utcnow
-from ..normalize import resolve_enterprise
+from ..models import Enterprise, EnterpriseAlias, Signal, User, utcnow
+from ..normalize import FUZZY_THRESHOLD, REVIEW_THRESHOLD, canonical_name, resolve_enterprise
 from ..vertical import (
     detect_industry,
     downstream_industries,
@@ -239,17 +239,24 @@ _HEADER_SYNONYMS: dict[str, str] = {
 }
 
 
-def _import_headers(raw_fields: list[str], mapping: list[str] | None) -> list[str]:
+def _import_headers(
+    raw_fields: list[str],
+    mapping: list[str] | None,
+    synonyms: dict[str, str] | None = None,
+) -> list[str]:
     """表头→目标字段归一公共函数（SPEC-IMP 1.2：两条入口共用一份行→字段逻辑）。
 
     - 显式 mapping 存在时优先：列序=下标，"skip" 表示忽略该列（skip 键落不进
       任何企业字段，dict(zip) 后自然被丢弃）；
-    - 缺省走 _HEADER_SYNONYMS 同义词归一：命中→字段名，未命中→保留原表头名
-      （落库时只读已知字段键，原名键自然忽略——与既有上传/粘贴路径语义一致）。
+    - 缺省走同义词表归一：命中→字段名，未命中→保留原表头名
+      （落库时只读已知字段键，原名键自然忽略——与既有上传/粘贴路径语义一致）；
+    - SPEC-GSH：synonyms 参数支持工商补数注入专用词表（_GS_BACKFILL_SYNONYMS），
+      缺省仍为 _HEADER_SYNONYMS（既有 /import/enterprises 行为逐字节不变）。
     """
     if mapping:
         return list(mapping)
-    return [_HEADER_SYNONYMS.get(f.lower(), _HEADER_SYNONYMS.get(f, f)) for f in raw_fields]
+    syn = synonyms if synonyms is not None else _HEADER_SYNONYMS
+    return [syn.get(f.lower(), syn.get(f, f)) for f in raw_fields]
 
 
 def _parse_mapping_form(mapping: str | None) -> list[str] | None:
@@ -847,3 +854,265 @@ def import_gongshang_csv(
     session.commit()
     return {"matched": matched, "filled": filled,
             "phones_added": phones_added, "skipped": skipped}
+
+
+# ---------------------------------------------------------------------------
+# SPEC-GSH：工商补数批量回填——风鸟对照表 xlsx/csv 按名称/信用代码匹配，只填空不覆盖
+# ---------------------------------------------------------------------------
+# 企业工商五要素（法人/成立日期/注册资本/经营范围/统一信用代码）真库覆盖仅 0-6%
+# （POI/公告源天然没有）。用户持风鸟对照表 Excel，此前只能逐家书签手工搬运——
+# 本端点批量化：拖表 → 匹配（uscc 锚点优先，企业名归一同款）→ 只填空不覆盖。
+#: 回填目标字段（工商五要素；name/uscc 兼作匹配键）
+_GS_BACKFILL_FIELDS = (
+    "legal_rep", "established_at", "registered_capital_wan", "business_scope", "uscc",
+)
+#: 向导预览行允许出现的键（匹配键 + 五要素）
+_GS_BACKFILL_KEYS = ("name",) + _GS_BACKFILL_FIELDS
+
+#: 工商对照表表头同义词（SPEC-GSH）：比 _HEADER_SYNONYMS 多 uscc 匹配键。
+#: 独立词表而非扩充 _HEADER_SYNONYMS——既有 /import/enterprises 的 preview
+#: 建议与落库行为保持逐字节不变（新增 uscc 同义词对旧流是意外变更）。
+_GS_BACKFILL_SYNONYMS: dict[str, str] = {
+    # 匹配键：企业名
+    "name": "name", "企业名称": "name", "公司名称": "name", "企业": "name",
+    "名称": "name", "公司": "name", "客户名称": "name",
+    # 匹配键兼回填字段：统一社会信用代码
+    "uscc": "uscc", "统一社会信用代码": "uscc", "信用代码": "uscc", "纳税人识别号": "uscc",
+    # 工商五要素
+    "legal_rep": "legal_rep", "法定代表人": "legal_rep", "法人": "legal_rep",
+    "法人代表": "legal_rep",
+    "established_at": "established_at", "成立日期": "established_at",
+    "成立时间": "established_at",
+    "registered_capital_wan": "registered_capital_wan", "注册资本": "registered_capital_wan",
+    "注册资本(万元)": "registered_capital_wan", "注册资本(万)": "registered_capital_wan",
+    "business_scope": "business_scope", "经营范围": "business_scope",
+}
+
+#: 统一社会信用代码强格式（18 位，字符集不含 I/O/S/V/Z）——与 api/intel.py
+#: gongshang-paste 的 uscc 校验同一模式。区别于 gongshang-paste 的整块 text
+#: 粘连解析：这里是结构化列，值干净但仍用 search 容错（风鸟表格复制常带
+#: "复制"按钮尾巴，如 "914403...复制"）。
+_USCC_RE = re.compile(r"[0-9A-HJ-NPQRTUWXY]{18}")
+
+
+def _match_enterprise_readonly(
+    session: Session, name: str, canon_map: dict[str, int]
+) -> Enterprise | None:
+    """SPEC-GSH：resolve_enterprise 同款归一匹配的**只读版**（回填只匹配不建档）。
+
+    匹配序与 normalize._resolve 对齐：精确名 → 别名表（原全名/标准化主体名）→
+    rapidfuzz token_sort_ratio ≥FUZZY_THRESHOLD 自动合并档。80-89 复核区间与
+    未命中一样落 skipped——回填绝不新建企业、不写 review_queue、不加别名
+    （dry_run 零写入红线的延伸：正式跑也只做 UPDATE 已有企业这一种写入）。
+    """
+    raw = "".join((name or "").split())  # 归一同款：剥全部空白（含全角空格）
+    if not raw:
+        return None
+    ent = session.query(Enterprise).filter(Enterprise.name == raw).first()
+    if ent is not None:
+        return ent
+    canon = canonical_name(raw)
+    for alias_val in dict.fromkeys((raw, canon)):  # 去重且保序（同 _resolve）
+        if not alias_val:
+            continue
+        row = (
+            session.query(EnterpriseAlias)
+            .filter(EnterpriseAlias.alias == alias_val)
+            .first()
+        )
+        if row is not None:
+            target = session.get(Enterprise, row.enterprise_id)
+            if target is not None:
+                return target
+    if canon and canon_map:
+        from rapidfuzz import fuzz
+        from rapidfuzz import process as _process
+
+        hit = _process.extractOne(
+            canon, list(canon_map.keys()), scorer=fuzz.token_sort_ratio,
+            score_cutoff=REVIEW_THRESHOLD,
+        )
+        if hit is not None:
+            exist_canon, score, _ = hit
+            if score >= FUZZY_THRESHOLD:  # ≥90 自动合并档；80-89 复核档不回填
+                return session.get(Enterprise, canon_map[exist_canon])
+    return None
+
+
+def _parse_backfill_capital(cap_raw: str) -> float | None:
+    """SPEC-GSH 注册资本浮点容错：纯数字直读（"500"/"1,200"），带单位形态走
+    _parse_capital 的"X万"提取（"1000万人民币"/"1200万元"——风鸟对照表常见）。
+    解析不出返回 None（该格静默不填，与既有导入的注册资本容错语义一致）。"""
+    if not cap_raw:
+        return None
+    try:
+        cap = float(cap_raw.replace(",", ""))
+    except (TypeError, ValueError):
+        cap = _parse_capital(cap_raw)
+    if cap is None or not math.isfinite(cap):  # nan/inf 拒绝（防毒化 REAL 列）
+        return None
+    return cap
+
+
+@router.post("/import/gongshang-backfill")
+async def gongshang_backfill(
+    file: UploadFile,
+    dry_run: int = 0,  # query 参数：1=预演（零写入，只返回计数）
+    mapping: str | None = Form(None),  # JSON 数组字符串，下标=列序（同 SPEC-IMP 1.2）
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """工商补数批量回填（SPEC-GSH）：风鸟对照表 → 按名称/信用代码匹配 → 只填空不覆盖。
+
+    行匹配：行内 uscc 列提取到 18 位有效代码 → Enterprise.uscc 精确锚点优先；
+    否则企业名走 _match_enterprise_readonly（resolve_enterprise 同款归一，
+    只读不建档）；均不中 → skipped 计数并落明细（≤10 条）。
+
+    回填红线：**只填空不覆盖**——任何已有值一律保原样（kept_existing 诚实计数）。
+
+    dry_run=1：预演零写入——不 commit、不 apply_icp、不同步 Meili
+    （get_session 收尾仅 close，未提交的内存变更随会话丢弃）。
+    返回同时携带 headers_raw/mapping_suggestion/preview_rows/total_rows，
+    供前端向导复用 SPEC-IMP 的"预演→映射确认→正式"两步结构。
+    """
+    raw = await file.read()
+    raw_fields, raw_rows = _parse_upload(raw, file.filename or "")
+    if not raw_fields:
+        raise HTTPException(422, "文件需包含表头行")
+    mapping_list = _parse_mapping_form(mapping)
+    norm_fields = _import_headers(raw_fields, mapping_list, synonyms=_GS_BACKFILL_SYNONYMS)
+
+    # 无显式 mapping 且没有任何列命中 name → 首列兜底 name（对照表首列通常是
+    # 企业名；若首列是序号，匹配不上自然落 skipped，向导里可手动改映射）
+    if mapping_list is None and "name" not in norm_fields:
+        norm_fields[0] = "name"
+
+    rows = [
+        {n: raw_row.get(h) for n, h in zip(norm_fields, raw_fields)}
+        for raw_row in raw_rows
+    ]
+
+    # 标准化主体名 → id 一次性载入（批量 fuzz 用，同 normalize._canon_cache 思路；
+    # 软删除全局过滤自动排除已删企业）
+    canon_map: dict[str, int] = {}
+    for eid, nm in session.query(Enterprise.id, Enterprise.name).all():
+        c = canonical_name(nm)
+        if c:
+            canon_map[c] = eid
+
+    matched = skipped = kept_existing = 0
+    filled: dict[str, int] = {f: 0 for f in _GS_BACKFILL_FIELDS}
+    skipped_details: list[dict] = []
+    matched_ents: dict[int, Enterprise] = {}  # id 去重：apply_icp 每家只跑一次
+
+    for row_no, row in enumerate(rows, start=2):  # 行号从 2 起算（表头=第 1 行）
+        uscc_cell = (row.get("uscc") or "").strip()
+        name_cell = (row.get("name") or "").strip()
+        uscc_m = _USCC_RE.search(uscc_cell) if uscc_cell else None
+        uscc_val = uscc_m.group(0) if uscc_m else None
+        ent: Enterprise | None = None
+        matched_by_uscc = False
+        if uscc_val:
+            ent = session.query(Enterprise).filter(Enterprise.uscc == uscc_val).first()
+            matched_by_uscc = ent is not None
+        if ent is None and name_cell:
+            ent = _match_enterprise_readonly(session, name_cell, canon_map)
+        if ent is None:
+            skipped += 1
+            if len(skipped_details) < 10:
+                if not uscc_cell and not name_cell:
+                    reason = "缺少企业名称与信用代码"
+                elif uscc_cell and not uscc_val:
+                    reason = "信用代码非 18 位有效格式且企业名未命中"
+                else:
+                    reason = "未匹配到库内企业（只回填不建档）"
+                skipped_details.append({"row": row_no, "reason": reason})
+            continue
+        matched += 1
+        if not dry_run:
+            matched_ents[ent.id] = ent
+
+        # ---- 只填空不覆盖（SPEC-GSH 红线）：已有值保原样并诚实计入 kept_existing ----
+        # dry_run 只计数不 setattr（预演零写入）。
+        new_legal = (row.get("legal_rep") or "").strip()
+        if new_legal:
+            if ent.legal_rep:
+                kept_existing += 1
+            elif not dry_run:
+                ent.legal_rep = new_legal
+                filled["legal_rep"] += 1
+            else:
+                filled["legal_rep"] += 1
+
+        new_scope = (row.get("business_scope") or "").strip()
+        if new_scope:
+            if ent.business_scope:
+                kept_existing += 1
+            elif not dry_run:
+                ent.business_scope = new_scope
+                filled["business_scope"] += 1
+            else:
+                filled["business_scope"] += 1
+
+        new_est = (row.get("established_at") or "").strip()
+        if new_est:
+            if ent.established_at:
+                kept_existing += 1
+            elif not dry_run:
+                ent.established_at = str(new_est)[:10]  # YYYY-MM-DD 前缀容错（照 imports 既有）
+                filled["established_at"] += 1
+            else:
+                filled["established_at"] += 1
+
+        cap = _parse_backfill_capital((row.get("registered_capital_wan") or "").strip())
+        if cap is not None:
+            if ent.registered_capital_wan is not None:
+                kept_existing += 1
+            elif not dry_run:
+                ent.registered_capital_wan = cap
+                filled["registered_capital_wan"] += 1
+            else:
+                filled["registered_capital_wan"] += 1
+
+        # uscc 回填：以 uscc 命中（matched_by_uscc）时值必然相同，不计不写；
+        # 名称匹配携带有效代码 → 空则回填（提升后续归一锚点），已有则保原样
+        if uscc_val and not matched_by_uscc:
+            if ent.uscc:
+                kept_existing += 1
+            elif not dry_run:
+                ent.uscc = uscc_val
+                filled["uscc"] += 1
+            else:
+                filled["uscc"] += 1
+
+    if not dry_run:
+        # ICP 重算（注册资本/经营范围影响 ICP 分——matched 企业全量重打分）
+        for ent in matched_ents.values():
+            apply_icp(ent)
+        session.commit()
+        # 检索投影：批量回填后全量同步（复用 imports 既有同步块模式）
+        try:
+            from .. import search as meili
+            from ..db import SessionLocal
+
+            with SessionLocal() as s2:
+                meili.sync_all(s2)
+        except Exception:  # noqa: BLE001 — 检索层失败不影响回填结果（SQLite 为真源）
+            logger.warning("工商补数后 Meili 同步失败，检索投影滞后", exc_info=True)
+    # dry_run：不 commit / 不 apply_icp / 不同步 Meili —— 零写入预演
+
+    return {
+        "dry_run": bool(dry_run),
+        "matched": matched,
+        "filled": filled,
+        "kept_existing": kept_existing,
+        "skipped": skipped,
+        "skipped_details": skipped_details,
+        "headers_raw": raw_fields,
+        "mapping_suggestion": [{"col": i, "field": nf} for i, nf in enumerate(norm_fields)],
+        "preview_rows": [
+            {n: v for n, v in r.items() if n in _GS_BACKFILL_KEYS and (v or "").strip()}
+            for r in rows[:5]
+        ],
+        "total_rows": len(rows),
+    }

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import admin_only, current_user
 from ..db import get_session
+from ..models import Contact
 from ..models import Contact, Enterprise, ReviewQueue, Signal, User
 from ..phones import load_phones
 
@@ -101,6 +102,31 @@ def quality_overview(
             k = e.source or "unknown"
             unclassified_by_source[k] = unclassified_by_source.get(k, 0) + 1
 
+    # SPEC-DQ：号码共享分析——同一号码挂 ≥N 家企业 = 疑似招标代理/中介
+    # （销售打了发现是中介的根因；不删除，标注供人工判断）
+    import json as _json
+
+    phone_ents: dict[str, set[int]] = {}
+    contact_rows = (
+        session.query(Contact)
+        .filter(Contact.phones_json.is_not(None), Contact.phones_json != "[]")
+        .all()
+    )
+    for ct in contact_rows:
+        try:
+            phones = _json.loads(ct.phones_json or "[]")
+        except ValueError:
+            continue
+        for p in phones if isinstance(phones, list) else []:
+            if isinstance(p, str) and len(p) >= 7:
+                phone_ents.setdefault(p, set()).add(ct.enterprise_id)
+    shared = {
+        p: sorted(ents)
+        for p, ents in phone_ents.items()
+        if len(ents) >= 3
+    }
+    shared_top = sorted(shared.items(), key=lambda x: -len(x[1]))[:10]
+
     return {
         "funnel": {
             "total": total,
@@ -121,4 +147,13 @@ def quality_overview(
             "trash_count": trash_count,
         },
         "by_source": dict(sorted(by_source.items(), key=lambda x: -x[1]["count"])),
+        # SPEC-DQ：号码共享（疑似代理）——总数 + top10（号码→企业数）
+        "phone_sharing": {
+            "shared_numbers": len(shared),
+            "shared_ent_links": sum(len(v) for v in shared.values()),
+            "top": [
+                {"phone": p, "ent_count": len(ents), "ent_ids": ents[:6]}
+                for p, ents in shared_top
+            ],
+        },
     }

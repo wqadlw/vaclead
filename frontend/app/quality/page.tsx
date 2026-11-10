@@ -42,6 +42,12 @@ interface QualityData {
     trash_count: number;
   };
   by_source: Record<string, SourceStat>;
+  /** SPEC-DQ：号码共享分析（疑似代理/中介识别） */
+  phone_sharing?: {
+    shared_numbers: number;
+    shared_ent_links: number;
+    top: { phone: string; ent_count: number; ent_ids: number[] }[];
+  };
 }
 
 const SOURCE_CN: Record<string, string> = {
@@ -202,6 +208,57 @@ export default function QualityPage() {
           </table>
         </div>
       </div>
+
+      {/* SPEC-DQ：号码共享分析——同一号码挂 ≥3 家企业 = 疑似招标代理/中介
+          （销售打了发现是中介的根因；不删除，标注供人工判断） */}
+      {data?.phone_sharing && data.phone_sharing.shared_numbers > 0 && (
+        <div className="mt-4 rounded-lg border border-[var(--border)] bg-white p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-[15px] font-medium text-[var(--ink)]">号码共享分析（疑似代理/中介）</h2>
+            <span className="text-[12.5px] text-[var(--muted)]">
+              {data.phone_sharing.shared_numbers} 个号码被 ≥3 家企业共用（涉及{" "}
+              {data.phone_sharing.shared_ent_links.toLocaleString()} 条企业关联）——拨打前留意
+            </span>
+          </div>
+          <div className="mt-2.5 overflow-x-auto">
+            <div className="hscroll-table-wrap">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="text-left text-[12.5px] font-normal text-[var(--muted)]">
+                    <th className="py-2 pr-4 font-normal">号码</th>
+                    <th className="py-2 pr-4 text-right font-normal">挂靠企业数</th>
+                    <th className="py-2 font-normal">企业（点进详情）</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.phone_sharing.top.map((s) => (
+                    <tr key={s.phone} className="border-t border-[var(--rule)] hover:bg-[var(--raised)]">
+                      <td className="py-2 pr-4 font-mono tabular-nums text-[var(--ink)]">{s.phone}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums font-medium text-[#c2801b]">{s.ent_count}</td>
+                      <td className="py-2">
+                        <span className="flex flex-wrap gap-1.5">
+                          {s.ent_ids.map((id) => (
+                            <a
+                              key={id}
+                              href={`/enterprises/view?id=${id}`}
+                              className="text-[var(--accent)] hover:underline"
+                            >
+                              #{id}
+                            </a>
+                          ))}
+                          {s.ent_count > s.ent_ids.length && (
+                            <span className="text-[var(--muted)]">+{s.ent_count - s.ent_ids.length}</span>
+                          )}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }

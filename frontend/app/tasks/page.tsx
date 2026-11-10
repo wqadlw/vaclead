@@ -35,6 +35,26 @@ const UPLOAD_FIELDS: { value: string; label: string }[] = [
   { value: "skip", label: "忽略此列" },
 ];
 
+/** SPEC-GSH：工商补数向导的目标字段选项（固定工商字段集——匹配键 + 五要素 + skip） */
+const GONGSHANG_FIELDS: { value: string; label: string }[] = [
+  { value: "name", label: "企业名称（匹配键）" },
+  { value: "uscc", label: "信用代码（匹配键/回填）" },
+  { value: "legal_rep", label: "法人" },
+  { value: "established_at", label: "成立日期" },
+  { value: "registered_capital_wan", label: "注册资本(万)" },
+  { value: "business_scope", label: "经营范围" },
+  { value: "skip", label: "忽略此列" },
+];
+
+/** SPEC-GSH：filled 按字段计数的中文名（预演/结果摘要展示用） */
+const GONGSHANG_FIELD_LABELS: Record<string, string> = {
+  legal_rep: "法人",
+  established_at: "成立日期",
+  registered_capital_wan: "注册资本",
+  business_scope: "经营范围",
+  uscc: "信用代码",
+};
+
 interface ImportPreviewResp {
   headers_raw?: string[];
   headers_synonymized?: string[];
@@ -54,6 +74,20 @@ interface ImportResultResp {
   merged?: number;
   skipped?: number;
   skipped_details?: ImportSkippedDetail[];
+}
+
+/** SPEC-GSH：工商补数回填响应（dry_run 预演与正式回填共用同一结构） */
+interface GongshangBackfillResp {
+  dry_run?: boolean;
+  matched?: number;
+  filled?: Record<string, number>;
+  kept_existing?: number;
+  skipped?: number;
+  skipped_details?: ImportSkippedDetail[];
+  headers_raw?: string[];
+  mapping_suggestion?: { col: number; field: string }[];
+  preview_rows?: Record<string, string>[];
+  total_rows?: number;
 }
 
 function formatDone(summary: Record<string, unknown> | undefined): string {
@@ -95,6 +129,22 @@ export default function TasksPage() {
   const [upDup, setUpDup] = useState<{ existing: number; new: number } | null>(null);
   const [upResult, setUpResult] = useState<{
     inserted: number; merged: number; skipped: number; skipped_details: ImportSkippedDetail[];
+  } | null>(null);
+  // 工商补数两步向导（SPEC-GSH）：拖表→dry_run 预演→映射确认→正式回填（只填空不覆盖）
+  const [gsOpen, setGsOpen] = useState(false);
+  const [gsFile, setGsFile] = useState<File | null>(null);
+  const [gsBusy, setGsBusy] = useState(false);
+  const [gsConfirming, setGsConfirming] = useState(false);
+  const [gsHeaders, setGsHeaders] = useState<string[]>([]);
+  const [gsMapping, setGsMapping] = useState<{ col: number; field: string }[]>([]);
+  const [gsPreviewRows, setGsPreviewRows] = useState<Record<string, string>[]>([]);
+  const [gsTotalRows, setGsTotalRows] = useState(0);
+  const [gsPreview, setGsPreview] = useState<{
+    matched: number; filled: Record<string, number>; kept_existing: number; skipped: number;
+  } | null>(null);
+  const [gsResult, setGsResult] = useState<{
+    matched: number; filled: Record<string, number>; kept_existing: number;
+    skipped: number; skipped_details: ImportSkippedDetail[];
   } | null>(null);
   // 运行态
   const [starting, setStarting] = useState(false);
@@ -399,16 +449,117 @@ export default function TasksPage() {
     router.refresh();
   };
 
-  /** Dropzone 分流：企业 CSV 走两步向导，招标 CSV 保持直传 */
-  const pickDropzoneFile = (file: File, kind: "enterprises" | "tenders") => {
+  // ---- SPEC-GSH：工商补数（只填空值）向导 ----
+
+  /** 第一步：拖表即 dry_run 预演（后端零写入，只返回 matched/filled/skipped 计数） */
+  const startGongshangUpload = async (file: File) => {
+    setGsFile(file);
+    setGsOpen(true);
+    setGsResult(null);
+    setGsPreview(null);
+    setGsBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await api.post<GongshangBackfillResp>(
+        "/api/import/gongshang-backfill?dry_run=1",
+        fd,
+      );
+      const headers = res.headers_raw ?? [];
+      setGsHeaders(headers);
+      setGsMapping(
+        headers.map((_, i) => ({
+          col: i,
+          field:
+            res.mapping_suggestion?.find((m) => m.col === i)?.field ??
+            (i === 0 ? "name" : "skip"),
+        })),
+      );
+      setGsPreviewRows(res.preview_rows ?? []);
+      setGsTotalRows(res.total_rows ?? 0);
+      setGsPreview({
+        matched: res.matched ?? 0,
+        filled: res.filled ?? {},
+        kept_existing: res.kept_existing ?? 0,
+        skipped: res.skipped ?? 0,
+      });
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "解析文件失败");
+      closeGsWizard();
+    } finally {
+      setGsBusy(false);
+    }
+  };
+
+  /** 第二步：确认映射 → 正式回填（无 dry_run；后端只填空不覆盖） */
+  const confirmGongshangBackfill = async () => {
+    if (!gsFile) return;
+    setGsConfirming(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", gsFile);
+      const ordered = [...gsMapping].sort((a, b) => a.col - b.col).map((m) => m.field);
+      fd.append("mapping", JSON.stringify(ordered));
+      const res = await api.post<GongshangBackfillResp>("/api/import/gongshang-backfill", fd);
+      const result = {
+        matched: res.matched ?? 0,
+        filled: res.filled ?? {},
+        kept_existing: res.kept_existing ?? 0,
+        skipped: res.skipped ?? 0,
+        skipped_details: res.skipped_details ?? [],
+      };
+      const filledTotal = Object.values(result.filled).reduce((a, b) => a + b, 0);
+      Toast.success(
+        `回填完成：匹配 ${result.matched} 家，补 ${filledTotal} 格，保留已有 ${result.kept_existing} 格，未匹配 ${result.skipped} 行`,
+      );
+      setLogs((prev) => [
+        ...prev,
+        `工商补数成功：${gsFile.name}（匹配 ${result.matched}，补 ${filledTotal} 格，保留 ${result.kept_existing} 格，未匹配 ${result.skipped}）`,
+      ]);
+      setGsResult(result);
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "回填失败");
+    } finally {
+      setGsConfirming(false);
+    }
+  };
+
+  const closeGsWizard = () => {
+    setGsOpen(false);
+    setGsFile(null);
+    setGsHeaders([]);
+    setGsMapping([]);
+    setGsPreviewRows([]);
+    setGsTotalRows(0);
+    setGsPreview(null);
+    setGsResult(null);
+  };
+
+  const finishGsImport = () => {
+    closeGsWizard();
+    router.refresh();
+  };
+
+  /** Dropzone 分流：企业 CSV / 工商补数走两步向导，招标 CSV 保持直传 */
+  const pickDropzoneFile = (file: File, kind: "enterprises" | "tenders" | "gongshang") => {
     if (kind === "enterprises") {
       void startEnterpriseUpload(file);
+    } else if (kind === "gongshang") {
+      void startGongshangUpload(file);
     } else {
       void uploadCsv(file, kind);
     }
   };
 
-  const Dropzone = ({ kind, title, hint }: { kind: "enterprises" | "tenders"; title: string; hint: string }) => (
+  const Dropzone = ({
+    kind,
+    title,
+    hint,
+  }: {
+    kind: "enterprises" | "tenders" | "gongshang";
+    title: string;
+    hint: string;
+  }) => (
     <label
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
@@ -420,7 +571,7 @@ export default function TasksPage() {
     >
       <input
         type="file"
-        accept={kind === "enterprises" ? ".csv,.xlsx" : ".csv"}
+        accept={kind === "tenders" ? ".csv" : ".csv,.xlsx"}
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
@@ -439,6 +590,14 @@ export default function TasksPage() {
   for (const row of upPreviewRows.slice(0, 5)) {
     for (const k of Object.keys(row)) {
       if (!upPreviewCols.includes(k)) upPreviewCols.push(k);
+    }
+  }
+
+  // SPEC-GSH 工商补数向导预览表的列（同上传向导的去重规则）
+  const gsPreviewCols: string[] = [];
+  for (const row of gsPreviewRows.slice(0, 5)) {
+    for (const k of Object.keys(row)) {
+      if (!gsPreviewCols.includes(k)) gsPreviewCols.push(k);
     }
   }
 
@@ -601,6 +760,12 @@ export default function TasksPage() {
                 kind="tenders"
                 title="导入招标公告 CSV"
                 hint="列：title, content, url, pub_date, enterprise_name —— 命中设备词自动生成意图信号"
+              />
+              {/* SPEC-GSH：工商补数（只填空不覆盖）——风鸟对照表批量回填 */}
+              <Dropzone
+                kind="gongshang"
+                title="工商补数（只填空值）"
+                hint="拖入风鸟导出的对照表（企业名称/信用代码 + 法人/成立日期/注册资本/经营范围）——按名称或信用代码匹配库内企业，只补空格永不覆盖已有值；先预演后回填"
               />
             </div>
           </Card>
@@ -857,6 +1022,187 @@ export default function TasksPage() {
                   onClick={() => void confirmEnterpriseImport()}
                 >
                   确认导入 {upTotalRows} 行
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+      {/* 工商补数弹窗（SPEC-GSH：拖表 dry_run 预演 → 映射确认 → 正式回填只填空） */}
+      <Modal
+        title="工商补数（只填空值）"
+        visible={gsOpen}
+        onCancel={() => (gsResult ? finishGsImport() : closeGsWizard())}
+        footer={null}
+        width={640}
+      >
+        <div className="space-y-3 pt-1">
+          {/* 顶部：文件名 + 行数 + 只填空红线提示 */}
+          <div className="flex items-center flex-wrap gap-2">
+            <span
+              className="max-w-[260px] truncate text-[13px] font-medium text-[var(--ink)]"
+              title={gsFile?.name ?? ""}
+            >
+              {gsFile?.name ?? "（未选择文件）"}
+            </span>
+            <span className="text-[12px] text-[var(--muted)]">共 {gsTotalRows} 行</span>
+            <span className="ml-auto shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11.5px] text-emerald-700">
+              只填空值 · 永不覆盖已有数据
+            </span>
+          </div>
+
+          {gsBusy ? (
+            <div className="py-10 text-center text-[12.5px] text-[var(--muted)]">
+              正在解析文件并预演回填…
+            </div>
+          ) : gsResult ? (
+            <>
+              {/* 正式回填结果（与预演计数同构） */}
+              <p className="text-[12.5px] leading-5 text-[var(--muted)]">
+                回填完成：匹配 {gsResult.matched} 家，未匹配 {gsResult.skipped} 行。
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {Object.entries(gsResult.filled)
+                  .filter(([, n]) => n > 0)
+                  .map(([k, n]) => (
+                    <span
+                      key={k}
+                      className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11.5px] text-emerald-700"
+                    >
+                      {GONGSHANG_FIELD_LABELS[k] ?? k} 补 {n} 格
+                    </span>
+                  ))}
+                <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11.5px] text-slate-600">
+                  保留已有 {gsResult.kept_existing} 格
+                </span>
+              </div>
+              {gsResult.skipped_details.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-[12.5px] font-medium text-[var(--ink)]">
+                    未匹配明细（{gsResult.skipped_details.length} 条）
+                  </p>
+                  <div className="max-h-[200px] overflow-auto rounded-lg border border-[var(--border)]">
+                    {gsResult.skipped_details.map((d, i) => (
+                      <div
+                        key={i}
+                        className={`flex items-start gap-2 px-3 py-1.5 text-[12px] leading-5 ${
+                          i > 0 ? "border-t border-[var(--border)]" : ""
+                        }`}
+                      >
+                        <span className="shrink-0 text-[var(--muted)]">第 {d.row} 行</span>
+                        <span className="text-[var(--ink)]">{d.reason}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <Button theme="solid" block onClick={finishGsImport}>
+                完成
+              </Button>
+            </>
+          ) : (
+            <>
+              {/* dry_run 预演计数徽章（零写入，正式回填前先看会发生什么） */}
+              {gsPreview && (
+                <div className="flex flex-wrap gap-1.5">
+                  <span className="rounded-md border border-[color:var(--accent)]/30 bg-[color:var(--accent)]/5 px-2 py-0.5 text-[11.5px] text-[var(--accent)]">
+                    预演：匹配 {gsPreview.matched} 家
+                  </span>
+                  {Object.entries(gsPreview.filled)
+                    .filter(([, n]) => n > 0)
+                    .map(([k, n]) => (
+                      <span
+                        key={k}
+                        className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11.5px] text-emerald-700"
+                      >
+                        {GONGSHANG_FIELD_LABELS[k] ?? k} 可补 {n} 格
+                      </span>
+                    ))}
+                  <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11.5px] text-slate-600">
+                    已有值保留 {gsPreview.kept_existing} 格
+                  </span>
+                  <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11.5px] text-amber-700">
+                    未匹配 {gsPreview.skipped} 行
+                  </span>
+                </div>
+              )}
+              <p className="text-[12.5px] leading-5 text-[var(--muted)]">
+                确认列映射（已按表头自动识别企业名称/信用代码匹配列，可调整；「忽略此列」不参与）。确认后正式回填——仅补空格，已有值一律保留。
+              </p>
+              <div className="max-h-[260px] space-y-2 overflow-auto">
+                {gsHeaders.map((h, i) => {
+                  const field = gsMapping.find((m) => m.col === i)?.field ?? "skip";
+                  return (
+                    <div key={i} className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2">
+                      <span className="w-28 shrink-0 truncate text-[12.5px] font-medium text-[var(--ink)]" title={h}>
+                        {h || `（第 ${i + 1} 列）`}
+                      </span>
+                      <span className="text-[var(--control)]">→</span>
+                      <Select
+                        size="small"
+                        style={{ flex: 1 }}
+                        value={field}
+                        optionList={GONGSHANG_FIELDS}
+                        onChange={(v) =>
+                          setGsMapping((prev) => {
+                            const next = prev.filter((m) => m.col !== i);
+                            next.push({ col: i, field: v as string });
+                            return next;
+                          })
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              {gsPreviewRows.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-[12px] text-[var(--muted)]">
+                    数据预览（前 {Math.min(gsPreviewRows.length, 5)} 行，横向滚动查看）
+                  </p>
+                  <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+                    <table className="min-w-full text-[11.5px]">
+                      <thead>
+                        <tr className="bg-slate-50">
+                          {gsPreviewCols.map((c) => (
+                            <th
+                              key={c}
+                              className="whitespace-nowrap border-b border-[var(--border)] px-2.5 py-1.5 text-left font-medium text-[var(--muted)]"
+                            >
+                              {GONGSHANG_FIELD_LABELS[c] ?? (c === "name" ? "企业名称" : c)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {gsPreviewRows.slice(0, 5).map((row, ri) => (
+                          <tr key={ri}>
+                            {gsPreviewCols.map((c) => (
+                              <td
+                                key={c}
+                                className="whitespace-nowrap border-b border-[var(--border)] px-2.5 py-1.5 text-[var(--ink)]"
+                              >
+                                {row[c] ?? ""}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button theme="light" block onClick={closeGsWizard}>
+                  取消
+                </Button>
+                <Button
+                  theme="solid"
+                  block
+                  loading={gsConfirming}
+                  onClick={() => void confirmGongshangBackfill()}
+                >
+                  确认回填 {gsTotalRows} 行
                 </Button>
               </div>
             </>
