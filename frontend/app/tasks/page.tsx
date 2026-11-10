@@ -595,7 +595,7 @@ export default function TasksPage() {
               <Dropzone
                 kind="enterprises"
                 title="导入企业名单 CSV"
-                hint="列：name, province, city, district, address, business_scope, registered_capital_wan, industry_key"
+                hint="表头随意——中文列名自动识别（如 公司名称/省份/注册资本），上传后可逐列确认映射；识别不了的列在向导里手动指一下即可"
               />
               <Dropzone
                 kind="tenders"

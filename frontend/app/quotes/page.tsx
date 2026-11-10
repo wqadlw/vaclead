@@ -115,7 +115,8 @@ export default function QuotesPage() {
         </Select>
         <Button theme="solid" icon={<Plus size={14} />} onClick={openCreate}>新建报价单</Button>
       </div>
-      <div className="rounded-xl border border-[var(--border)] bg-white">
+      <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-white">
+        <div className="hscroll-table-wrap">
         <Table
           size="small"
           dataSource={items}
@@ -138,6 +139,7 @@ export default function QuotesPage() {
           ]}
           empty="还没有报价单 —— 从线索列表或本页新建"
         />
+        </div>
       </div>
 
       <SideSheet title={`报价单 #${detail?.id ?? ""}`} visible={!!detail} onCancel={() => setDetail(null)} width={560}>
