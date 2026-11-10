@@ -55,6 +55,8 @@ export default function QuotesPage() {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [leads, setLeads] = useState<LeadRow[]>([]);
   const [newLeadId, setNewLeadId] = useState<number | null>(null);
+  const [newValidUntil, setNewValidUntil] = useState("");
+  const [newRemark, setNewRemark] = useState("");
   const [newItems, setNewItems] = useState<QuoteItem[]>([]);
 
   const load = useCallback(() => {
@@ -65,13 +67,19 @@ export default function QuotesPage() {
 
   const openCreate = () => {
     api.get<{ items: ProductRow[] }>("/api/products").then((d) => setProducts(d.items)).catch(() => undefined);
-    api.get<{ items: LeadRow[] }>("/api/leads?page_size=50").then((d) => setLeads(d.items)).catch(() => undefined);
+    // SPEC-QTE：线索放宽到 200（此前 50 条——线索过百后新建报价选不到目标）
+    api.get<{ items: LeadRow[] }>("/api/leads?page_size=200").then((d) => setLeads(d.items)).catch(() => undefined);
     setNewLeadId(null);
     setNewItems([]);
+    setNewValidUntil("");
+    setNewRemark("");
     setCreating(true);
   };
   const addItem = () => {
     setNewItems([...newItems, { product_id: null, name: "", qty: 1, price: 0, price_unit: "台" }]);
+  };
+  const removeItem = (idx: number) => {
+    setNewItems(newItems.filter((_, i) => i !== idx));
   };
   const pickProduct = (idx: number, pid: number) => {
     const p = products.find((x) => x.id === pid);
@@ -89,10 +97,18 @@ export default function QuotesPage() {
       return;
     }
     try {
-      await api.post("/api/quotes", { lead_id: newLeadId, items: newItems });
+      // SPEC-QTE：有效期/备注随创建提交；创建后自动打开详情侧栏（动线闭环）
+      const created = await api.post<{ id: number }>("/api/quotes", {
+        lead_id: newLeadId,
+        items: newItems,
+        valid_until: newValidUntil || null,
+        remark: newRemark.trim() || null,
+      });
       Toast.success("报价单已创建");
       setCreating(false);
       load();
+      const d = await api.get<QuoteRow>(`/api/quotes/${created.id}`);
+      setDetail(d); // 动线闭环：建完直接进详情（状态流转/打印都在那）
     } catch (e) {
       Toast.error(e instanceof Error ? e.message : "创建失败");
     }
@@ -188,11 +204,11 @@ export default function QuotesPage() {
         onOk={saveQuote}
         onCancel={() => setCreating(false)}
         okText="创建"
-        width={620}
+        width={640}
       >
         <div className="space-y-3 py-2">
           <Select
-            placeholder="选线索（仅跟进中/意向）"
+            placeholder="选线索（仅跟进中/意向，可输入过滤）"
             value={newLeadId ?? undefined}
             onChange={(v) => setNewLeadId(Number(v))}
             filter
@@ -204,29 +220,78 @@ export default function QuotesPage() {
               </Select.Option>
             ))}
           </Select>
+          {/* SPEC-QTE：移动端行项纵向（产品全宽），md+ 横排；单价可调（折扣场景）+ 可删行 */}
           {newItems.map((it, idx) => (
-            <div key={idx} className="flex items-center gap-2">
-              <Select placeholder="选产品" value={it.product_id ?? undefined} onChange={(v) => pickProduct(idx, Number(v))} className="!w-56" filter>
-                {products.map((p) => (
-                  <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>
-                ))}
-              </Select>
-              <Input
-                className="!w-16"
-                type="number"
-                value={String(it.qty)}
-                onChange={(v) => {
-                  const next = [...newItems];
-                  next[idx] = { ...it, qty: Number(v) || 1 };
-                  setNewItems(next);
-                }}
-              />
-              <span className="text-[12px] text-[var(--muted)]">× {it.price.toLocaleString()} 万</span>
+            <div key={idx} className="rounded-lg border border-[var(--border)] px-3 py-2.5">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                <Select
+                  placeholder="选产品（含规格）"
+                  value={it.product_id ?? undefined}
+                  onChange={(v) => pickProduct(idx, Number(v))}
+                  filter
+                  className="!w-full md:!w-52"
+                >
+                  {products.map((p) => (
+                    <Select.Option key={p.id} value={p.id}>
+                      {p.name}
+                      {p.model ? ` · ${p.model}` : ""}
+                    </Select.Option>
+                  ))}
+                </Select>
+                <div className="flex items-center gap-2">
+                  <span className="text-[12px] text-[var(--muted)]">数量</span>
+                  <Input
+                    className="!w-16"
+                    type="number"
+                    value={String(it.qty)}
+                    onChange={(v) => {
+                      const next = [...newItems];
+                      next[idx] = { ...it, qty: Number(v) || 1 };
+                      setNewItems(next);
+                    }}
+                  />
+                  <span className="text-[12px] text-[var(--muted)]">单价(万)</span>
+                  <Input
+                    className="!w-24"
+                    type="number"
+                    value={String(it.price)}
+                    onChange={(v) => {
+                      const next = [...newItems];
+                      next[idx] = { ...it, price: Number(v) || 0 };
+                      setNewItems(next);
+                    }}
+                  />
+                </div>
+                <div className="flex items-center gap-2 md:ml-auto">
+                  <span className="text-[13px] font-medium tabular-nums text-[var(--ink)]">
+                    小计 {(it.qty * it.price).toLocaleString()} 万
+                  </span>
+                  {newItems.length > 1 && (
+                    <button
+                      onClick={() => removeItem(idx)}
+                      className="cursor-pointer rounded border-0 bg-transparent p-1 text-[12px] text-[var(--negative)] hover:bg-[var(--raised)]"
+                      title="删除该行"
+                    >
+                      删除
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           ))}
           <div className="flex items-center justify-between">
             <Button size="small" onClick={addItem}>+ 加一行</Button>
-            <span className="text-[14px] font-medium tabular-nums text-[var(--ink)]">合计 {total.toLocaleString()} 万</span>
+            <span className="text-[15px] font-semibold tabular-nums text-[var(--ink)]">合计 {total.toLocaleString()} 万</span>
+          </div>
+          <div className="grid grid-cols-1 gap-3 border-t border-[var(--border)] pt-3 sm:grid-cols-2">
+            <div>
+              <div className="mb-1 text-[12px] text-[var(--muted)]">有效期至（可选）</div>
+              <Input type="date" value={newValidUntil} onChange={setNewValidUntil} />
+            </div>
+            <div>
+              <div className="mb-1 text-[12px] text-[var(--muted)]">备注（可选，会出现在报价单上）</div>
+              <Input value={newRemark} placeholder="如：含安装调试与一年质保" onChange={setNewRemark} />
+            </div>
           </div>
         </div>
       </Modal>
