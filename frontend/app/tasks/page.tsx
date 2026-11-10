@@ -420,7 +420,7 @@ export default function TasksPage() {
     >
       <input
         type="file"
-        accept=".csv"
+        accept={kind === "enterprises" ? ".csv,.xlsx" : ".csv"}
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
@@ -594,8 +594,8 @@ export default function TasksPage() {
             <div className="grid grid-cols-1 gap-3">
               <Dropzone
                 kind="enterprises"
-                title="导入企业名单 CSV"
-                hint="表头随意——中文列名自动识别（如 公司名称/省份/注册资本），上传后可逐列确认映射；识别不了的列在向导里手动指一下即可"
+                title="导入企业名单（Excel / CSV）"
+                hint="支持 Excel(.xlsx) / CSV；表头随意——中文列名自动识别（如 公司名称/省份/注册资本），上传后可逐列确认映射；识别不了的列在向导里手动指一下即可"
               />
               <Dropzone
                 kind="tenders"

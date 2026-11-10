@@ -268,6 +268,55 @@ def _parse_mapping_form(mapping: str | None) -> list[str] | None:
     return parsed
 
 
+def _parse_upload(raw: bytes, filename: str) -> tuple[list[str], list[dict]]:
+    """上传文件统一解析（SPEC-XLSX）：.xlsx 走 openpyxl 只读直读，其余后缀走既有 CSV 路径。
+
+    返回 (表头列表, 行字典列表)。两个分支语义对齐：
+    - xlsx 分支：首个工作表（业务口径，多 sheet 选择是非目标）、首行非全空行=表头、
+      其余行按表头 zip 成 dict；单元格 None→""，数值/日期统一转字符串（下游
+      float() / [:10] 截断天然兼容）；行全空跳过。read_only+data_only 模式不加载
+      样式与公式缓存对象（防样式炸弹，SPEC-XLSX）；坏文件 → 400 可读 detail。
+    - CSV 分支：_decode_csv_bytes + csv.DictReader 原样包一层（不做分隔符探测，
+      与既有 /import/enterprises 行为逐字节一致；preview 的 Tab 探测逻辑保留在端点内）。
+      DictReader 的空行跳过 / 缺列 restval=None / 多余列 restkey 语义原样保留。
+    """
+    if filename.endswith(".xlsx"):
+        from openpyxl import load_workbook  # 延迟导入：仅 xlsx 路径需要（SPEC-XLSX）
+
+        try:
+            wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        except Exception:  # noqa: BLE001 — 坏文件/非 xlsx 字节一律给出可读 400
+            raise HTTPException(
+                400, "Excel 文件解析失败，请确认是有效的 .xlsx（另存为 Excel 工作簿）"
+            )
+        try:
+            ws = wb.worksheets[0]
+            rows_iter = ws.iter_rows(values_only=True)
+            headers: list[str] = []
+            for row in rows_iter:
+                # 首个非全空行=表头；None→"" 保留列位（删列会让数据行 zip 错位）
+                if any(v is not None and str(v).strip() for v in row):
+                    headers = ["" if v is None else str(v) for v in row]
+                    break
+            parsed: list[dict] = []
+            for row in rows_iter:
+                if not any(v is not None and str(v).strip() for v in row):
+                    continue  # 行全空跳过（SPEC-XLSX）
+                parsed.append({
+                    h: ("" if v is None else str(v)) for h, v in zip(headers, row)
+                })
+        finally:
+            wb.close()  # read_only 模式需显式关闭释放句柄
+        return headers, parsed
+
+    # CSV / 其余后缀：既有路径原样包一层（SPEC-XLSX 要求 .csv 行为逐字节不变）
+    text_content = _decode_csv_bytes(raw)
+    reader = csv.DictReader(io.StringIO(text_content))
+    fieldnames = list(reader.fieldnames or [])
+    rows: list[dict] = list(reader)
+    return fieldnames, rows
+
+
 def apply_enterprise_row_fields(session: Session, ent: Enterprise, row: dict, batch_id: str) -> None:
     """行→企业字段落库公共函数（SPEC-IMP 1.2：粘贴/上传两条导入路径共用）。
 
@@ -381,21 +430,32 @@ async def preview_import_enterprises(
     空名行不计入 existing，由正式导入按 skipped 落明细）。
     """
     raw = await file.read()
-    text_content = _decode_csv_bytes(raw)
-    lines = [ln for ln in text_content.splitlines() if ln.strip()]
-    if not lines:
-        raise HTTPException(422, "文件内容为空")
 
-    # 分隔符探测：与粘贴路径同规则（SPEC-IMP 1.1）——首行 Tab 数 ≥ 逗号数取 Tab
-    header_line = lines[0]
-    delim = "\t" if header_line.count("\t") >= header_line.count(",") else ","
+    # SPEC-XLSX：.xlsx 直读分支——走 _parse_upload 统一解析，跳过分隔符探测
+    # （xlsx 无分隔符概念，detected_delimiter 占位返回 ","，前端向导不消费该字段）
+    if (file.filename or "").endswith(".xlsx"):
+        headers_x, rows_x = _parse_upload(raw, file.filename or "")
+        if not headers_x:
+            raise HTTPException(422, "Excel 需包含表头行")
+        # 行 dict → 按表头列序还原 cells（后续同义词/映射建议逻辑与 CSV 完全共用）
+        parsed_rows = [headers_x] + [[(r.get(h) or "") for h in headers_x] for r in rows_x]
+        delim = ","
+    else:
+        text_content = _decode_csv_bytes(raw)
+        lines = [ln for ln in text_content.splitlines() if ln.strip()]
+        if not lines:
+            raise HTTPException(422, "文件内容为空")
 
-    # csv.reader 按探测分隔符解析（引号包裹的单元格正确展开；空行跳过）
-    parsed_rows = [
-        [c.strip() for c in r]
-        for r in csv.reader(io.StringIO(text_content), delimiter=delim)
-        if any(c.strip() for c in r)
-    ]
+        # 分隔符探测：与粘贴路径同规则（SPEC-IMP 1.1）——首行 Tab 数 ≥ 逗号数取 Tab
+        header_line = lines[0]
+        delim = "\t" if header_line.count("\t") >= header_line.count(",") else ","
+
+        # csv.reader 按探测分隔符解析（引号包裹的单元格正确展开；空行跳过）
+        parsed_rows = [
+            [c.strip() for c in r]
+            for r in csv.reader(io.StringIO(text_content), delimiter=delim)
+            if any(c.strip() for c in r)
+        ]
     if not parsed_rows:
         raise HTTPException(422, "CSV 需包含表头行")
     headers_raw = parsed_rows[0]
@@ -462,19 +522,22 @@ async def import_enterprises(
     user: User = Depends(admin_only),
 ):
     raw = await file.read()
-    text_content = _decode_csv_bytes(raw)
 
     # SPEC-IMP 1.2：显式 mapping 优先（skip 列跳过）；缺省走 _HEADER_SYNONYMS 同义词路径
     mapping_list = _parse_mapping_form(mapping)
 
-    reader = csv.DictReader(io.StringIO(text_content))
-    # 表头归一走公共函数（SPEC-M 同义词语义 + SPEC-IMP 1.2 显式 mapping，共用一份行→字段逻辑）
-    raw_fields = reader.fieldnames or []
-    reader.fieldnames = _import_headers(raw_fields, mapping_list)
+    # SPEC-XLSX：统一上传解析（.xlsx→openpyxl 只读；.csv/其余→既有 _decode_csv_bytes
+    # + DictReader 语义包一层）。表头归一走公共函数
+    # （SPEC-M 同义词语义 + SPEC-IMP 1.2 显式 mapping，共用一份行→字段逻辑）
+    raw_fields, raw_rows = _parse_upload(raw, file.filename or "")
+    norm_fields = _import_headers(raw_fields, mapping_list)
     inserted, merged, skipped = 0, 0, 0
     skipped_details: list[dict] = []  # SPEC-IMP 1.2：无名称行明细（≤10 条）
     batch_id = uuid.uuid4().hex[:12]
-    for row_no, row in enumerate(reader, start=2):  # 行号从 2 起算（表头=第 1 行）
+    for row_no, raw_row in enumerate(raw_rows, start=2):  # 行号从 2 起算（表头=第 1 行）
+        # 位置重建：norm_fields[i] 对应 raw_fields[i]（表头唯一时与 DictReader
+        # dict(zip(fieldnames, row)) 行为逐字节一致，SPEC-XLSX）
+        row = {n: raw_row.get(h) for n, h in zip(norm_fields, raw_fields)}
         name = (row.get("name") or "").strip()
         if not name:
             skipped += 1

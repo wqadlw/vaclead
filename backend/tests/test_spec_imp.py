@@ -223,3 +223,85 @@ def test_import_endpoints_require_admin(client, sales_headers):
                        files=_csv_file("公司名称\nx\n"), headers=sales_headers).status_code == 403
     assert client.post("/api/import/enterprises",
                        files=_csv_file("公司名称\nx\n"), headers=sales_headers).status_code == 403
+
+
+# ---------------- SPEC-XLSX：企业导入 .xlsx 直读 ----------------
+
+def _xlsx_bytes(rows: list[list]) -> bytes:
+    """openpyxl 内存构造 workbook → xlsx 字节串（SPEC-XLSX 测试构造模式）。"""
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for r in rows:
+        ws.append(r)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _xlsx_file(content: bytes, filename: str = "imp.xlsx"):
+    """xlsx 字节串 → multipart UploadFile（与 _csv_file 同构）。"""
+    return {
+        "file": (
+            filename,
+            io.BytesIO(content),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    }
+
+
+def test_preview_xlsx_mapping(client, admin_headers):
+    """SPEC-XLSX：xlsx preview 正确映射（中文表头同义词归一 + 行数 + 预览行取值）。"""
+    data = _xlsx_bytes([
+        ["公司名称", "省份", "注册资本(万元)"],
+        ["表格直读真空设备有限公司", "江苏省", 500],
+        ["表格直读第二机械有限公司", "广东省", 1200],
+    ])
+    r = client.post("/api/import/enterprises/preview",
+                    files=_xlsx_file(data), headers=admin_headers)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["headers_raw"] == ["公司名称", "省份", "注册资本(万元)"]
+    # 中文表头同样过 _HEADER_SYNONYMS（SPEC-XLSX：语义与 CSV 一致）
+    assert d["headers_synonymized"] == ["name", "province", "registered_capital_wan"]
+    assert d["total_rows"] == 2
+    # 数值单元格统一转字符串（500 → "500"），skip 缺省列不出现（本例全命中）
+    assert d["preview_rows"][0] == {
+        "name": "表格直读真空设备有限公司",
+        "province": "江苏省",
+        "registered_capital_wan": "500",
+    }
+    assert d["dup_preview"] == {"existing": 0, "new": 2}
+
+
+def test_import_xlsx_inserted(client, admin_headers):
+    """SPEC-XLSX：xlsx 正式导入 inserted==2，字段落库正确（注册资本数值容错）。"""
+    data = _xlsx_bytes([
+        ["公司名称", "省份", "注册资本(万元)"],
+        ["表导直入真空设备有限公司", "湖北省", 800],
+        ["表导直入第二轴承有限公司", "湖南省", 1500],
+    ])
+    r = client.post("/api/import/enterprises",
+                    files=_xlsx_file(data), headers=admin_headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["inserted"] == 2 and body["merged"] == 0 and body["skipped"] == 0
+    e1 = _ent("表导直入真空设备有限公司")
+    assert e1 is not None
+    assert e1.province == "湖北省"
+    assert e1.registered_capital_wan == 800.0  # 数值单元格 str(800)→float(800.0)
+    assert e1.source_batch_id == body["batch_id"]
+    assert _ent("表导直入第二轴承有限公司") is not None
+
+
+def test_import_xlsx_corrupt_400(client, admin_headers):
+    """SPEC-XLSX：坏 xlsx（空字节改名）→ 400 + 可读 detail（preview 与正式导入一致）。"""
+    r = client.post("/api/import/enterprises/preview",
+                    files=_xlsx_file(b"", "broken.xlsx"), headers=admin_headers)
+    assert r.status_code == 400
+    assert "Excel" in r.json()["detail"]
+    r2 = client.post("/api/import/enterprises",
+                     files=_xlsx_file(b"", "broken.xlsx"), headers=admin_headers)
+    assert r2.status_code == 400
+    assert "Excel" in r2.json()["detail"]
