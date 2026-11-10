@@ -4,6 +4,23 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-10 · SPEC-XLSX：企业导入 .xlsx 直读（第十七次功能轮）
+
+**场景**：对照表 5271 是 Excel——原流程要"另存为 CSV"（中文还易乱码）。
+现在拓客任务页 Dropzone 直接吃 .xlsx（openpyxl 只读解析，首 sheet），
+preview/正式导入/向导三处统一走 _parse_upload；中文表头映射/显式
+mapping/去重预演/跳过明细全部复用 SPEC-IMP 能力。
+
+**交付**（Agent 全链路）：requirements 补 openpyxl；imports.py 新
+_parse_upload（xlsx/CSV 双分支同构返回）；前端 accept 分流（enterprises
+.csv+.xlsx，tenders 保持 csv）；3 新用例（中文表头 xlsx 映射/导入落库/
+坏文件 400 可读 detail）。**偏离点**：gongshang-csv 按"兼容才接"跳过
+——摸底证实它是 JSON body 端点（无 UploadFile），硬接=重做契约。
+
+**实弹**：重启后真库传中文表头 xlsx → 映射全中（公司名称/省份/注册
+资本(万元)）+ 去重预演 2 新。**门禁**：后端 **401**（+3）+ build +
+E2E 12 ✓。
+
 ## 2026-11-10 · 未审查页面七页扫荡（好用性第八轮）
 
 **方法**：quotes/contracts/outreach/inbox/products/forms/tasks 七页
