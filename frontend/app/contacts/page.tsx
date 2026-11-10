@@ -5,7 +5,7 @@
  * 可拨优先 / 未触达优先 / 企业意图分排序 / 边打边标（快标 7 态）。
  * 头部平台（Apollo/Revenue.io）daily call list 的对位形态。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Input, Modal, Select, Tag, Toast, Tooltip } from "@douyinfe/semi-ui";
 import { Download, Keyboard, Phone } from "lucide-react";
 import AppShell from "@/components/AppShell";
@@ -79,7 +79,19 @@ const ROLE_CN: Record<string, string> = {
 };
 
 export default function ContactsPage() {
-  const [data, setData] = useState<Worklist | null>(null);
+  // SPEC-CUX2：真分页状态——meta（stats/provinces/total）+ items 跨页累积；
+  // 旧版"一次拉 100 条 + visibleCount 本地切片"随 2000 采样上限一并废弃
+  const [meta, setMeta] = useState<{
+    stats: Worklist["stats"];
+    provinces: Record<string, number>;
+    total: number;
+  } | null>(null);
+  const [items, setItems] = useState<ContactRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  // SPEC-CUX2：批量标记选择集（跨页保留，翻页不清空；筛选切换时清空）
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [batchResult, setBatchResult] = useState("");
+  const [batchBusy, setBatchBusy] = useState(false);
   const [callStatus, setCallStatus] = useState("untouched");
   const [decisionRole, setDecisionRole] = useState("");
   const [province, setProvince] = useState("");
@@ -146,20 +158,76 @@ export default function ContactsPage() {
     }
   };
 
-  const [visibleCount, setVisibleCount] = useState(30);
+  // ---- SPEC-CUX2：真分页（offset/limit 进 SQL，2000 采样上限已删）----
+  // LoadMoreSensor 触底按 offset 累加拉取下一页（页大小 50），items 跨页累积。
+  // 竞态防护：genRef 代次——筛选切换（load）作废在途翻页响应；inflightRef
+  // 防抖——IntersectionObserver 在请求期间重复触发直接跳过。
+  const PAGE_SIZE = 50;
+  const genRef = useRef(0);
+  const inflightRef = useRef<number | null>(null);
+  const itemsRef = useRef<ContactRow[]>([]);
+  itemsRef.current = items;
+
+  const buildParams = useCallback(
+    (offset: number) => {
+      const p = new URLSearchParams({
+        has_phone: "1",
+        limit: String(PAGE_SIZE),
+        offset: String(offset),
+      });
+      if (callStatus) p.set("call_status", callStatus);
+      if (decisionRole) p.set("decision_role", decisionRole);
+      if (province) p.set("province", province);
+      if (q.trim()) p.set("q", q.trim());
+      if (order) p.set("order", order);
+      return p;
+    },
+    [callStatus, decisionRole, province, q, order],
+  );
 
   const load = useCallback(() => {
-    const p = new URLSearchParams({ has_phone: "1", limit: "100" });
-    if (callStatus) p.set("call_status", callStatus);
-    if (decisionRole) p.set("decision_role", decisionRole);
-    if (province) p.set("province", province);
-    if (q.trim()) p.set("q", q.trim());
-    if (order) p.set("order", order);
-    api.get<Worklist>(`/api/contacts?${p}`)
-      .then((d) => { setData(d); setVisibleCount(30); })
-      .catch(() => undefined);
-  }, [callStatus, decisionRole, province, q, order]);
+    const gen = ++genRef.current;
+    inflightRef.current = gen;
+    setLoading(true);
+    api.get<Worklist>(`/api/contacts?${buildParams(0)}`)
+      .then((d) => {
+        if (gen !== genRef.current) return; // 已被更新的请求作废
+        setMeta({ stats: d.stats, provinces: d.provinces, total: d.total });
+        setItems(d.items);
+        setSelected(new Set());
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (inflightRef.current === gen) inflightRef.current = null;
+        if (gen === genRef.current) setLoading(false);
+      });
+  }, [buildParams]);
   useEffect(load, [load]);
+
+  const loadMore = useCallback(() => {
+    if (inflightRef.current !== null) return; // 在途期间 IO 重复触发不重复拉取
+    const fetched = itemsRef.current.length;
+    if (!meta || fetched >= meta.total) return; // 已拉满不再请求
+    const gen = ++genRef.current;
+    inflightRef.current = gen;
+    setLoading(true);
+    api.get<Worklist>(`/api/contacts?${buildParams(fetched)}`)
+      .then((d) => {
+        if (gen !== genRef.current) return;
+        setMeta((m) => (m ? { ...m, total: d.total } : m));
+        setItems((prev) => {
+          // 去重防御：offset 重叠（IO 抖动）不产生重复行
+          const seen = new Set(prev.map((x) => x.id));
+          return [...prev, ...d.items.filter((x) => !seen.has(x.id))];
+        });
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (inflightRef.current === gen) inflightRef.current = null;
+        if (gen === genRef.current) setLoading(false);
+      });
+  }, [buildParams, meta]);
+  const hasMore = !!meta && items.length < meta.total;
 
   // SPEC-CUX CUX2：order 轻量同步 URL（replaceState 静默写，参照 enterprises 页惯例；
   // 保留 search 里既有的其它参数，分享/刷新/返回排序不丢）
@@ -187,11 +255,48 @@ export default function ContactsPage() {
     }
   };
 
+  // SPEC-CUX2：批量多选辅助（当页全选/反选由列表头 checkbox 承担）
+  const allSelected = items.length > 0 && items.every((i) => selected.has(i.id));
+  const someSelected = selected.size > 0 && !allSelected;
+  const toggleRow = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(items.map((i) => i.id)));
+
+  // SPEC-CUX2：批量标记提交 → POST /contacts/batch-call-result → 成功 Toast(changed)
+  // + 行内状态即时刷新（本地 map 更新 call_result，不整页重拉）
+  const runBatch = async () => {
+    if (!batchResult || selected.size === 0) return;
+    setBatchBusy(true);
+    try {
+      const d = await api.post<{ changed: number }>("/api/contacts/batch-call-result", {
+        ids: Array.from(selected),
+        result: batchResult,
+      });
+      Toast.success(`已批量标记 ${d.changed} 人`);
+      const result = batchResult;
+      setItems((prev) =>
+        prev.map((it) => (selected.has(it.id) ? { ...it, call_result: result } : it)),
+      );
+      setSelected(new Set());
+      setBatchResult("");
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "批量标记失败");
+    } finally {
+      setBatchBusy(false);
+    }
+  };
+
   // SPEC-CUX CUX1 键盘流（Close 拨号器惯例）：J/K/↓/↑ 导航、Enter 打开选中行驾驶舱。
   // 守卫照抄 KeyboardShortcuts 同款：输入框/文本域/下拉/按钮聚焦时全部跳过（不干扰打字）；
   // 驾驶舱开着时让位（Esc 关闭已有），修饰键组合一律不劫持。
   useEffect(() => {
-    const rows = data?.items.slice(0, visibleCount) ?? [];
+    const rows = items; // SPEC-CUX2：真分页后键盘流直接作用于已累积的全部行
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const inField =
@@ -219,14 +324,14 @@ export default function ContactsPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [data, visibleCount, selIdx, prepId]);
+  }, [items, selIdx, prepId]);
 
   // SPEC-CUX CUX1：筛选/加载更多后选中越界自动夹取（越界回 0）
   useEffect(() => {
-    setSelIdx((i) => (i >= (data?.items.slice(0, visibleCount).length ?? 0) ? 0 : i));
-  }, [data, visibleCount]);
+    setSelIdx((i) => (i >= items.length ? 0 : i));
+  }, [items]);
 
-  const st = data?.stats;
+  const st = meta?.stats;
   // SPEC-CUX CUX3：时间线渲染列表（默认最近 5 条，>5 折叠可展开）
   const tl = prep?.timeline ?? [];
 
@@ -269,7 +374,7 @@ export default function ContactsPage() {
             <Select.Option value="handler">经办人</Select.Option>
           </Select>
           <Select value={province || undefined} placeholder="全部省份" showClear onChange={(v) => setProvince(String(v ?? ""))} className="!w-32 shrink-0">
-            {Object.keys(data?.provinces ?? {}).map((p) => (
+            {Object.keys(meta?.provinces ?? {}).map((p) => (
               <Select.Option key={p} value={p}>{p}</Select.Option>
             ))}
           </Select>
@@ -308,15 +413,67 @@ export default function ContactsPage() {
           <Tooltip content="J/K 导航 · Enter 打开">
             <Keyboard size={14} className="cursor-help" />
           </Tooltip>
-          共 {data?.total ?? 0} 人 · 排序：{order
+          共 {meta?.total ?? 0} 人 · 排序：{order
             ? { newest: "最新入库", intent: "意图最高", recent_called: "最近拨打" }[order]
             : "可拨优先 → 意图分 → 未拨优先"}
         </span>
       </div>
 
+      {/* SPEC-CUX2：列表头多选 + 批量标记栏——当页全选/反选 → 选中 N 人 →
+          七态下拉 → 确认；checkbox 触屏目标 h-5 w-5 起步（移动端达标） */}
+      {meta && items.length > 0 && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border)] bg-white px-4 py-2">
+          <label className="flex cursor-pointer select-none items-center gap-2 text-[12.5px] text-[var(--muted)]">
+            <input
+              type="checkbox"
+              className="h-5 w-5 cursor-pointer accent-[var(--accent)]"
+              aria-label="全选/反选当页联系人"
+              checked={allSelected}
+              ref={(el) => {
+                if (el) el.indeterminate = someSelected;
+              }}
+              onChange={toggleAll}
+            />
+            全选当页（{items.length} 人）
+          </label>
+          {selected.size > 0 && (
+            <div className="flex flex-wrap items-center gap-2 border-l border-[var(--border)] pl-3">
+              <span className="text-[13px] font-medium text-[var(--ink)]">
+                已选 {selected.size} 人
+              </span>
+              <Select
+                value={batchResult || undefined}
+                placeholder="标记为…"
+                showClear
+                className="!w-32"
+                onChange={(v) => setBatchResult(String(v ?? ""))}
+              >
+                {CALL_RESULTS.map((r) => (
+                  <Select.Option key={r.key} value={r.key}>
+                    {r.label}
+                  </Select.Option>
+                ))}
+              </Select>
+              <Button
+                size="small"
+                theme="solid"
+                loading={batchBusy}
+                disabled={!batchResult}
+                onClick={() => void runBatch()}
+              >
+                确认标记
+              </Button>
+              <Button size="small" theme="borderless" onClick={() => setSelected(new Set())}>
+                取消
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 拨打名单 */}
       <div className="mt-2.5 space-y-2">
-        {!data && (
+        {!meta && (
           <div className="space-y-2" aria-hidden>
             {/* SPEC-UX 骨架屏：数据 3s+ 加载期的空白感知（animate-pulse 纯 CSS） */}
             {[0, 1, 2, 3].map((i) => (
@@ -328,7 +485,7 @@ export default function ContactsPage() {
             ))}
           </div>
         )}
-        {data && (data?.items ?? []).slice(0, visibleCount).map((c, i) => (
+        {meta && items.map((c, i) => (
           <div
             key={c.id}
             className={`cursor-pointer rounded-lg border px-4 py-3 transition-colors ${
@@ -340,6 +497,16 @@ export default function ContactsPage() {
             onClick={() => void openPrep(c.id)}
           >
             <div className="flex items-start justify-between gap-3">
+              {/* SPEC-CUX2：批量多选 checkbox（触屏目标 h-5 w-5；stopPropagation
+                  防误开驾驶舱） */}
+              <input
+                type="checkbox"
+                className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-[var(--accent)]"
+                aria-label={`选中 ${c.name}`}
+                checked={selected.has(c.id)}
+                onClick={(ev) => ev.stopPropagation()}
+                onChange={() => toggleRow(c.id)}
+              />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[14px] font-medium text-[var(--ink)]">{c.name}</span>
@@ -411,13 +578,17 @@ export default function ContactsPage() {
             </div>
           </div>
         ))}
-        {(data?.items ?? []).length === 0 && (
+        {meta && items.length === 0 && (
           <div className="py-16 text-center text-[13px] text-[var(--muted)]">
             当前筛选下没有可拨联系人 —— 换个状态/省份，或去「标讯中心」让 04:08 回填任务补号码
           </div>
         )}
-        {(data?.items ?? []).length > visibleCount && (
-          <LoadMoreSensor onLoadMore={() => setVisibleCount((n) => n + 50)} />
+        {/* SPEC-CUX2：真分页触底拉下一页（offset 累加，页大小 50） */}
+        {hasMore && <LoadMoreSensor onLoadMore={loadMore} />}
+        {loading && items.length > 0 && (
+          <div className="py-4 text-center text-[12.5px] text-[var(--muted)]" role="status">
+            加载中…
+          </div>
         )}
       </div>
 
