@@ -9,7 +9,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Input, Modal, Select, Tag, Toast, Tooltip } from "@douyinfe/semi-ui";
 import { Download, Keyboard, Phone } from "lucide-react";
 import AppShell from "@/components/AppShell";
-import LoadMoreSensor from "@/components/LoadMoreSensor";
 import CallResultTag, { CALL_RESULTS } from "@/components/CallResultTag";
 import { api } from "@/lib/api";
 
@@ -159,14 +158,12 @@ export default function ContactsPage() {
   };
 
   // ---- SPEC-CUX2：真分页（offset/limit 进 SQL，2000 采样上限已删）----
-  // LoadMoreSensor 触底按 offset 累加拉取下一页（页大小 50），items 跨页累积。
-  // 竞态防护：genRef 代次——筛选切换（load）作废在途翻页响应；inflightRef
-  // 防抖——IntersectionObserver 在请求期间重复触发直接跳过。
+  // 2026-11-11 用户批评"连分页也没有"——隐形无限滚动改**显式分页条**
+  // （HubSpot/Attio CRM 列表惯例：‹ › + "1–50 / 共 N"），不再触底隐形加载。
   const PAGE_SIZE = 50;
+  const [page, setPage] = useState(1);
   const genRef = useRef(0);
   const inflightRef = useRef<number | null>(null);
-  const itemsRef = useRef<ContactRow[]>([]);
-  itemsRef.current = items;
 
   const buildParams = useCallback(
     (offset: number) => {
@@ -195,6 +192,7 @@ export default function ContactsPage() {
         setMeta({ stats: d.stats, provinces: d.provinces, total: d.total });
         setItems(d.items);
         setSelected(new Set());
+        setPage(1);
       })
       .catch(() => undefined)
       .finally(() => {
@@ -204,30 +202,35 @@ export default function ContactsPage() {
   }, [buildParams]);
   useEffect(load, [load]);
 
-  const loadMore = useCallback(() => {
-    if (inflightRef.current !== null) return; // 在途期间 IO 重复触发不重复拉取
-    const fetched = itemsRef.current.length;
-    if (!meta || fetched >= meta.total) return; // 已拉满不再请求
-    const gen = ++genRef.current;
-    inflightRef.current = gen;
-    setLoading(true);
-    api.get<Worklist>(`/api/contacts?${buildParams(fetched)}`)
-      .then((d) => {
-        if (gen !== genRef.current) return;
-        setMeta((m) => (m ? { ...m, total: d.total } : m));
-        setItems((prev) => {
-          // 去重防御：offset 重叠（IO 抖动）不产生重复行
-          const seen = new Set(prev.map((x) => x.id));
-          return [...prev, ...d.items.filter((x) => !seen.has(x.id))];
+  // 翻页（显式分页条）：换页重置选中与键盘选中态
+  const goToPage = useCallback(
+    (next: number) => {
+      if (!meta) return;
+      const totalPages = Math.max(1, Math.ceil(meta.total / PAGE_SIZE));
+      const target = Math.min(Math.max(1, next), totalPages);
+      if (target === page) return;
+      const gen = ++genRef.current;
+      inflightRef.current = gen;
+      setLoading(true);
+      api.get<Worklist>(`/api/contacts?${buildParams((target - 1) * PAGE_SIZE)}`)
+        .then((d) => {
+          if (gen !== genRef.current) return;
+          setMeta({ stats: d.stats, provinces: d.provinces, total: d.total });
+          setItems(d.items);
+          setSelected(new Set());
+          setPage(target);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (inflightRef.current === gen) inflightRef.current = null;
+          if (gen === genRef.current) setLoading(false);
         });
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (inflightRef.current === gen) inflightRef.current = null;
-        if (gen === genRef.current) setLoading(false);
-      });
-  }, [buildParams, meta]);
-  const hasMore = !!meta && items.length < meta.total;
+    },
+    [buildParams, meta, page],
+  );
+  const totalPages = meta ? Math.max(1, Math.ceil(meta.total / PAGE_SIZE)) : 1;
+  const rangeFrom = meta ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const rangeTo = meta ? Math.min(page * PAGE_SIZE, meta.total) : 0;
 
   // SPEC-CUX CUX2：order 轻量同步 URL（replaceState 静默写，参照 enterprises 页惯例；
   // 保留 search 里既有的其它参数，分享/刷新/返回排序不丢）
@@ -583,8 +586,34 @@ export default function ContactsPage() {
             当前筛选下没有可拨联系人 —— 换个状态/省份，或去「标讯中心」让 04:08 回填任务补号码
           </div>
         )}
-        {/* SPEC-CUX2：真分页触底拉下一页（offset 累加，页大小 50） */}
-        {hasMore && <LoadMoreSensor onLoadMore={loadMore} />}
+        {/* SPEC-CUX2（2026-11-11 用户批评"连分页也没有"）：显式分页条——
+            HubSpot/Attio CRM 列表惯例，替代隐形无限滚动 */}
+        {meta && items.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--rule)] pt-3">
+            <span className="text-[12.5px] tabular-nums text-[var(--muted)]">
+              {rangeFrom.toLocaleString()}–{rangeTo.toLocaleString()} · 共 {meta.total.toLocaleString()} 人
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                size="small"
+                disabled={page <= 1 || loading}
+                onClick={() => goToPage(page - 1)}
+              >
+                上一页
+              </Button>
+              <span className="text-[12.5px] tabular-nums text-[var(--ink)]">
+                第 {page} / {totalPages} 页
+              </span>
+              <Button
+                size="small"
+                disabled={page >= totalPages || loading}
+                onClick={() => goToPage(page + 1)}
+              >
+                下一页
+              </Button>
+            </div>
+          </div>
+        )}
         {loading && items.length > 0 && (
           <div className="py-4 text-center text-[12.5px] text-[var(--muted)]" role="status">
             加载中…

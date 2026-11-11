@@ -12,7 +12,7 @@ POST /contacts/batch-call-result 批量标记（企业级效率）。
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
@@ -74,6 +74,11 @@ def contacts_worklist(
     # 未拨 = call_result 为空或 pending（_UNTOUCHED 口径）
     untouched_expr = Contact.call_result.is_(None) | (Contact.call_result == "pending")
     conds = [Enterprise.deleted_at.is_(None)]
+    # 用户定稿（2026-11-11）：不做科研院所/高校生意——获客动线全局排除
+    # research_edu（数据保留可查，仅从拨打工作列表隐去）
+    conds.append(
+        or_(Enterprise.industry_key.is_(None), Enterprise.industry_key != "research_edu")
+    )
     if has_phone:
         conds.append(dialable_expr)
     if call_status == "untouched":
@@ -155,7 +160,14 @@ def contacts_worklist(
     stat_pairs = (
         session.query(Contact.phones_json, Contact.call_result)
         .join(Enterprise, Enterprise.id == Contact.enterprise_id)
-        .filter(Enterprise.deleted_at.is_(None))
+        .filter(
+            Enterprise.deleted_at.is_(None),
+            # 科研院所/高校排除（与列表口径一致，2026-11-11 用户定稿）
+            or_(
+                Enterprise.industry_key.is_(None),
+                Enterprise.industry_key != "research_edu",
+            ),
+        )
         .all()
     )
     stats = {"with_phone": 0, "untouched": 0, "touched": 0, "interested": 0}
