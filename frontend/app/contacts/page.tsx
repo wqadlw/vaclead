@@ -11,6 +11,7 @@ import { Download, Keyboard, Phone } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import CallResultTag, { CALL_RESULTS } from "@/components/CallResultTag";
 import { api } from "@/lib/api";
+import { INDUSTRY_OPTIONS } from "@/lib/constants";
 
 interface ContactRow {
   id: number;
@@ -94,6 +95,8 @@ export default function ContactsPage() {
   const [callStatus, setCallStatus] = useState("untouched");
   const [decisionRole, setDecisionRole] = useState("");
   const [province, setProvince] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [intentMin, setIntentMin] = useState<number | null>(null);
   const [q, setQ] = useState("");
   const [marking, setMarking] = useState<number | null>(null);
   // SPEC-CH 通话驾驶舱
@@ -160,7 +163,7 @@ export default function ContactsPage() {
   // ---- SPEC-CUX2：真分页（offset/limit 进 SQL，2000 采样上限已删）----
   // 2026-11-11 用户批评"连分页也没有"——隐形无限滚动改**显式分页条**
   // （HubSpot/Attio CRM 列表惯例：‹ › + "1–50 / 共 N"），不再触底隐形加载。
-  const PAGE_SIZE = 50;
+  const PAGE_SIZE = 100;
   const [page, setPage] = useState(1);
   const genRef = useRef(0);
   const inflightRef = useRef<number | null>(null);
@@ -175,11 +178,13 @@ export default function ContactsPage() {
       if (callStatus) p.set("call_status", callStatus);
       if (decisionRole) p.set("decision_role", decisionRole);
       if (province) p.set("province", province);
+      if (industry) p.set("industry_key", industry);
+      if (intentMin != null) p.set("intent_min", String(intentMin));
       if (q.trim()) p.set("q", q.trim());
       if (order) p.set("order", order);
       return p;
     },
-    [callStatus, decisionRole, province, q, order],
+    [callStatus, decisionRole, province, industry, intentMin, q, order],
   );
 
   const load = useCallback(() => {
@@ -381,6 +386,16 @@ export default function ContactsPage() {
               <Select.Option key={p} value={p}>{p}</Select.Option>
             ))}
           </Select>
+          {/* SPEC-CUX3：行业=昊志产品线客户群（今天打半导体/明天打医药）+ 意图分层 */}
+          <Select value={industry || undefined} placeholder="全部行业" showClear filter onChange={(v) => setIndustry(String(v ?? ""))} className="!w-36 shrink-0">
+            {INDUSTRY_OPTIONS.filter((o) => o.key !== "research_edu").map((o) => (
+              <Select.Option key={o.key} value={o.key}>{o.name}</Select.Option>
+            ))}
+          </Select>
+          <Select value={intentMin ?? undefined} placeholder="全部意图" showClear onChange={(v) => setIntentMin(v == null ? null : Number(v))} className="!w-32 shrink-0">
+            <Select.Option value={60}>高意图 ≥60</Select.Option>
+            <Select.Option value={30}>中意图 ≥30</Select.Option>
+          </Select>
           {/* SPEC-CUX CUX2 排序切换：服务端 order 白名单（空=智能推荐默认序） */}
           <Select value={order || undefined} placeholder="智能推荐" showClear onChange={(v) => setOrder(String(v ?? ""))} className="!w-32 shrink-0">
             <Select.Option value="newest">最新入库</Select.Option>
@@ -404,6 +419,8 @@ export default function ContactsPage() {
               if (callStatus) p.set("call_status", callStatus);
               if (decisionRole) p.set("decision_role", decisionRole);
               if (province) p.set("province", province);
+              if (industry) p.set("industry_key", industry);
+              if (intentMin != null) p.set("intent_min", String(intentMin));
               if (q.trim()) p.set("q", q.trim());
               window.open(`/api/contacts/export?${p}`, "_blank");
             }}
@@ -422,8 +439,54 @@ export default function ContactsPage() {
         </span>
       </div>
 
-      {/* SPEC-CUX2：列表头多选 + 批量标记栏——当页全选/反选 → 选中 N 人 →
-          七态下拉 → 确认；checkbox 触屏目标 h-5 w-5 起步（移动端达标） */}
+      {/* SPEC-CUX3：激活筛选 chips——当前筛选一目了然，单个移除/全部清除
+          （"筛选不好用"的体感大半来自"选了什么看不见"） */}
+      {(() => {
+        const _cn = (k: string) =>
+          ({ untouched: "未触达", touched: "已触达", interested: "有意向", connected: "已接通", no_answer: "无人接", invalid: "空号" }[k] ?? k);
+        const _dr = (k: string) => ({ decision_maker: "决策链", handler: "经办人" }[k] ?? k);
+        const chips: { label: string; clear: () => void }[] = [
+          callStatus && { label: `状态：${_cn(callStatus)}`, clear: () => setCallStatus("") },
+          decisionRole && { label: `角色：${_dr(decisionRole)}`, clear: () => setDecisionRole("") },
+          province && { label: `省份：${province}`, clear: () => setProvince("") },
+          industry && {
+            label: `行业：${INDUSTRY_OPTIONS.find((o) => o.key === industry)?.name ?? industry}`,
+            clear: () => setIndustry(""),
+          },
+          intentMin != null && { label: `意图 ≥${intentMin}`, clear: () => setIntentMin(null) },
+          q.trim() && { label: `搜索：${q.trim()}`, clear: () => setQ("") },
+        ].filter(Boolean) as { label: string; clear: () => void }[];
+        if (chips.length === 0) return null;
+        return (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="text-[11.5px] text-[var(--muted)]">当前筛选：</span>
+            {chips.map((chip, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-white px-2.5 py-1 text-[12px] text-[var(--ink)]"
+              >
+                {chip.label}
+                <button
+                  onClick={chip.clear}
+                  className="cursor-pointer rounded-full border-0 bg-transparent p-0 leading-none text-[var(--muted)] hover:text-[var(--negative)]"
+                  title="移除该筛选"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <button
+              onClick={() => {
+                setCallStatus(""); setDecisionRole(""); setProvince("");
+                setIndustry(""); setIntentMin(null); setQ("");
+              }}
+              className="cursor-pointer rounded-full border-0 bg-transparent px-2 py-1 text-[12px] text-[var(--negative)] hover:bg-[var(--raised)]"
+            >
+              ✕ 清除全部
+            </button>
+          </div>
+        );
+      })()}
       {meta && items.length > 0 && (
         <div className="mt-2.5 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border)] bg-white px-4 py-2">
           <label className="flex cursor-pointer select-none items-center gap-2 text-[12.5px] text-[var(--muted)]">

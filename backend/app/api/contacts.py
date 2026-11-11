@@ -50,7 +50,10 @@ def contacts_worklist(
     q: str = "",
     # SPEC-CUX CUX2 排序切换：白名单 ""/newest/intent/recent_called，非法值回退默认
     order: str = "",
-    limit: int = 50,
+    # SPEC-CUX3 筛选升级（打电话工作台语义：按"今天想打哪类客户群"组织）：
+    industry_key: str = "",  # 昊志产品线客户群（半导体/医药/食品…）
+    intent_min: int | None = None,  # 意图分下限（高意图先打）
+    limit: int = 100,
     offset: int = 0,
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
@@ -62,8 +65,9 @@ def contacts_worklist(
     intent 企业意图分降序 / recent_called 已拨在前按拨打时间倒序（未拨垫尾，
     回访视角）。SPEC-CUX2：过滤/排序/分页全部下沉 SQL，COUNT(*) 真分页 +
     offset/limit 进查询，2000 采样上限删除——全量数据任意页可达。
+    SPEC-CUX3：页大小 100（一上午一页打完）+ 行业/意图筛选。
     """
-    limit = max(1, min(limit, 200))
+    limit = max(1, min(limit, 300))
     offset = max(0, offset)
     qq = q.strip()
 
@@ -94,6 +98,11 @@ def contacts_worklist(
         conds.append(Contact.decision_role == decision_role)
     if province:
         conds.append(Enterprise.province == province)
+    # SPEC-CUX3：行业（产品线客户群）+ 意图分下限筛选
+    if industry_key:
+        conds.append(Enterprise.industry_key == industry_key)
+    if intent_min is not None:
+        conds.append(Enterprise.intent_score >= intent_min)
     if qq:
         # q 双列 LIKE 参数化：联系人名 / 企业名
         like = f"%{qq}%"
@@ -270,12 +279,16 @@ def contacts_export(
     call_status: str = "",
     decision_role: str = "",
     province: str = "",
+    industry_key: str = "",
+    intent_min: int | None = None,
     q: str = "",
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
     """拨打名单 CSV（SPEC-CE）：当前筛选全量（上限 5000）——外勤场景导出。
 
+    SPEC-CUX3：industry_key/intent_min 与列表筛选口径一致（导出=所见即所得）；
+    科研院所/高校排除同步（2026-11-11 用户定稿）。
     号码明文仅限内部自用（W52 定调）；同步流式响应无超时。
     """
     import csv as _csv
@@ -283,10 +296,21 @@ def contacts_export(
 
     from fastapi.responses import StreamingResponse
 
+    conds = [
+        Enterprise.deleted_at.is_(None),
+        or_(
+            Enterprise.industry_key.is_(None),
+            Enterprise.industry_key != "research_edu",
+        ),
+    ]
+    if industry_key:
+        conds.append(Enterprise.industry_key == industry_key)
+    if intent_min is not None:
+        conds.append(Enterprise.intent_score >= intent_min)
     rows = (
         session.query(Contact, Enterprise)
         .join(Enterprise, Enterprise.id == Contact.enterprise_id)
-        .filter(Enterprise.deleted_at.is_(None))
+        .filter(*conds)
         .order_by(Contact.id.desc())
         .limit(5000)
         .all()
