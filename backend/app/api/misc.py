@@ -260,6 +260,7 @@ def get_notify_prefs(
             "configured": bool(wh_url),
             "platform_base_url": _get(session, "platform_base_url") or "",
             "competitor_url": _mask_webhook_url(_get(session, "notify_webhook_competitor_url")) or "",
+            "group_template": _get(session, "notify_group_template") or "",
         },
     }
 
@@ -290,6 +291,7 @@ class NotifyWebhookIn(BaseModel):
     type: str = "wecom"
     platform_base_url: str | None = None  # SPEC-WH v2：群消息跳转链接用（可选）
     competitor_url: str | None = None  # SPEC-WH3：竞对中标分群（可选，""=清除）
+    group_template: str | None = None  # SPEC-WH4：群消息模板（{title}/{body}/{link} 占位符，""=默认）
 
 
 @router.put("/notify-webhook")
@@ -321,6 +323,8 @@ def put_notify_webhook(
         ("platform_base_url", (body.platform_base_url or "").rstrip("/")),
         # SPEC-WH3：竞对分群（可选，空串=清除竞对群落回默认群）
         ("notify_webhook_competitor_url", body.competitor_url or ""),
+        # SPEC-WH4：群消息模板（空串=回默认模板；{title}/{body}/{link} 占位符）
+        ("notify_group_template", body.group_template or ""),
     ):
         row = session.get(SettingsKV, key)
         if row is None:

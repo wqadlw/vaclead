@@ -135,12 +135,29 @@ def _deliver_wechat(session: Session, user_id: int, *, kind: str, title: str,
     return "skipped:not-implemented"
 
 
-def render_group_message(title: str, body: str) -> str:
-    """群消息渲染（SPEC-WH）：`**[vaclead] {title}**\n{body}`。
+DEFAULT_GROUP_TEMPLATE = "**[vaclead] {title}**\n{body}\n{link}"
 
-    超 3800 字符截断（企微 markdown content 4096 字节限，留余量防多字节越界）。
+
+def render_group_message(title: str, body: str, link: str = "", template: str | None = None) -> str:
+    """群消息渲染（SPEC-WH4 模板化）：占位符 {title}/{body}/{link}。
+
+    - template 来自 settings_kv.notify_group_template（管理员自定义，可空）
+    - link 为空时 {link} 占位符整行移除（不发空链接行）
+    - 超 3800 字符截断（企微 markdown content 4096 字节限，留余量防多字节越界）
     """
-    return f"**[vaclead] {title}**\n{body}"[:_GROUP_MSG_MAX]
+    tpl = template if template and template.strip() else DEFAULT_GROUP_TEMPLATE
+    if link:
+        tpl = tpl.replace("{link}", link)
+    else:
+        # 空链接时移除含 {link} 的整行（避免发出空行/占位符残留）
+        tpl = "\n".join(
+            line for line in tpl.split("\n") if "{link}" not in line
+        )
+    msg = (
+        tpl.replace("{title}", title)
+        .replace("{body}", body)
+    )
+    return msg[:_GROUP_MSG_MAX]
 
 
 def _webhook_payload(wh_type: str, msg: str, title: str) -> dict:
@@ -244,15 +261,18 @@ def _deliver_webhook(session: Session, user_id: int, *, kind: str, title: str,
     if dup is not None:
         return "skipped:duplicate"
     wh_type = _webhook_type_of(session)
-    msg = render_group_message(title, body)
-    # 信号族 → 附企业详情链接（ref_id=signal.id → Signal.enterprise_id）
+    tpl_row = session.get(SettingsKV, "notify_group_template")
+    template = tpl_row.value if tpl_row and tpl_row.value else None
+    # 信号族 → 构造企业详情链接（SPEC-WH4：链接作为模板 {link} 占位符注入）
+    link = ""
     if ref_type in ("signal", "sub_signal", "owner_signal", "competitor_win"):
         row = session.execute(
             sa_select(Signal.enterprise_id).where(Signal.id == ref_id)
         ).first()
         if row and row[0]:
             base = _platform_base_url(session)
-            msg += f"\n[查看企业档案 →]({base}/enterprises/view?id={row[0]})"
+            link = f"[查看企业档案 →]({base}/enterprises/view?id={row[0]})"
+    msg = render_group_message(title, body, link=link, template=template)
     payload = _webhook_payload(wh_type, msg, title)
     resp = _webhook_post(url, payload)
     code = _webhook_code(wh_type, resp.json())
@@ -262,11 +282,20 @@ def _deliver_webhook(session: Session, user_id: int, *, kind: str, title: str,
 
 
 def _deliver_webhook_test(session: Session, url: str, wh_type: str) -> dict:
-    """发固定测试消息（SPEC-WH 3.1），返回 {"ok": bool, "detail": str}。
+    """发固定测试消息（SPEC-WH 3.1 + WH4 模板），返回 {"ok": bool, "detail": str}。
 
     供 POST /api/notify-webhook/test 复用；任何失败都不抛——HTTP 层永远 200。
-    """
-    msg = "[vaclead] 测试消息——群机器人通道已打通"
+    测试消息按已存模板渲染（管理员预览的就是真实群消息形态）。"""
+    from ..db import get_session as _gs
+
+    tpl_row = session.get(SettingsKV, "notify_group_template")
+    template = tpl_row.value if tpl_row and tpl_row.value else None
+    msg = render_group_message(
+        "测试消息",
+        "群机器人通道已打通——这条消息按你配置的模板渲染",
+        link=f"[查看企业档案 →]({_platform_base_url(session)}/enterprises/view?id=1)",
+        template=template,
+    )
     payload = _webhook_payload(wh_type, msg, "测试消息")
     try:
         resp = _webhook_post(url, payload)

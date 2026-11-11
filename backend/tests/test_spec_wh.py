@@ -97,7 +97,7 @@ def test_prefs_webhook_unconfigured_default(client, admin_headers):
     assert ch["in_app"]["available"] is True
     assert d["webhook"] == {
         "url": None, "type": "wecom", "configured": False,
-        "platform_base_url": "", "competitor_url": "",
+        "platform_base_url": "", "competitor_url": "", "group_template": "",
     }
 
 

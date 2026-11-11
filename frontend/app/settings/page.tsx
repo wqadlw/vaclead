@@ -1345,6 +1345,7 @@ export default function SettingsPage() {
   const [whType, setWhType] = useState("wecom");
   const [whUrl, setWhUrl] = useState("");
   const [whBase, setWhBase] = useState("");
+  const [whTemplate, setWhTemplate] = useState("");
   const [whCompUrl, setWhCompUrl] = useState("");
   const [whSaving, setWhSaving] = useState(false);
   const [whTesting, setWhTesting] = useState(false);
@@ -1358,7 +1359,7 @@ export default function SettingsPage() {
         channels: { key: string; label: string; available: boolean }[];
         preferences: string[];
         /** SPEC-WH：群机器人配置（url 已脱敏）；后端并行上线中，容错可选 */
-        webhook?: { url: string; type: string; configured: boolean; platform_base_url?: string; competitor_url?: string };
+        webhook?: { url: string; type: string; configured: boolean; platform_base_url?: string; competitor_url?: string; group_template?: string };
       }>("/api/notify-preferences")
       .then((d) => {
         setNotifyChannels(d.channels);
@@ -1368,6 +1369,7 @@ export default function SettingsPage() {
           if (d.webhook.type) setWhType(d.webhook.type);
           setWhBase(d.webhook.platform_base_url || "");
           setWhCompUrl(d.webhook.competitor_url || "");
+          setWhTemplate(d.webhook.group_template || "");
         }
       })
       .catch(() => undefined);
@@ -1391,7 +1393,7 @@ export default function SettingsPage() {
     }
     setWhSaving(true);
     try {
-      await api.put("/api/notify-webhook", { url: whUrl.trim(), type: whType, platform_base_url: whBase.trim(), competitor_url: whCompUrl.trim() });
+      await api.put("/api/notify-webhook", { url: whUrl.trim(), type: whType, platform_base_url: whBase.trim(), competitor_url: whCompUrl.trim(), group_template: whTemplate });
       Toast.success("已保存，群里收测试消息试试");
       loadNotifyPrefs(); // 重拉 prefs：渠道列表 available 翻绿 + 回填脱敏 url
     } catch (e) {
@@ -1798,6 +1800,24 @@ export default function SettingsPage() {
                     value={whCompUrl}
                     placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…（可留空）"
                     onChange={setWhCompUrl}
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-[12.5px] text-[var(--muted)]">
+                    <span>消息模板（可选）——占位符 {"{title}"} 标题、{"{body}"} 内容、{"{link}"} 企业链接</span>
+                    <button
+                      className="cursor-pointer border-0 bg-transparent p-0 text-[12px] text-[var(--accent)] hover:underline"
+                      onClick={() => setWhTemplate("**[vaclead] {title}**\n{body}\n{link}")}
+                    >
+                      恢复默认
+                    </button>
+                  </div>
+                  <textarea
+                    value={whTemplate}
+                    rows={3}
+                    placeholder={"**[vaclead] {title}**\n{body}\n{link}"}
+                    className="w-full rounded-lg border border-[var(--border)] bg-white px-3 py-2 font-mono text-[12px] outline-none focus:border-[var(--accent)]"
+                    onChange={(e) => setWhTemplate(e.target.value)}
                   />
                 </div>
                 <div className="flex gap-2 pt-1">
