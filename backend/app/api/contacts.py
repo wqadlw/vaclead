@@ -214,6 +214,8 @@ def contacts_worklist(
             "call_result": c.call_result,
             "called_at": c.called_at,
             "source": c.source,
+            # SPEC-PROV：号码时效（电话会变——采集超 180 天前端标"号码偏旧"）
+            "created_at": c.created_at,
             "evidence_claim": c.evidence_claim,
             "enterprise": {
                 "id": e.id,

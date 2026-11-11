@@ -26,6 +26,8 @@ interface ContactRow {
   called_at: string | null;
   source: string;
   evidence_claim: string | null;
+  /** SPEC-PROV：号码时效（采集时间，电话会变） */
+  created_at: string;
   /** SPEC-DQ：号码共享（≥3 家挂靠 = 疑似代理/中介总机） */
   _shared_ent_count?: number;
   enterprise: {
@@ -586,6 +588,12 @@ export default function ContactsPage() {
                   {(c._shared_ent_count ?? 0) >= 3 && (
                     <span title="该号码同时挂在多家企业名下，可能是招标代理/中介总机">
                       <Tag color="amber" type="light" size="small">疑似代理 · 挂{c._shared_ent_count}家</Tag>
+                    </span>
+                  )}
+                  {/* SPEC-PROV：号码时效——采集超 180 天提示（电话会变，号码也会旧） */}
+                  {c.created_at && Date.now() - new Date(c.created_at).getTime() > 180 * 864e5 && (
+                    <span title={`号码采集于 ${c.created_at.slice(0, 10)}——电话可能已变更，拨打前建议官网复核`}>
+                      <Tag color="grey" type="light" size="small">号码偏旧</Tag>
                     </span>
                   )}
                   {c.title && <span className="text-[12px] text-[var(--muted)]">{c.title}</span>}

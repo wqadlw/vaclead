@@ -111,6 +111,9 @@ _EVOLUTION_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "signal": [
         ("amount_wan", "REAL"),  # SPEC-AMT 成交金额（万元）持久列——排序/惰性回填
     ],
+    "enterprise": [
+        ("prov_json", "TEXT NOT NULL DEFAULT '{}'"),  # SPEC-PROV 字段级溯源
+    ],
 }
 
 

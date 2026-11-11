@@ -462,6 +462,8 @@ def gongshang_paste(
             setattr(e, field, norm)
         else:
             setattr(e, field, value)
+        # SPEC-PROV：字段级溯源打标（手工粘贴=风鸟搬运，操作人=登录者）
+        e.mark_prov(field, "风鸟搬运 · 手工粘贴", getattr(user, "name", "") or user.username)
         filled[label] = value
     session.commit()
     return {"filled": filled, "skipped": skipped, "phone_added": phone_added}

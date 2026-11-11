@@ -923,6 +923,8 @@ def enterprise_detail(
         "legal_rep": e.legal_rep,
         "established_at": e.established_at,
         "completeness": e.completeness(),
+        # SPEC-PROV：字段级溯源（详情页工商卡逐字段标注来源/时间）
+        "prov_json": e.prov_json,
         "tags": _tags_of(e),
         "province": e.province,
         "city": e.city,

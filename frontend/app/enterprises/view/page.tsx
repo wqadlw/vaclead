@@ -5,7 +5,7 @@
  * 四页签：档案（工商+中标画像）/ 采购关系图谱 / 关键联系人 / 信号时间线。
  * 数据全部来自已验证端点：detail(+stat+signals) / graph / related / contacts。
  */
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Button, Dropdown, Input, Modal, Skeleton, TabPane, Tabs, Tag, Toast, Select } from "@douyinfe/semi-ui";
 import { ArrowLeft, Bell, BellRing, Trash2, UserCheck } from "lucide-react";
@@ -178,6 +178,17 @@ function IntelInner() {
   const [loading, setLoading] = useState(true);
   const [subscribed, setSubscribed] = useState(false);
   const [converting, setConverting] = useState(false);
+  // SPEC-PROV：字段级溯源解析（工商卡逐字段标注来源/时间）
+  const prov = useMemo(() => {
+    try {
+      return JSON.parse((detail?.prov_json as string) || "{}") as Record<
+        string,
+        { source: string; by?: string; at?: string }
+      >;
+    } catch {
+      return {};
+    }
+  }, [detail]);
   // SPEC-V V2 标签编辑态
   const [tagsEditing, setTagsEditing] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
@@ -665,21 +676,35 @@ function IntelInner() {
                 </span>
               </div>
               <div className="grid grid-cols-1 gap-x-10 gap-y-2 text-[13px] leading-7 md:grid-cols-2">
-                {[
-                  ["统一信用代码", detail.uscc || "—"],
-                  ["法定代表人", detail.legal_rep || "—"],
-                  ["成立日期", detail.established_at || "—"],
-                  ["注册资本", detail.registered_capital_wan == null ? "—" : `${detail.registered_capital_wan.toLocaleString("zh-CN")} 万`],
-                  ["行业", detail.industry_name || "未分类"],
-                  ["所在区域", [detail.province, detail.city, detail.district].filter(Boolean).join(" / ") || "—"],
-                  ["地址", detail.address || "—"],
-                  ["经营范围", detail.business_scope || "—"],
-                ].map(([k, v]) => (
-                  <div key={k as string} className="flex gap-2 border-b border-[var(--rule)] py-1">
-                    <span className="w-24 shrink-0 text-[var(--muted)]">{k}</span>
-                    <span className="min-w-0 flex-1 text-[var(--ink)]">{v}</span>
-                  </div>
-                ))}
+                {([
+                  ["统一信用代码", detail.uscc || "—", "uscc"],
+                  ["法定代表人", detail.legal_rep || "—", "legal_rep"],
+                  ["成立日期", detail.established_at || "—", "established_at"],
+                  ["注册资本", detail.registered_capital_wan == null ? "—" : `${detail.registered_capital_wan.toLocaleString("zh-CN")} 万`, "registered_capital_wan"],
+                  ["行业", detail.industry_name || "未分类", ""],
+                  ["所在区域", [detail.province, detail.city, detail.district].filter(Boolean).join(" / ") || "—", ""],
+                  ["地址", detail.address || "—", ""],
+                  ["经营范围", detail.business_scope || "—", "business_scope"],
+                ] as [string, string, string][]).map(([k, v, pk]) => {
+                  const provRec = prov[pk];
+                  return (
+                    <div key={k} className="flex gap-2 border-b border-[var(--rule)] py-1">
+                      <span className="w-24 shrink-0 text-[var(--muted)]">{k}</span>
+                      <span className="min-w-0 flex-1 text-[var(--ink)]">
+                        {v}
+                        {/* SPEC-PROV：字段级来源标注（谁搬的/何时——消灭字段黑箱） */}
+                        {provRec && (
+                          <span
+                            className="ml-2 whitespace-nowrap text-[11px] text-[var(--muted)]"
+                            title={`来源：${provRec.source}${provRec.by ? " · 操作人：" + provRec.by : ""} · 时间：${provRec.at}`}
+                          >
+                            （{provRec.source} {(provRec.at || "").slice(0, 10)}）
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <div className="grid grid-cols-1 gap-x-10 gap-y-2 text-[13px] leading-7 md:grid-cols-2">

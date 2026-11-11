@@ -137,11 +137,39 @@ class Enterprise(Base):
     # oem=应用设备制造商（买泵装设备）| end_user=终端用户 | reseller=分销 |
     # integrator=系统工程商 | NULL 未定。与 is_competitor（泵制造商）正交。
     customer_role: Mapped[str | None] = mapped_column(Text)
+    # SPEC-PROV 字段级溯源（用户定焦 2026-11-12）：工商五字段逐字段记录
+    # {来源, 操作人, 时间}——风鸟搬运/对照表回填/公告采集分得清，不再黑箱。
+    # 结构：{"legal_rep": {"source": "...", "by": "...", "at": "..."}, ...}
+    prov_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
 
     # ---- helpers ----
+    def mark_prov(self, field: str, source: str, by: str = "") -> None:
+        """SPEC-PROV 字段级溯源打标：来源/操作人/时间。
+
+        仅在值写入时由写入点调用；风鸟搬运/对照表回填/公告采集各留其名，
+        消灭"字段黑箱"。"""
+        import json as _json
+
+        try:
+            prov = _json.loads(self.prov_json or "{}")
+        except ValueError:
+            prov = {}
+        prov[field] = {"source": source, "by": by, "at": utcnow()}
+        self.prov_json = _json.dumps(prov, ensure_ascii=False)
+
+    def prov_of(self, field: str) -> dict | None:
+        """读字段溯源（前端展示用）。"""
+        import json as _json
+
+        try:
+            prov = _json.loads(self.prov_json or "{}")
+        except ValueError:
+            return None
+        return prov.get(field)
+
     def completeness(self) -> int:
         """资料完整度 0-4（SPEC-U U3）：法人/成立日期/注册资本/经营范围四要素计数。
 

@@ -1040,6 +1040,7 @@ async def gongshang_backfill(
                 kept_existing += 1
             elif not dry_run:
                 ent.legal_rep = new_legal
+                ent.mark_prov("legal_rep", "对照表批量回填")
                 filled["legal_rep"] += 1
             else:
                 filled["legal_rep"] += 1
@@ -1050,6 +1051,7 @@ async def gongshang_backfill(
                 kept_existing += 1
             elif not dry_run:
                 ent.business_scope = new_scope
+                ent.mark_prov("business_scope", "对照表批量回填")
                 filled["business_scope"] += 1
             else:
                 filled["business_scope"] += 1
@@ -1060,6 +1062,7 @@ async def gongshang_backfill(
                 kept_existing += 1
             elif not dry_run:
                 ent.established_at = str(new_est)[:10]  # YYYY-MM-DD 前缀容错（照 imports 既有）
+                ent.mark_prov("established_at", "对照表批量回填")
                 filled["established_at"] += 1
             else:
                 filled["established_at"] += 1
@@ -1070,6 +1073,7 @@ async def gongshang_backfill(
                 kept_existing += 1
             elif not dry_run:
                 ent.registered_capital_wan = cap
+                ent.mark_prov("registered_capital_wan", "对照表批量回填")
                 filled["registered_capital_wan"] += 1
             else:
                 filled["registered_capital_wan"] += 1
@@ -1081,6 +1085,7 @@ async def gongshang_backfill(
                 kept_existing += 1
             elif not dry_run:
                 ent.uscc = uscc_val
+                ent.mark_prov("uscc", "对照表批量回填")
                 filled["uscc"] += 1
             else:
                 filled["uscc"] += 1

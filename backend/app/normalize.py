@@ -194,8 +194,10 @@ def _resolve(
                 ent.uscc = uscc
             if est_date:
                 ent.established_at = est_date
+                ent.mark_prov("established_at", f"公告采集 · {source}")
             if legal_rep:
                 ent.legal_rep = legal_rep
+                ent.mark_prov("legal_rep", f"公告采集 · {source}")
             session.add(ent)
             _canon_cache_invalidate(session)
             session.flush()
@@ -218,8 +220,10 @@ def _resolve(
         ent.uscc = uscc
     if est_date:
         ent.established_at = est_date
+        ent.mark_prov("established_at", f"公告采集 · {source}")
     if legal_rep:
         ent.legal_rep = legal_rep
+        ent.mark_prov("legal_rep", f"公告采集 · {source}")
     session.add(ent)
     _canon_cache_invalidate(session)
     session.flush()

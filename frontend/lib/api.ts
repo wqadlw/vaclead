@@ -132,6 +132,8 @@ export interface Enterprise {
   legal_rep?: string | null;
   established_at?: string | null;
   completeness?: number;
+  /** SPEC-PROV 字段级溯源：{field: {source, by, at}} */
+  prov_json?: string;
   tags?: string[];
   phone?: string | null;
   status?: string;
