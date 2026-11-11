@@ -14,6 +14,30 @@ from ..auth import admin_only, current_user
 from ..db import get_session
 from ..models import Contact
 
+# SPEC-DASH：数据新鲜度 SLA 分级（OpenMetadata/Snowflake 惯例——
+# 每个数据源/任务定义预期间隔，超期=stale 红标）。hours=预期间隔上限。
+_FRESHNESS_SLA: dict[str, dict] = {
+    # job_name → 中文标签 + 预期间隔（小时）
+    "webhook_flush": {"label": "群播报投递", "hours": 0.5},
+    "owner_signal": {"label": "老户雷达", "hours": 1},
+    "competitor_alert": {"label": "竞对雷达", "hours": 1},
+    "subscription_rules": {"label": "订阅扫播", "hours": 1},
+    "watch_radar": {"label": "官网监控雷达", "hours": 1},
+    "hourly_tender": {"label": "政采抓取", "hours": 2},
+    "recycle_leads": {"label": "公海回收", "hours": 2},
+    "outreach_dispatch": {"label": "序列触达发送", "hours": 6},
+    "daily_incremental": {"label": "每日增量采集", "hours": 26},
+    "backfill_province_geo": {"label": "省份回填", "hours": 26},
+    "digest_flush": {"label": "静默汇总", "hours": 26},
+    "payment_overdue": {"label": "回款逾期检查", "hours": 26},
+    "consumable_clock": {"label": "耗材时钟", "hours": 26},
+    "health_refresh": {"label": "健康度刷新", "hours": 26},
+    "contract_renewals": {"label": "续约提醒", "hours": 26},
+    "proposal_zj": {"label": "浙江备案采集", "hours": 26},
+    "product_seed": {"label": "产品目录种子", "hours": 26},
+    "dup_scan": {"label": "全库查重", "hours": 24 * 8},
+}
+
 
 def phone_sharing_map(session: Session, min_ents: int = 3) -> dict[str, set[int]]:
     """号码 → 挂靠企业 id 集（SPEC-DQ：≥min_ents 即疑似招标代理/中介总机）。
@@ -160,5 +184,67 @@ def quality_overview(
                 {"phone": p, "ent_count": len(ents), "ent_ids": ents[:6]}
                 for p, ents in shared_top
             ],
+        },
+    }
+
+
+@router.get("/quality/freshness")
+def quality_freshness(
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """SPEC-DASH 数据新鲜度仪表盘（OpenMetadata/Snowflake 惯例）：
+    读 sync_watermark 全量水位，按 SLA 分级判定 fresh/stale/overdue。"""
+    import json as _json
+    from datetime import datetime
+
+    from ..models import SyncWatermark
+
+    rows = session.query(SyncWatermark).order_by(SyncWatermark.last_run_at.desc()).all()
+    now = datetime.utcnow()
+    items = []
+    for w in rows:
+        meta = _FRESHNESS_SLA.get(w.job_name)
+        if meta is None:
+            continue  # 未登记 SLA 的内部任务不上仪表盘
+        hours_late = None
+        state = "unknown"
+        if w.last_run_at:
+            try:
+                # 水位时间可能带 +00:00 时区（aware）——统一剥成 naive UTC 再减
+                # （ISO 时区坑：aware 与 naive 相减直接 TypeError）
+                ran = datetime.fromisoformat(w.last_run_at.replace("Z", "+00:00"))
+                if ran.tzinfo is not None:
+                    ran = ran.replace(tzinfo=None)
+                elapsed = (now - ran).total_seconds() / 3600
+                sla = meta["hours"]
+                state = "fresh" if elapsed <= sla else ("stale" if elapsed <= sla * 2 else "overdue")
+                hours_late = round(max(0.0, elapsed - sla), 1)
+            except ValueError:
+                pass
+        stat = {}
+        try:
+            stat = _json.loads(w.stats_json or "{}")
+        except ValueError:
+            pass
+        items.append({
+            "job": w.job_name,
+            "label": meta["label"],
+            "sla_hours": meta["hours"],
+            "last_run_at": (w.last_run_at or "")[:19],
+            "status": w.last_status,
+            "state": state,
+            "hours_late": hours_late,
+            "error": (w.last_status == "failed"),
+            "stats_head": "；".join(f"{k}:{v}" for k, v in list(stat.items())[:3]),
+        })
+    items.sort(key=lambda x: ({"fresh": 0, "stale": 1, "overdue": 2, "unknown": 3}[x["state"]], x["job"]))
+    return {
+        "items": items,
+        "summary": {
+            "fresh": sum(1 for i in items if i["state"] == "fresh"),
+            "stale": sum(1 for i in items if i["state"] == "stale"),
+            "overdue": sum(1 for i in items if i["state"] == "overdue"),
+            "total": len(items),
         },
     }

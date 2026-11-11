@@ -6,7 +6,7 @@
  * "下一桶金在哪"的运营驾驶舱；admin 专属页。
  */
 import { useEffect, useState } from "react";
-import { Button, Toast } from "@douyinfe/semi-ui";
+import { Button, Tag, Toast } from "@douyinfe/semi-ui";
 import { Database } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
@@ -50,6 +50,26 @@ interface QualityData {
   };
 }
 
+/** SPEC-DASH：数据新鲜度（OpenMetadata/Snowflake freshness SLA 惯例） */
+interface FreshnessRow {
+  job: string;
+  label: string;
+  sla_hours: number;
+  last_run_at: string;
+  status: string;
+  state: "fresh" | "stale" | "overdue" | "unknown";
+  hours_late: number | null;
+  error: boolean;
+  stats_head: string;
+}
+
+const FRESH_CN: Record<string, { label: string; color: string }> = {
+  fresh: { label: "新鲜", color: "var(--positive)" },
+  stale: { label: "超期", color: "#c2801b" },
+  overdue: { label: "严重超期", color: "var(--negative)" },
+  unknown: { label: "未知", color: "var(--muted)" },
+};
+
 const SOURCE_CN: Record<string, string> = {
   poi: "高德 POI",
   ggzy: "公共资源交易",
@@ -68,12 +88,17 @@ export default function QualityPage() {
   const [data, setData] = useState<QualityData | null>(null);
   const [error, setError] = useState("");
   const [dupScanning, setDupScanning] = useState(false);
+  const [fresh, setFresh] = useState<FreshnessRow[] | null>(null);
 
   useEffect(() => {
     api
       .get<QualityData>("/api/quality/overview")
       .then(setData)
       .catch((e) => setError(e instanceof Error ? e.message : "加载失败（需管理员）"));
+    api
+      .get<{ items: FreshnessRow[] }>("/api/quality/freshness")
+      .then((d) => setFresh(d.items))
+      .catch(() => undefined);
   }, []);
 
   if (error) {
@@ -276,6 +301,68 @@ export default function QualityPage() {
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SPEC-DASH：采集水位/数据新鲜度仪表（OpenMetadata/Snowflake 惯例）——
+          每个采集/定时任务的 SLA 判定：新鲜/超期/严重超期，超期红标 */}
+      {fresh && fresh.length > 0 && (
+        <div className="mt-4 rounded-lg border border-[var(--border)] bg-white p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-[15px] font-medium text-[var(--ink)]">采集水位 · 数据新鲜度</h2>
+            <span className="text-[12px] text-[var(--muted)]">
+              每个数据源都有 SLA 预期——超期说明采集链路需要检查
+            </span>
+          </div>
+          <div className="mt-2.5 overflow-x-auto">
+            <div className="hscroll-table-wrap">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="text-left text-[12.5px] font-normal text-[var(--muted)]">
+                    <th className="py-2 pr-4 font-normal">数据源任务</th>
+                    <th className="py-2 pr-4 font-normal">最后运行</th>
+                    <th className="py-2 pr-4 font-normal">状态</th>
+                    <th className="py-2 pr-4 font-normal">新鲜度</th>
+                    <th className="py-2 font-normal">关键统计</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fresh.map((f) => {
+                    const fc = FRESH_CN[f.state] ?? FRESH_CN.unknown;
+                    return (
+                      <tr key={f.job} className="border-t border-[var(--rule)] hover:bg-[var(--raised)]">
+                        <td className="py-2 pr-4 font-medium text-[var(--ink)]">{f.label}</td>
+                        <td className="py-2 pr-4 tabular-nums text-[var(--muted)]">
+                          {(f.last_run_at || "—").replace("T", " ")}
+                        </td>
+                        <td className="py-2 pr-4">
+                          {f.error ? (
+                            <Tag color="red" type="light" size="small">运行失败</Tag>
+                          ) : (
+                            <Tag color="green" type="light" size="small">正常</Tag>
+                          )}
+                        </td>
+                        <td className="py-2 pr-4">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span
+                              className="h-2 w-2 rounded-full"
+                              style={{ background: fc.color }}
+                              title={f.hours_late ? `超 SLA ${f.hours_late} 小时` : ""}
+                            />
+                            <span style={{ color: fc.color }}>{fc.label}</span>
+                            {f.hours_late ? (
+                              <span className="text-[11px] text-[var(--muted)]">(+{f.hours_late}h)</span>
+                            ) : null}
+                          </span>
+                        </td>
+                        <td className="py-2 text-[12px] text-[var(--muted)]">{f.stats_head || "—"}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

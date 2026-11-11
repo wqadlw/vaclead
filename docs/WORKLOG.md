@@ -4,6 +4,27 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-12 · SPEC-DASH 数据新鲜度仪表盘（信息体系收官件）
+
+**调研**：OpenMetadata/Snowflake 数据质量仪表盘惯例——freshness SLA
+分级（每数据源预期间隔）+ 中心仪表盘 + 超期红标。缺口：sync_watermark
+水位表记录了 15+ 任务全量运行数据，**从未展示**——数据多新/采集是否
+停摆全靠猜。
+
+**交付**：
+- 后端 `GET /api/quality/freshness`：_FRESHNESS_SLA 常量（18 任务
+  中文标签+预期间隔分级：群播报 0.5h/雷达 1h/日批 26h/查重 8d）→
+  水位全表读取 → 三态判定 fresh/stale/overdue（elapsed ≤SLA / ≤2×SLA /
+  超 2×）+ stats_head 关键统计
+- 前端 quality 页「采集水位 · 数据新鲜度」卡：任务表（最后运行/状态
+  Tag/新鲜度色点+超期小时数/关键统计），超期红标
+- **首秀立功**：实弹 summary fresh:0/stale:8/overdue:7——服务多次重启
+  期间采集停摆被如实暴露（仪表盘首日就抓到运维真问题）
+- 踩坑：水位 last_run_at 带 +00:00 时区（aware）与 naive utcnow 相减
+  TypeError——ISO 时区坑，统一剥 tzinfo 成 naive UTC 再算
+
+**门禁**：后端 **414** + build + E2E 13 ✓ + tsc ✓。
+
 ## 2026-11-12 · SPEC-PROV 信息溯源系统（用户定焦：信息必须正确、来源与时效可溯）
 
 **核心缺口**：工商五字段入库时**无来源标注**——风鸟搬的/批量回填的/
