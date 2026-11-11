@@ -1351,6 +1351,11 @@ export default function SettingsPage() {
   const [whTesting, setWhTesting] = useState(false);
   // 当前登录角色（与 AppShell / competitors 页同源：localStorage）
   const [role, setRole] = useState("sales");
+  // SPEC-DQ：settings tab 受控（URL ?tab= 直达——quality 查重卡跳转）
+  const [settingsTab, setSettingsTab] = useState(() => {
+    if (typeof window === "undefined") return "keys";
+    return new URLSearchParams(window.location.search).get("tab") || "keys";
+  });
   useEffect(() => setRole(localStorage.getItem("vaclead_role") || "sales"), []);
 
   const loadNotifyPrefs = useCallback(() => {
@@ -1464,6 +1469,16 @@ export default function SettingsPage() {
       <div>
         <Tabs
           type="line"
+          // SPEC-DQ：tab 受控 + URL 直达（quality 查重卡跳 ?tab=review）
+          activeKey={settingsTab}
+          onChange={(k) => {
+            setSettingsTab(String(k));
+            if (typeof window !== "undefined") {
+              const sp = new URLSearchParams(window.location.search);
+              sp.set("tab", String(k));
+              window.history.replaceState(null, "", `/settings?${sp.toString()}`);
+            }
+          }}
           className="rounded-xl border border-[var(--border)] bg-white !px-2"
           tabList={[
             { tab: "数据源 Key", itemKey: "keys" },

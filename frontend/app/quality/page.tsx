@@ -6,7 +6,7 @@
  * "下一桶金在哪"的运营驾驶舱；admin 专属页。
  */
 import { useEffect, useState } from "react";
-import { Button } from "@douyinfe/semi-ui";
+import { Button, Toast } from "@douyinfe/semi-ui";
 import { Database } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
@@ -67,6 +67,7 @@ const SOURCE_CN: Record<string, string> = {
 export default function QualityPage() {
   const [data, setData] = useState<QualityData | null>(null);
   const [error, setError] = useState("");
+  const [dupScanning, setDupScanning] = useState(false);
 
   useEffect(() => {
     api
@@ -135,10 +136,10 @@ export default function QualityPage() {
       {/* 缺口卡 */}
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { k: "省份文本缺失", v: g ? g.province_missing.toLocaleString() : "—", note: "多为无 city 来源（地址清洗/坐标反查 P2）", href: "/tasks" },
-          { k: "行业未分类", v: g ? g.industry_missing.toLocaleString() : "—", note: "backfill-icp 幂等任务可补", href: "/tasks" },
-          { k: "查重待复核", v: g ? g.dup_open.toLocaleString() : "—", note: "去「设置 → 数据复核」消化", href: "/settings" },
-          { k: "回收站在押", v: g ? g.trash_count.toLocaleString() : "—", note: "30 天保留期后自动清空", href: "/enterprises" },
+          { k: "省份文本缺失", v: g ? g.province_missing.toLocaleString() : "—", note: "多为无 city 来源——city→省 映射任务每日凌晨自动跑", href: "/tasks" },
+          { k: "行业未分类", v: g ? g.industry_missing.toLocaleString() : "—", note: "词表校准周期跑；导入含行业列的数据可即时补", href: "/tasks" },
+          { k: "查重待复核", v: g ? g.dup_open.toLocaleString() : "—", note: "去「设置 → 数据复核」消化", href: "/settings?tab=review", dupScan: true },
+          { k: "回收站在押", v: g ? g.trash_count.toLocaleString() : "—", note: "30 天保留期后自动清空", href: "/enterprises?trash=1" },
         ].map((c) => (
           <div key={c.k} className="rounded-lg border border-[var(--border)] bg-white px-4 py-3">
             <div className="text-[12px] text-[var(--muted)]">{c.k}</div>
@@ -147,9 +148,31 @@ export default function QualityPage() {
               <span className="min-w-0 flex-1 text-[11px] leading-3.5 text-[var(--muted)]">{c.note}</span>
               {(() => {
                 const zero = c.k === "回收站在押" && g && g.trash_count === 0;
-                return zero ? (
-                  <span className="shrink-0 text-[11px] text-[var(--positive)]">已清空</span>
-                ) : (
+                if (zero) return <span className="shrink-0 text-[11px] text-[var(--positive)]">已清空</span>;
+                // SPEC-DQ：查重卡"立即扫描"直触发动作（POST dup-scan），其余跳精准处理位置
+                if (c.dupScan) {
+                  return (
+                    <Button
+                      size="small"
+                      theme="borderless"
+                      loading={dupScanning}
+                      onClick={async () => {
+                        setDupScanning(true);
+                        try {
+                          await api.post("/api/tasks/dup-scan", {});
+                          Toast.success("查重扫描已启动——完成后去「设置 → 数据复核」消化");
+                        } catch (e) {
+                          Toast.error(e instanceof Error ? e.message : "启动失败");
+                        } finally {
+                          setDupScanning(false);
+                        }
+                      }}
+                    >
+                      立即扫描
+                    </Button>
+                  );
+                }
+                return (
                   <Button size="small" theme="borderless" onClick={() => { window.location.href = c.href; }}>
                     去处理
                   </Button>

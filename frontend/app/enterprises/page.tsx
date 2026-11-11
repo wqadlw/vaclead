@@ -162,8 +162,11 @@ export default function EnterprisesPage() {
     return f;
   };
   const [filters, setFilters] = useState<Filters>(initFromUrl);
-  // SPEC-AM AM1 回收站状态
-  const [trashOpen, setTrashOpen] = useState(false);
+  // SPEC-AM AM1 回收站状态（SPEC-DQ：quality 回收站卡 ?trash=1 直达打开）
+  const [trashOpen, setTrashOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("trash") === "1";
+  });
   const [trashItems, setTrashItems] = useState<{ id: number; name: string; source: string | null; deleted_at: string | null }[] | null>(null);
 
   const loadTrash = useCallback(async () => {

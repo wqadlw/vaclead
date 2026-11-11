@@ -4,6 +4,24 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-12 · quality 缺口卡 CTA 精准直达（好用性第十二轮）
+
+**走查发现**：quality 四张缺口卡"去处理"全指到**页面**而非**动作**——
+查重卡跳设置页还要自己找 tab、回收站卡跳企业列表但回收站 Modal 不开、
+省份/行业卡跳拓客任务无处发力。
+
+**修复（CTA 从"跳页面"到"触发动作/精准直达"）**：
+1. **查重卡**：新增「立即扫描」按钮——直接 POST /tasks/dup-scan
+   （端点本就存在，CTA 终于接上）；"去复核队列"跳 /settings?tab=review
+2. **回收站卡**：跳 /enterprises?trash=1——enterprises 读参数自动
+   打开回收站 Modal（trashOpen 改 URL 惰性初始化）
+3. **settings Tabs 受控化**：activeKey+onChange+URL ?tab= 读写
+   （此前无 activeKey——URL 直达 tab 的前置）
+4. **文案诚实化**：省份卡 note 明确"每日凌晨自动跑"；行业卡区分
+   词表周期/导入即补两路径
+
+**门禁**：tsc + build ✓ + E2E 13 ✓ + test_spec_q/seg 14 ✓。
+
 ## 2026-11-12 · SPEC-CUX3 联系人筛选升级（用户灵魂拷问直答）
 
 **先回答用户的问题**：试用者为什么来 contacts？——**这是打电话的
