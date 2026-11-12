@@ -469,6 +469,163 @@ def gongshang_paste(
     return {"filled": filled, "skipped": skipped, "phone_added": phone_added}
 
 
+# ---- SPEC-INFO v2 情报中心一期：情报晨报 + 机会雷达 ----
+# 核心洞察（INFO_CENTER_PLAN v2）：信息价值=时机。分散信号聚合为
+# "今天该打谁"的时机判断。research_edu 全局排除（用户定稿）。
+
+_INTEL_TYPES = {
+    "tender_win": {"cn": "新中标", "icon": "🏆",
+                   "why": "他们刚拿下项目——预算刚花，正是配套设备谈判窗口"},
+    "proposal": {"cn": "新备案", "icon": "🌱",
+                 "why": "备案=扩产前兆——1-3 个月后有真空泵需求"},
+    "web_change": {"cn": "官网变更", "icon": "🖥",
+                   "why": "官网提到新产线/招聘——扩张进行时"},
+    "tender": {"cn": "采购公告", "icon": "📋",
+               "why": "正在采购——招标窗口期内直接响应"},
+    "tender_buy": {"cn": "公开采购", "icon": "📋",
+                   "why": "公开采购挂网——采购中直接联系"},
+}
+
+# 机会雷达类型权重（INFO_CENTER_PLAN v2 3.2）
+_OPP_WEIGHTS = {"tender_win": 30, "proposal": 25, "web_change": 20, "tender": 10, "tender_buy": 10}
+
+
+def _intel_exclusions(session: Session):
+    """科研院所/高校排除（research_edu 企业 id 集——用户定稿不做的生意）。"""
+    ids = {
+        row[0]
+        for row in session.query(Enterprise.id).filter(
+            Enterprise.industry_key == "research_edu"
+        )
+    }
+    return ids
+
+
+@router.get("/intel/brief")
+def intel_brief(
+    days: int = 7,
+    kind: str = "",
+    page: int = 1,
+    page_size: int = 30,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """情报晨报（SPEC-INFO v2）：按日分组的获客情报流——每条带获客判断语。"""
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import select as _sel
+
+    cut = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    excl = _intel_exclusions(session)
+    rows = (
+        session.execute(
+            _sel(Signal, Enterprise)
+            .select_from(Signal)
+            .join(Enterprise, Signal.enterprise_id == Enterprise.id)
+            .where(
+                Signal.created_at >= cut,
+                Enterprise.deleted_at.is_(None),
+                Enterprise.id.notin_(excl) if excl else Enterprise.id > 0,
+                # 商业模式推论（2026-11-13）：昊志卖真空泵——泵制造商不买泵
+                Enterprise.name.notlike("%真空泵%"),
+            )
+            .order_by(Signal.created_at.desc())
+            .limit(300)
+        )
+        .all()
+    )
+    items = []
+    for sig, ent in rows:
+        meta = _INTEL_TYPES.get(sig.type)
+        if meta is None:
+            continue
+        if kind and sig.type != kind:
+            continue
+        items.append({
+            "signal_id": sig.id,
+            "kind": sig.type,
+            "kind_cn": meta["cn"],
+            "icon": meta["icon"],
+            "why": meta["why"],
+            "title": sig.title,
+            "ent_id": ent.id,
+            "ent_name": ent.name,
+            "industry_name": ent.industry_name,
+            "province": ent.province,
+            "at": (sig.created_at or "")[:16],
+            "evidence": (sig.evidence_claim or "")[:120],
+            "url": sig.url,
+        })
+    total = len(items)
+    lo = max(0, (page - 1) * page_size)
+    return {"items": items[lo: lo + page_size], "total": total, "page": page, "days": days}
+
+
+@router.get("/intel/opp")
+def intel_opportunity(
+    days: int = 30,
+    top: int = 20,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """机会雷达（SPEC-INFO v2）：采购时机分——多信号加权 × 时间衰减。
+
+    时机分 = Σ(类型权重 × (1 - 距今天数/30))，tender_win 30/proposal 25/
+    web_change 20/新号码 15/tender 10。research_edu 排除。"""
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import select as _sel
+
+    cut = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    excl = _intel_exclusions(session)
+    rows = (
+        session.execute(
+            _sel(Signal, Enterprise)
+            .select_from(Signal)
+            .join(Enterprise, Signal.enterprise_id == Enterprise.id)
+            .where(
+                Signal.created_at >= cut,
+                Enterprise.deleted_at.is_(None),
+                # 机会雷达找的是客户——同行（竞对）不是机会
+                Enterprise.is_competitor == 0,
+                # 商业模式推论：泵制造商不买泵（真空设备 OEM 除外，不误伤）
+                Enterprise.name.notlike("%真空泵%"),
+                Enterprise.id.notin_(excl) if excl else Enterprise.id > 0,
+            )
+        )
+        .all()
+    )
+    now = datetime.utcnow()
+    scored: dict[int, dict] = {}
+    for sig, ent in rows:
+        w = _OPP_WEIGHTS.get(sig.type, 0)
+        if w == 0:
+            continue
+        d = sig.created_at or ""
+        try:
+            ran = datetime.fromisoformat(d)
+            if ran.tzinfo is not None:
+                ran = ran.replace(tzinfo=None)  # ISO 时区坑（SPEC-DASH 同款）
+            age = (now - ran).days
+        except ValueError:
+            age = days
+        decay = max(0.0, 1 - age / max(days, 1))
+        rec = scored.setdefault(ent.id, {
+            "ent_id": ent.id, "name": ent.name,
+            "industry_name": ent.industry_name, "province": ent.province,
+            "score": 0.0, "kinds": [], "last_at": "",
+        })
+        rec["score"] += w * decay
+        if sig.type not in rec["kinds"]:
+            rec["kinds"].append(sig.type)
+        if d > rec["last_at"]:
+            rec["last_at"] = d
+    ranked = sorted(scored.values(), key=lambda x: -x["score"])[: max(1, min(top, 50))]
+    for r in ranked:
+        r["score"] = round(r["score"], 1)
+    return {"items": ranked, "days": days}
+
+
 # ---- SPEC-EXT：企业情报直达系统（外部权威源深链矩阵） ----
 # 设计立场（用户定稿）：不爬（公示站有验证码）、不买 API（企查查付费）——
 # 平台做"导航层"：每家企业一键直达各权威源的搜索/详情页，查到后经

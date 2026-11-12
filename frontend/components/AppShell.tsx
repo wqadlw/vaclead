@@ -51,6 +51,8 @@ const FIND_NAV = [
   { href: "/map", label: "客户地图", icon: Map },
 ];
 const RADAR_NAV = [
+  { href: "/intel/brief", label: "情报晨报", icon: Megaphone },
+  { href: "/intel/opp", label: "机会雷达", icon: Rocket },
   { href: "/competitors", label: "竞对雷达", icon: Crosshair },
   { href: "/proposals", label: "拟建雷达", icon: Sprout },
   { href: "/outreach", label: "序列触达", icon: Send },
