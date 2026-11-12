@@ -673,8 +673,21 @@ def intel_opportunity(
         if d > rec["last_at"]:
             rec["last_at"] = d
     ranked = sorted(scored.values(), key=lambda x: -x["score"])[: max(1, min(top, 50))]
+    # SPEC-INFO v2：已跟进标注——企业已有活跃线索（非公海/流失）= 已在跟进
+    # （雷达只推"还没人跟"的新机会，已跟进的沉到列表尾不消失）
+    from ..models import Lead as _Lead
+
+    active_lead_ents = {
+        row[0]
+        for row in session.query(_Lead.enterprise_id).filter(
+            _Lead.status.notin_(("pool", "lost"))
+        )
+    }
     for r in ranked:
         r["score"] = round(r["score"], 1)
+        r["followed"] = r["ent_id"] in active_lead_ents
+    # 已跟进的沉到列表尾（同分内），保持"未跟进优先"的作业面语义
+    ranked.sort(key=lambda x: x["followed"])
     return {"items": ranked, "days": days}
 
 
