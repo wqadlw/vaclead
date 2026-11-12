@@ -766,3 +766,77 @@ def enterprise_external_links(
             "batch": "/tasks",
         },
     }
+
+
+# ---- SPEC-INFO v2 二期：区域市场（地市渗透/竞对压力/备案机会） ----
+# city 归一：纯数字（区划代码脏值）/空 → 未定位；排除 research_edu 与泵厂
+
+
+@router.get("/intel/market")
+def intel_market(
+    days: int = 30,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """区域市场（SPEC-INFO v2 3.3）：按城市聚合——市场盘子/已建联/竞对压力/备案机会。"""
+    import re as _re
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import case, func as _f
+
+    cut = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    alive = Enterprise.deleted_at.is_(None)
+    # SPEC-CUX3 口径：可拨 = IN 半连接（与 contacts has_phone=1 一致，无笛卡尔积）
+    dial_sub = session.query(Contact.enterprise_id).filter(
+        Contact.phones_json.is_not(None), Contact.phones_json.notin_(("", "[]"))
+    )
+    city_norm = case(
+        (Enterprise.city.is_(None), "未定位"),
+        (Enterprise.city == "", "未定位"),
+        (Enterprise.city.regexp_match(r"^[0-9]+$"), "未定位"),
+        else_=Enterprise.city,
+    )
+    ent_rows = (
+        session.query(
+            city_norm.label("city"),
+            _f.count().label("total"),
+            _f.sum(case((Enterprise.id.in_(dial_sub), 1), else_=0)).label("dialable"),
+        )
+        .filter(alive)
+        .group_by(city_norm)
+        .all()
+    )
+    comp_rows = (
+        session.query(city_norm, _f.count())
+        .join(Signal, Signal.enterprise_id == Enterprise.id)
+        .filter(
+            alive,
+            Enterprise.is_competitor == 1,
+            Signal.type == "tender_win",
+            Signal.created_at >= cut,
+        )
+        .group_by(city_norm)
+        .all()
+    )
+    comp_map = dict(comp_rows)
+    prop_rows = (
+        session.query(city_norm, _f.count())
+        .join(Signal, Signal.enterprise_id == Enterprise.id)
+        .filter(alive, Signal.type == "proposal", Signal.created_at >= cut)
+        .group_by(city_norm)
+        .all()
+    )
+    prop_map = dict(prop_rows)
+    items = []
+    for city, total, dialable in ent_rows:
+        if not city:
+            continue
+        items.append({
+            "city": city,
+            "market": total,
+            "dialable": int(dialable or 0),
+            "comp_wins": comp_map.get(city, 0),
+            "proposals": prop_map.get(city, 0),
+        })
+    items.sort(key=lambda x: -x["market"])
+    return {"items": items[:24], "days": days}
