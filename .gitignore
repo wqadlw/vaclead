@@ -23,8 +23,10 @@ backups/
 
 .mimosa/
 
-# 数据与产物（不入库）
+# 数据与产物（不入库）——data/ 指根级数据目录；否决误伤前端路由目录
+# frontend/app/data/（信息中心页，SPEC-INFO）
 data/
+!frontend/app/data/
 backend.log
 frontend.log
 *.db

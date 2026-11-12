@@ -586,6 +586,9 @@ app.include_router(intel.router, prefix="/api")
 from .api import competitors  # noqa: E402
 
 app.include_router(competitors.router, prefix="/api")
+from .api import data as data_api  # noqa: E402
+
+app.include_router(data_api.router, prefix="/api")  # SPEC-INFO 信息中心
 from .api import proposals  # noqa: E402
 
 app.include_router(proposals.router, prefix="/api")
