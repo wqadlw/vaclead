@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import current_user
 from ..db import get_session
-from ..models import Contact, Enterprise, Signal, User, utcnow
+from ..models import Contact, Enterprise, SettingsKV, Signal, User, utcnow
 
 router = APIRouter(tags=["intel"])
 
@@ -517,6 +517,15 @@ def intel_brief(
 
     cut = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
     excl = _intel_exclusions(session)
+    # SPEC-INFO v2：已处理集（按用户 settings_kv 存 signal id，尾部 500 截断）
+    import json as _json
+
+    seen_row = session.get(SettingsKV, f"intel_seen:{user.id}")
+    try:
+        seen_list = _json.loads(seen_row.value if seen_row else "[]")
+    except ValueError:
+        seen_list = []
+    seen_set = set(seen_list)
     rows = (
         session.execute(
             _sel(Signal, Enterprise)
@@ -555,10 +564,53 @@ def intel_brief(
             "at": (sig.created_at or "")[:16],
             "evidence": (sig.evidence_claim or "")[:120],
             "url": sig.url,
+            # SPEC-INFO v2：已处理标记（前端灰显/隐藏，晨报闭环）
+            "seen": sig.id in seen_set,
         })
     total = len(items)
     lo = max(0, (page - 1) * page_size)
-    return {"items": items[lo: lo + page_size], "total": total, "page": page, "days": days}
+    return {"items": items[lo: lo + page_size], "total": total, "page": page, "days": days,
+            "seen": seen_list[:500]}
+
+
+@router.get("/intel/seen")
+def intel_seen_get(
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """晨报已处理标记（SPEC-INFO v2：按用户存，最近 500 条防膨胀）。"""
+    import json as _json
+
+    row = session.get(SettingsKV, f"intel_seen:{user.id}")
+    try:
+        ids = _json.loads(row.value if row else "[]")
+    except ValueError:
+        ids = []
+    return {"seen": ids[:500]}
+
+
+@router.post("/intel/seen")
+def intel_seen_mark(
+    body: dict,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """标记晨报条目已处理：合并进用户已处理集（幂等，尾部 500 截断）。"""
+    import json as _json
+
+    new_ids = [int(x) for x in (body.get("signal_ids") or []) if str(x).isdigit()]
+    row = session.get(SettingsKV, f"intel_seen:{user.id}")
+    try:
+        ids = _json.loads(row.value if row else "[]")
+    except ValueError:
+        ids = []
+    merged = sorted(set(ids) | set(new_ids))[-500:]
+    if row is None:
+        session.add(SettingsKV(key=f"intel_seen:{user.id}", value=_json.dumps(merged)))
+    else:
+        row.value = _json.dumps(merged)
+    session.commit()
+    return {"ok": True, "seen": merged}
 
 
 @router.get("/intel/opp")

@@ -25,6 +25,7 @@ interface BriefItem {
   at: string;
   evidence: string;
   url: string | null;
+  seen?: boolean;
 }
 
 const KIND_TAG: Record<string, { color: "cyan" | "green" | "blue" | "amber" }> = {
@@ -41,20 +42,30 @@ export default function IntelBriefPage() {
   const [items, setItems] = useState<BriefItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  // SPEC-INFO v2：已处理标记（晨报闭环——看完标记，不重复刷屏）
+  const [hideSeen, setHideSeen] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
     const p = new URLSearchParams({ days: String(days), page_size: "100" });
     if (kind) p.set("kind", kind);
-    api.get<{ items: BriefItem[]; total: number }>(`/api/intel/brief?${p}`)
+    api.get<{ items: BriefItem[]; total: number; seen?: number[] }>(`/api/intel/brief?${p}`)
       .then((d) => {
-        setItems(d.items);
+        // SPEC-INFO v2：seen 集标注到条目（后端 seen 列表 → 前端本地映射）
+        const seenSet = new Set(d.seen ?? []);
+        setItems(d.items.map((it) => ({ ...it, seen: seenSet.has(it.signal_id) })));
         setTotal(d.total);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }, [days, kind]);
   useEffect(load, [load]);
+
+  // SPEC-INFO v2：标记已处理（本地即时灰显 + 后端持久，不整页重拉）
+  const markSeen = (sid: number) => {
+    setItems((prev) => prev.map((it) => (it.signal_id === sid ? { ...it, seen: true } : it)));
+    api.post("/api/intel/seen", { signal_ids: [sid] }).catch(() => undefined);
+  };
 
   const toLead = async (entId: number) => {
     try {
@@ -92,8 +103,27 @@ export default function IntelBriefPage() {
       </div>
 
       <div className="mt-4 space-y-2.5">
-        {items.map((it) => (
-          <div key={it.signal_id} className="rounded-lg border border-[var(--border)] bg-white px-4 py-3">
+        {/* SPEC-INFO v2：隐藏已处理开关（晨报闭环——处理过的不再刷屏） */}
+        {items.some((it) => it.seen) && (
+          <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-[var(--muted)]">
+            <input
+              type="checkbox"
+              checked={hideSeen}
+              onChange={(e) => setHideSeen(e.target.checked)}
+              className="h-3.5 w-3.5 accent-[var(--accent)]"
+            />
+            隐藏已处理
+          </label>
+        )}
+        {items
+          .filter((it) => !(hideSeen && it.seen))
+          .map((it) => (
+          <div
+            key={it.signal_id}
+            className={`rounded-lg border bg-white px-4 py-3 ${
+              it.seen ? "border-[var(--rule)] opacity-60" : "border-[var(--border)]"
+            }`}
+          >
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[15px]">{it.icon}</span>
               <Tag color={(KIND_TAG[it.kind] ?? { color: "blue" }).color} type="light" size="small">
@@ -102,8 +132,14 @@ export default function IntelBriefPage() {
               <a href={`/enterprises/view?id=${it.ent_id}`} className="truncate text-[14px] font-medium text-[var(--accent)] hover:underline">
                 {it.ent_name}
               </a>
+              {it.seen && <Tag color="grey" type="light" size="small">已处理</Tag>}
               <span className="text-[11.5px] tabular-nums text-[var(--muted)]">{it.at}</span>
               <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                {!it.seen && (
+                  <Button size="small" theme="borderless" onClick={() => markSeen(it.signal_id)}>
+                    ✓ 已处理
+                  </Button>
+                )}
                 <Button size="small" theme="light" onClick={() => void toLead(it.ent_id)}>转线索</Button>
                 <Button
                   size="small"
@@ -131,7 +167,7 @@ export default function IntelBriefPage() {
             </div>
           </div>
         ))}
-        {!loading && items.length === 0 && (
+        {!loading && items.filter((it) => !(hideSeen && it.seen)).length === 0 && (
           <div className="py-16 text-center text-[13px] text-[var(--muted)]">
             时间窗内暂无情报 —— 放宽时间窗或等每日采集
           </div>
