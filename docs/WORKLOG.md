@@ -65,6 +65,18 @@ POI 25,241（可拨 13,512）/ggzy 1,702/政采买家 136（可拨 135——买�
 
 **门禁**：后端 **414** + build + E2E 13 ✓ + tsc ✓。
 
+## 2026-11-13 · 技术债清偿：空 or_() SAWarning 消灭（上轮承诺兑现）
+
+上轮 WORKLOG 承诺"列入清理待办"的 enterprises.py 空 `or_()` 弃用告警
+清偿：geo 端点 ids 为空时 `or_(*cond)` 产生空 OR → SAWarning"coercing
+to false"+ 退化全表风险。修：空 ids 提前守卫（跳过 phone_map 填充）。
+pytest warnings **3→2**（剩 2 条为 test_spec_ae 既有提示，与本文件无关）。
+
+**踩坑重申（第 6 次）**：heredoc/内联 python 改源码——转义层吃缩进与
+引号连续两次炸文件（IndentationError + 残块 return 重复），git checkout
+回滚后改用 Edit 工具逐处修。**源码修改禁用一切 heredoc/内联 python，
+只走 Write/Edit**——纪律升级为绝对条款。
+
 ## 2026-11-13 · SPEC-INFO v2 二期：区域市场页（情报中心组+1）
 
 **INFO_CENTER_PLAN 3.3 落地**：`/intel/market` 区域市场——按城市聚合

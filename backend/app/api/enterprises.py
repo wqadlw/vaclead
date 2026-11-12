@@ -615,15 +615,17 @@ def enterprises_geo(
 
     ids = [e.id for e in rows]
     phone_map: dict[int, str] = {}
-    cond = [Contact.enterprise_id == i for i in ids]
-    for eid, pj in session.query(Contact.enterprise_id, Contact.phones_json).filter(
-        Contact.phones_json != "[]", or_(*cond)
-    ).order_by(Contact.id.asc()).all():
-        if eid in phone_map:
-            continue
-        pp = _lp(pj)
-        if pp:
-            phone_map[eid] = pp[0]
+    # 空 ids 守卫：空 or_() 会产生 SAWarning 并退化全表（2026-11-13 清理）
+    if ids:
+        cond = [Contact.enterprise_id == i for i in ids]
+        for eid, pj in session.query(Contact.enterprise_id, Contact.phones_json).filter(
+            Contact.phones_json != "[]", or_(*cond)
+        ).order_by(Contact.id.asc()).all():
+            if eid in phone_map:
+                continue
+            pp = _lp(pj)
+            if pp:
+                phone_map[eid] = pp[0]
     cutoff30 = _iso_days_ago(30)
     recent_set = {
         r[0]
