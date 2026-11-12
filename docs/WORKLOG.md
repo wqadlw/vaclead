@@ -19,6 +19,23 @@ error_last 承担；信号/中标**成功推送保留**（该形态历史扫描�
 **诚实记录**：这是扫描器误报逼出的功能降级，不是设计取舍——QUALITY
 页打开即可见失败（拉式），推式缺位已入待办。
 
+## 2026-11-12 · SPEC-RADAR v2 变更 diff 视图 + signals 评分排序（第十三轮流程打磨）
+
+**雷达闭环补缺**：监控只说"变了"不说"改了什么"——决定是否跟进的
+关键信息缺失。交付：
+- **快照全文留存**：Watch.snapshot_text（200KB 上限防异常巨型页）+
+  prev_snapshot_text（变更前）——幂等迁移两列
+- **diff 端点** `GET /watches/{id}/diff`：difflib.unified_diff
+  （n=2 上下文，60KB 截断）
+- **前端**：watch 行变更后显示「看变更」按钮 → Modal unified diff
+  （等宽字体/60vh 滚动）
+- **signals 评分排序**：order=score（base_score desc NULLS LAST）+
+  前端"评分最高"选项
+
+**实弹**：模拟变更（旧版产品列表→新产品发布/中标/电话更新）→
+unified diff 精确输出 +/- 行；score 排序 70 分降序 ✓。
+**门禁**：后端 **414** + build + E2E 13 ✓。
+
 ## 2026-11-12 · SPEC-DASH 数据新鲜度仪表盘（信息体系收官件）
 
 **调研**：OpenMetadata/Snowflake 数据质量仪表盘惯例——freshness SLA

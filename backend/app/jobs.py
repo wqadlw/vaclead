@@ -1581,8 +1581,12 @@ def watch_check_one(session, w) -> bool:
     # 首采建基线 或 变更
     w.content_hash = new_hash
     w.snapshot_head = text[:300] or None
+    w.snapshot_text = text[:200000]  # SPEC-RADAR v2：全文留存（diff 视图数据源）
     w.error_last = None
     if changed:
+        # SPEC-RADAR v2：变更前全文留存（diff 视图数据源）
+        w.prev_snapshot_text = w.snapshot_text
+        w.snapshot_text = text[:200000]  # 官网正文上限 200KB 防异常巨型页
         w.last_changed_at = w.last_checked_at
         hit = next((k for k in _RADAR_KEYWORDS if k in text), None)
         sig = Signal(

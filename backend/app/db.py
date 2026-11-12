@@ -114,6 +114,10 @@ _EVOLUTION_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "enterprise": [
         ("prov_json", "TEXT NOT NULL DEFAULT '{}'"),  # SPEC-PROV 字段级溯源
     ],
+    "watch": [
+        ("snapshot_text", "TEXT"),  # SPEC-RADAR v2：正文全文（diff）
+        ("prev_snapshot_text", "TEXT"),  # 变更前全文（diff 视图）
+    ],
 }
 
 

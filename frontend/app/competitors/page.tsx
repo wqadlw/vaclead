@@ -8,7 +8,7 @@
  * 金额/买家从公告文本回抽（与 intel/reports 同源正则），可溯源不发明。
  */
 import { useCallback, useEffect, useState } from "react";
-import { Button, Input, Select, Tag, Toast } from "@douyinfe/semi-ui";
+import { Button, Input, Modal, Select, Tag, Toast } from "@douyinfe/semi-ui";
 import { Crosshair, Search, UserX } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
@@ -63,6 +63,7 @@ interface WatchRow {
   last_checked_at: string | null;
   last_changed_at: string | null;
   snapshot_head: string | null;
+  prev_snapshot_text: string | null;
   check_count: number;
   error_last: string | null;
 }
@@ -78,6 +79,11 @@ export default function CompetitorsPage() {
   const [wUrl, setWUrl] = useState("");
   const [wEntId, setWEntId] = useState<number | null>(null);
   const [wBusy, setWBusy] = useState(false);
+  // SPEC-RADAR v2：diff 视图（变更前后 unified diff）
+  const [diffId, setDiffId] = useState<number | null>(null);
+  const [diffText, setDiffText] = useState("");
+  const [diffLabel, setDiffLabel] = useState("");
+  const [diffLoading, setDiffLoading] = useState(false);
   const [type, setType] = useState("");
   const [days, setDays] = useState(90);
   const [q, setQ] = useState("");
@@ -141,6 +147,22 @@ export default function CompetitorsPage() {
   const delWatch = async (id: number) => {
     await api.delete(`/api/watches/${id}`).catch(() => undefined);
     load();
+  };
+  // SPEC-RADAR v2：变更 diff 加载（unified diff 文本）
+  const openDiff = async (id: number) => {
+    const w = watches.find((x) => x.id === id);
+    setDiffLabel(w ? `${w.label} · ${w.ent_name}` : "");
+    setDiffId(id);
+    setDiffLoading(true);
+    setDiffText("");
+    try {
+      const d = await api.get<{ diff: string }>(`/api/watches/${id}/diff`);
+      setDiffText(d.diff);
+    } catch {
+      setDiffText("diff 加载失败");
+    } finally {
+      setDiffLoading(false);
+    }
   };
 
   const mark = async (id: number, flag: 0 | 1) => {
@@ -456,6 +478,9 @@ export default function CompetitorsPage() {
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
+                  {w.last_changed_at && (
+                    <Button size="small" onClick={() => void openDiff(w.id)}>看变更</Button>
+                  )}
                   <Button size="small" onClick={() => void checkWatch(w.id)}>立即检查</Button>
                   <Button size="small" type="tertiary" onClick={() => void delWatch(w.id)}>移除</Button>
                 </div>
@@ -480,6 +505,24 @@ export default function CompetitorsPage() {
             </div>
           )}
         </div>
+
+        {/* SPEC-RADAR v2：变更 diff 视图（unified diff 决定是否跟进） */}
+        <Modal
+          title={`变更详情 · ${diffLabel}`}
+          visible={diffId !== null}
+          onCancel={() => setDiffId(null)}
+          footer={null}
+          width={860}
+          style={{ maxWidth: "calc(100vw - 24px)" }}
+        >
+          {diffLoading ? (
+            <div className="py-10 text-center text-[13px] text-[var(--muted)]">加载 diff…</div>
+          ) : (
+            <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-all rounded-lg bg-[var(--raised)] px-3 py-3 font-mono text-[12px] leading-5 text-[var(--ink)]">
+              {diffText || "无变更前快照（首采后尚无变更）"}
+            </pre>
+          )}
+        </Modal>
       </section>
     </AppShell>
   );

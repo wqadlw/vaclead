@@ -492,6 +492,8 @@ class Watch(Base):
     url: Mapped[str] = mapped_column(Text, nullable=False)
     content_hash: Mapped[str | None] = mapped_column(Text)  # 首采前为 NULL
     snapshot_head: Mapped[str | None] = mapped_column(Text)  # 变更后正文头部预览
+    snapshot_text: Mapped[str | None] = mapped_column(Text)  # SPEC-RADAR v2：正文全文（diff 用）
+    prev_snapshot_text: Mapped[str | None] = mapped_column(Text)  # 变更前全文（diff 视图）
     last_checked_at: Mapped[str | None] = mapped_column(Text)
     last_changed_at: Mapped[str | None] = mapped_column(Text)
     check_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

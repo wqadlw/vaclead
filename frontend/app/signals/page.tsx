@@ -216,10 +216,11 @@ export default function SignalsPage() {
           <Select.Option value="90">近 90 天</Select.Option>
           <Select.Option value="0">全部</Select.Option>
         </Select>
-        {/* SPEC-AMT 排序：金额最大走后端持久列 SQL 排序（无金额排尾） */}
+        {/* SPEC-AMT/CUX4 排序：金额/评分走后端持久列 SQL 排序（NULL 排尾） */}
         <Select value={order || ""} onChange={(v) => { setOrder(String(v ?? "")); setPage(1); }} className="!w-32 shrink-0">
           <Select.Option value="">最新动态</Select.Option>
           <Select.Option value="amount">金额最大</Select.Option>
+          <Select.Option value="score">评分最高</Select.Option>
         </Select>
         <span className="shrink-0 whitespace-nowrap text-[12.5px] text-[var(--muted)]">共 {total} 条标讯</span>
         <Button

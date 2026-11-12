@@ -85,8 +85,11 @@ def list_signals(
     total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     # SPEC-AMT：金额排序直接 SQL ORDER BY 持久列（ORM 链式，与既有形态一致）——
     # 排序下推数据库，不再窗口内 Python 排序；NULL 排尾不挡前
+    # SPEC-CUX4：评分排序（base_score desc——意图信号置信度）
     if order.strip().lower() == "amount" and since_id is None:
         stmt = stmt.order_by(Signal.amount_wan.desc().nulls_last(), Signal.id.desc())
+    elif order.strip().lower() == "score" and since_id is None:
+        stmt = stmt.order_by(Signal.base_score.desc().nulls_last(), Signal.id.desc())
     else:
         stmt = stmt.order_by(Signal.id.desc())
     rows = session.execute(

@@ -305,6 +305,32 @@ def add_watch(
     return {"ok": True, "id": w.id}
 
 
+@router.get("/watches/{wid}/diff")
+def watch_diff(
+    wid: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """SPEC-RADAR v2：变更前后正文 unified diff（决定是否跟进的关键信息）。"""
+    import difflib
+
+    w = session.get(Watch, wid)
+    if w is None:
+        raise HTTPException(404, "监控不存在")
+    if not w.prev_snapshot_text:
+        return {"diff": "", "changed_at": w.last_changed_at, "note": "无变更前快照（首采后尚无变更）"}
+    diff = difflib.unified_diff(
+        (w.prev_snapshot_text or "").splitlines(keepends=False),
+        (w.snapshot_text or "").splitlines(keepends=False),
+        fromfile="变更前", tofile="变更后", lineterm="", n=2,
+    )
+    return {
+        "diff": "\n".join(diff)[:60000],
+        "changed_at": w.last_changed_at,
+        "label": w.label,
+    }
+
+
 @router.delete("/watches/{wid}")
 def delete_watch(
     wid: int,
