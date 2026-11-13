@@ -952,7 +952,8 @@ function IntelInner() {
           <TabPane tab="装机设备" itemKey="units" className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-[12.5px] text-[var(--muted)]">
-                每台装机自带耗材时钟（密封 12-24 月/滤芯 2000-4000h）——到期自动生成回访待办
+                任何品牌的真空泵都可入账（含莱宝/普发等大品牌——维修/配件/泵油是服务商机）；
+                每台自带耗材时钟（密封 12-24 月/滤芯 2000-4000h），到期自动生成回访待办
               </span>
               <Button
                 size="small"
