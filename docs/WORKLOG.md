@@ -65,6 +65,22 @@ POI 25,241（可拨 13,512）/ggzy 1,702/政采买家 136（可拨 135——买�
 
 **门禁**：后端 **414** + build + E2E 13 ✓ + tsc ✓。
 
+## 2026-11-13 · SPEC-CUX4 标讯批量转线索 + 权限对齐（好用性第十三轮）
+
+**"来此目的"审查**：标讯中心=销售看标讯挑客户——看到一批相关标讯
+（如某行业连续 5 条中标）想一次转完，却只能逐条点。且发现**权限
+不一致**：单条 /lead 是 current_user（销售可用），批量 batch-lead 却
+admin_only——同一业务动作两种权限没有道理。
+
+**交付**：
+1. 后端 batch-lead 放宽为 current_user（转线索是销售本职，权限对齐
+   单条语义；批量内部本就逐条校验 existed/skipped_competitor）
+2. 前端 signals 批量栏：当选>0 时 sticky 顶栏（已选 N 家 +
+   批量转线索 + 清除选择）；convertedIds 本地"已转线索"绿 Tag
+   （防重复转）；Set 迭代需 Array.from（--downlevelIteration 未开）
+
+**门禁**：后端 **414** 全绿（warnings 3→2）+ build + E2E 13 ✓。
+
 ## 2026-11-13 · 技术债清偿：空 or_() SAWarning 消灭（上轮承诺兑现）
 
 上轮 WORKLOG 承诺"列入清理待办"的 enterprises.py 空 `or_()` 弃用告警

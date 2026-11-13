@@ -52,6 +52,10 @@ export default function SignalsPage() {
   const [days, setDays] = useState<number>(30);
   const [competitor, setCompetitor] = useState<number | null>(null);
   const [subscribing, setSubscribing] = useState<number | null>(null);
+  // SPEC-CUX4：批量转线索（销售高频——看到一批相关标讯一次转完）
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [convertedIds, setConvertedIds] = useState<Set<number>>(new Set());
+  const [batchBusy, setBatchBusy] = useState(false);
   // SPEC-AMT 排序：""=最新动态（id desc）| amount=金额最大（后端持久列 SQL 排序）
   // URL ?order=amount 恢复（enterprises 页 initFromUrl 同款轻量版，只管 order）
   const initOrder = (): string => {
@@ -107,8 +111,28 @@ export default function SignalsPage() {
     try {
       await api.post(`/api/enterprises/${entId}/lead`, {});
       Toast.success("已转线索，去线索看板跟进");
+      setConvertedIds((prev) => new Set(prev).add(entId));
     } catch (e) {
       Toast.error(e instanceof Error ? e.message : "转线索失败");
+    }
+  };
+  // SPEC-CUX4：批量转线索（当页多选一次转完，后端逐条校验返回汇总）
+  const batchToLead = async () => {
+    if (sel.size === 0) return;
+    setBatchBusy(true);
+    try {
+      const d = await api.post<{ converted: number; existed: number; skipped_competitor: number }>(
+        "/api/enterprises/batch-lead",
+        { ids: Array.from(sel) },
+      );
+      Toast.success(`批量完成：新增 ${d.converted}，已有 ${d.existed}，同行跳过 ${d.skipped_competitor}`);
+      setConvertedIds((prev) => new Set([...Array.from(prev), ...Array.from(sel)]));
+      setSel(new Set());
+      load();
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "批量转线索失败");
+    } finally {
+      setBatchBusy(false);
     }
   };
   // SPEC-O O2：把当前筛选存为订阅规则（每日新信号命中即通知）
@@ -234,6 +258,22 @@ export default function SignalsPage() {
         </Button>
       </div>
 
+      {/* 批量转线索栏（SPEC-CUX4：当选>0 显示） */}
+      {sel.size > 0 && (
+        <div className="sticky top-14 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--accent)] bg-[var(--accent-weak,rgba(94,106,210,0.08))] px-3.5 py-2.5">
+          <span className="text-[13px] font-medium text-[var(--ink)]">已选 {sel.size} 家</span>
+          <Button
+            size="small"
+            theme="solid"
+            loading={batchBusy}
+            onClick={() => void batchToLead()}
+          >
+            批量转线索
+          </Button>
+          <Button size="small" theme="borderless" onClick={() => setSel(new Set())}>清除选择</Button>
+        </div>
+      )}
+
       {/* 信号流 */}
       <div className="space-y-2.5">
         {items.map((s) => {
@@ -273,6 +313,7 @@ export default function SignalsPage() {
                       {s.ent_name}
                     </a>
                     {s.is_competitor === 1 && <Tag color="red" type="light" size="small">疑似同行</Tag>}
+                    {convertedIds.has(s.ent_id) && <Tag color="green" type="light" size="small">已转线索</Tag>}
                   </div>
                   {s.evidence_claim && (
                     <div className="mt-1 border-l-2 border-[var(--accent)] pl-2 text-[12px] leading-4 text-[var(--muted)]">

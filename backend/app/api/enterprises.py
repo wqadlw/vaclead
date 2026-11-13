@@ -1246,9 +1246,12 @@ class BatchLeadIn(BaseModel):
 def batch_create_leads(
     body: BatchLeadIn,
     session: Session = Depends(get_session),
-    user: User = Depends(admin_only),
+    user: User = Depends(current_user),
 ):
-    """批量转线索（SPEC-C F2）：逐条套用单条校验，返回汇总不中断。"""
+    """批量转线索（SPEC-C F2）：逐条套用单条校验，返回汇总不中断。
+
+    SPEC-CUX4 权限对齐：单条 /lead 为 current_user（转线索是销售本职），
+    批量同口径放宽——标讯中心批量转线索是销售高频动作。"""
     from ..models import Lead
 
     converted = existed = skipped_competitor = missing = 0
