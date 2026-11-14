@@ -49,6 +49,8 @@ export default function SignalsPage() {
   const [province, setProvince] = useState<string>("");
   const [industry, setIndustry] = useState<string>("");
   const [q, setQ] = useState("");
+  // SPEC-DEEPLINK：官网直查深链（关键词输入 500ms 防抖后拉取）
+  const [outlinks, setOutlinks] = useState<{ key: string; label: string; url: string }[]>([]);
   const [days, setDays] = useState<number>(30);
   const [competitor, setCompetitor] = useState<number | null>(null);
   const [subscribing, setSubscribing] = useState<number | null>(null);
@@ -82,6 +84,24 @@ export default function SignalsPage() {
       .catch(() => undefined);
   }, [page, type, province, industry, q, days, competitor, order]);
   useEffect(load, [load]);
+
+  // SPEC-DEEPLINK：官网直查——关键词输入防抖 500ms 后构造站外搜索深链
+  const qs = q.trim();
+  useEffect(() => {
+    if (!qs) {
+      setOutlinks([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      api
+        .get<{ items?: { key: string; label: string; url: string }[] }>(
+          `/api/outlinks/collect?keyword=${encodeURIComponent(qs)}`,
+        )
+        .then((d) => setOutlinks(Array.isArray(d?.items) ? d.items : []))
+        .catch(() => setOutlinks([]));
+    }, 500);
+    return () => clearTimeout(t);
+  }, [qs]);
 
   // SPEC-AMT：order 同步 URL（replaceState 静默写，可分享/刷新返回不丢，不触发重拉）
   useEffect(() => {
@@ -257,6 +277,24 @@ export default function SignalsPage() {
           订阅当前筛选
         </Button>
       </div>
+
+      {/* SPEC-DEEPLINK：官网直查——关键词带出站，平台没覆盖/受限的源一键人工核对 */}
+      {qs && outlinks.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-[12px] text-[var(--muted)]">站外搜「{qs}」：</span>
+          {outlinks.map((o) => (
+            <a
+              key={o.key}
+              href={o.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-md border border-[var(--border)] px-2 py-0.5 text-[12px] text-[var(--accent)] transition-colors hover:border-[var(--accent)]"
+            >
+              {o.label} ↗
+            </a>
+          ))}
+        </div>
+      )}
 
       {/* 批量转线索栏（SPEC-CUX4：当选>0 显示） */}
       {sel.size > 0 && (

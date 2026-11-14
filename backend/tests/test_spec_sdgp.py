@@ -423,3 +423,32 @@ def test_outlinks_collect(client, admin_headers):
     assert r2.status_code == 200 and r2.json()["keyword"] == "真空"
     # 未登录 401
     assert client.get("/api/outlinks/collect").status_code == 401
+
+
+def test_enterprise_external_links_bid_categories(client, admin_headers):
+    """SPEC-DEEPLINK 企业导航层补标讯直查：招投标类目新增政采网/山东政采
+    按企业名搜公告——{name} 位置必须替换为 urlencode 后的企业名。"""
+    from urllib.parse import quote
+
+    name = "青岛大学智能制造研究院"
+    with SessionLocal() as s:
+        ent = Enterprise(name=name, source="manual")
+        s.add(ent)
+        s.commit()
+        ent_id = ent.id
+    try:
+        r = client.get(f"/api/enterprises/{ent_id}/external-links", headers=admin_headers)
+        assert r.status_code == 200, r.text
+        cats = {c["category"]: c["sources"] for c in r.json()["categories"]}
+        bid = cats.get("招投标") or []
+        by_key = {x["key"]: x for x in bid}
+        # 新增两个标讯直查源
+        assert {"ccgp_name", "sdgp_name"} <= set(by_key)
+        qn = quote(name, safe="")
+        assert f"kw={qn}" in by_key["ccgp_name"]["url"]
+        assert f"title={qn}" in by_key["sdgp_name"]["url"]
+        assert "colCode=0301" in by_key["sdgp_name"]["url"]
+    finally:
+        with SessionLocal() as s:
+            s.query(Enterprise).filter(Enterprise.id == ent_id).delete()
+            s.commit()

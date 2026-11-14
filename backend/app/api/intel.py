@@ -751,6 +751,13 @@ _EXT_SOURCE_TEMPLATES: list[dict] = [
     {"key": "bing_bid", "label": "必应搜中标", "category": "招投标",
      "what": "企业名+中标 组合搜索（各交易平台的公开中标公告）",
      "url": "https://www.bing.com/search?q={name}+中标"},
+    {"key": "ccgp_name", "label": "政采网搜公告", "category": "招投标",
+     "what": "该企业在中国政府采购网的全部公告（全文检索——采购人/中标方足迹）",
+     "url": "http://search.ccgp.gov.cn/bxsearch?searchtype=2&page_index=1"
+            "&bidSort=0&pinMu=0&bidType=0&dbselect=bidx&kw={name}&timeType=6"},
+    {"key": "sdgp_name", "label": "山东政采搜公告", "category": "招投标",
+     "what": "该企业在山东政采分网的采购公告（本省足迹，标题检索）",
+     "url": "https://www.ccgp-shandong.gov.cn/search?title={name}&colCode=0301&area=370000"},
     {"key": "boss_zp", "label": "BOSS 直聘", "category": "招聘信号",
      "what": "招真空泵/售后工程师 = 扩张与装机增长前兆（人工浏览，不爬）",
      "url": "https://www.zhipin.com/web/job/search?query={name}"},
