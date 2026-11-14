@@ -905,7 +905,9 @@ def enterprise_recon(
                 title=item.get("title") or name,
                 url=url, pub_date=item.get("pub_date"),
                 raw_excerpt=(item.get("summary") or "")[:400],
-                source="recon:ccgp",
+                # SPEC-MULTI S3：Signal 无 source 列——此前传 source= 被
+                # TypeError 静默吞掉，侦察产出的信号从未落库。溯源由
+                # recon 报告与 url 去重承担。
                 base_score=60,
             )
             session.add(sig)

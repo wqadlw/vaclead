@@ -425,6 +425,37 @@ function IntelInner() {
   const stat = detail.stat;
   const sourceMeta = SOURCE_TAG[detail.source ?? ""] ?? { label: detail.source || "—", color: "grey" as const };
 
+  // SPEC-MULTI S2：工商存续状态（注销/吊销/迁出/清算 = 线索死刑，红标警示）
+  const bizStatus = (detail.biz_status ?? "").trim();
+  const bizDead = ["注销", "吊销", "迁出", "清算"].some((k) => bizStatus.includes(k));
+  const bizStatusAt = (detail.biz_status_at ?? "").trim();
+  const bizDeadFlag = (detail.tags ?? []).includes("biz_dead");
+  // SPEC-MULTI S2：工商卡新增行——有值才显示；prov_json 溯源字段照 prov 徽章机制渲染
+  const formerNames: string[] = (() => {
+    try {
+      const arr: unknown = JSON.parse((detail.former_names as string) || "[]");
+      return Array.isArray(arr)
+        ? arr.filter((x): x is string => typeof x === "string" && x.trim() !== "")
+        : [];
+    } catch {
+      return [];
+    }
+  })();
+  const gsRows: [string, string, string][] = [
+    ["统一信用代码", detail.uscc || "—", "uscc"],
+    ["法定代表人", detail.legal_rep || "—", "legal_rep"],
+    ["成立日期", detail.established_at || "—", "established_at"],
+    ["注册资本", detail.registered_capital_wan == null ? "—" : `${detail.registered_capital_wan.toLocaleString("zh-CN")} 万`, "registered_capital_wan"],
+    ["行业", detail.industry_name || "未分类", ""],
+    ["所在区域", [detail.province, detail.city, detail.district].filter(Boolean).join(" / ") || "—", ""],
+    ["地址", detail.address || "—", ""],
+    ["经营范围", detail.business_scope || "—", "business_scope"],
+  ];
+  if (detail.staff_size) gsRows.push(["人员规模", detail.staff_size, "staff_size"]);
+  if (detail.paid_in_capital_wan != null)
+    gsRows.push(["实缴资本", `${detail.paid_in_capital_wan.toLocaleString("zh-CN")} 万`, "paid_in_capital_wan"]);
+  if (formerNames.length > 0) gsRows.push(["曾用名", formerNames.join("，"), "former_names"]);
+
   return (
     <AppShell>
       {/* 返回 + 头部档案条 */}
@@ -695,7 +726,21 @@ function IntelInner() {
             {/* SPEC-U U2：工商信息卡（企查查首屏字段集，数据来源=官方公示） */}
             <div className="mb-4 rounded-lg border border-[var(--border)] px-4 py-3">
               <div className="mb-2 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
-                <span className="text-[12.5px] font-medium text-[var(--ink)]">工商信息</span>
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="text-[12.5px] font-medium text-[var(--ink)]">工商信息</span>
+                  {/* SPEC-MULTI S2：工商存续状态徽章——存续/在业=青，注销/吊销/迁出/清算=红 */}
+                  {bizStatus && (
+                    <Tag color={bizDead ? "red" : "cyan"} type="light" size="small">{bizStatus}</Tag>
+                  )}
+                  {bizStatus && bizStatusAt && (
+                    <span className="text-[11px] text-[var(--muted)]">核验于 {bizStatusAt.slice(0, 10)}</span>
+                  )}
+                  {bizDeadFlag && (
+                    <span className="text-[11.5px] font-medium text-[var(--negative)]">
+                      该企业工商状态异常，线索质量存疑
+                    </span>
+                  )}
+                </span>
                 <span className="flex flex-wrap items-center gap-2 text-[11.5px] text-[var(--muted)]">
                   <span>
                     资料完整度 {detail.completeness ?? 0}/4
@@ -705,16 +750,7 @@ function IntelInner() {
                 </span>
               </div>
               <div className="grid grid-cols-1 gap-x-10 gap-y-2 text-[13px] leading-7 md:grid-cols-2">
-                {([
-                  ["统一信用代码", detail.uscc || "—", "uscc"],
-                  ["法定代表人", detail.legal_rep || "—", "legal_rep"],
-                  ["成立日期", detail.established_at || "—", "established_at"],
-                  ["注册资本", detail.registered_capital_wan == null ? "—" : `${detail.registered_capital_wan.toLocaleString("zh-CN")} 万`, "registered_capital_wan"],
-                  ["行业", detail.industry_name || "未分类", ""],
-                  ["所在区域", [detail.province, detail.city, detail.district].filter(Boolean).join(" / ") || "—", ""],
-                  ["地址", detail.address || "—", ""],
-                  ["经营范围", detail.business_scope || "—", "business_scope"],
-                ] as [string, string, string][]).map(([k, v, pk]) => {
+                {gsRows.map(([k, v, pk]) => {
                   const provRec = prov[pk];
                   return (
                     <div key={k} className="flex gap-2 border-b border-[var(--rule)] py-1">

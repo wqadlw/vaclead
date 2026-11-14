@@ -146,6 +146,13 @@ export interface Enterprise {
   industry_name: string | null;
   business_scope: string | null;
   registered_capital_wan: number | null;
+  /** SPEC-MULTI S2：chinacheck 工商深解析新字段（后端并行上线，旧响应缺键视为无） */
+  biz_status?: string | null;
+  biz_status_at?: string | null;
+  staff_size?: string | null;
+  paid_in_capital_wan?: number | null;
+  /** JSON 数组字符串，如 '["原名称A","原名称B"]' */
+  former_names?: string | null;
   icp_score: number;
   icp_reasons: { rule: string; points: number }[];
   intent_score: number;

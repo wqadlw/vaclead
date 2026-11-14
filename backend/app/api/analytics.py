@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ..auth import current_user
 from ..db import get_session
 from ..models import Contact, Enterprise, Lead, Signal, Todo, User
+from ..sources import channel_variants
 
 router = APIRouter(tags=["dashboard"])
 
@@ -93,7 +94,7 @@ def dashboard_summary(
     )
     channels: dict[str, int] = {}
     for src, cnt in source_rows:
-        key = {"ggzy_buyer": "ggzy", "ccgp_buyer": "ccgp"}.get(str(src), str(src))
+        key = channel_variants(str(src))[0]  # 变体归并回主 key（注册表派生，S1）
         channels[key] = channels.get(key, 0) + int(cnt)
     sources = sorted(
         [{"name": k, "value": v} for k, v in channels.items()],

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Checkbox, Dropdown, Input, InputNumber, Modal, Popover, Select, Table, Tag, Tabs, Toast } from "@douyinfe/semi-ui";
 import { ChevronDown, Pencil, Save, Search, Settings2, RotateCcw, X } from "lucide-react";
@@ -56,6 +56,14 @@ const SOURCE_TAG: Record<string, { label: string; color: "cyan" | "green" | "blu
   tender: { label: "招标", color: "grey" },
   poi: { label: "POI", color: "grey" },
   manual: { label: "手工", color: "white" },
+};
+/** SPEC-MULTI S1：来源注册表类别 → 徽章色（registry 命中时优先，未注册 key 回退静态表） */
+const CATEGORY_TAG_COLOR: Record<string, "blue" | "cyan" | "green" | "orange" | "grey"> = {
+  tender: "blue",
+  proposal: "cyan",
+  poi: "green",
+  enrich: "orange",
+  import: "grey",
 };
 
 interface Filters {
@@ -458,6 +466,35 @@ export default function EnterprisesPage() {
       .catch(() => undefined);
   }, []);
 
+  // SPEC-MULTI S1：来源注册表（GET /api/sources）——label/类别优先 registry，
+  // fetch 失败静默保持空对象（完全回退下方静态表，行为与改造前一致）。
+  const [srcLabels, setSrcLabels] = useState<Record<string, string>>({});
+  const [srcCategories, setSrcCategories] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api
+      .get<{ sources: { key: string; label: string; category: string }[] }>("/api/sources")
+      .then((d) => {
+        const labels: Record<string, string> = {};
+        const cats: Record<string, string> = {};
+        for (const s of Array.isArray(d?.sources) ? d.sources : []) {
+          if (s && typeof s.key === "string") {
+            labels[s.key] = s.label || s.key;
+            cats[s.key] = typeof s.category === "string" ? s.category : "";
+          }
+        }
+        setSrcLabels(labels);
+        setSrcCategories(cats);
+      })
+      .catch(() => undefined);
+  }, []);
+  // 筛选下拉选项 = 静态表 ∪ registry（按 key 去重，registry 命中时 label 优先用返回值）
+  const sourceSelectOptions = useMemo(() => {
+    const merged = new Map<string, string>();
+    for (const o of SOURCE_OPTIONS) merged.set(o.value, srcLabels[o.value] ?? o.label);
+    for (const key of Object.keys(srcLabels)) if (!merged.has(key)) merged.set(key, srcLabels[key]);
+    return Array.from(merged.entries()).map(([value, label]) => ({ value, label }));
+  }, [srcLabels]);
+
   // URL 状态同步统一由上方遍历 applied 的 SPEC-UX effect 承担（含页码与
   // 全部筛选键）；旧版白名单式同步 effect 已删除——它在同一 [applied] 依赖
   // 上后执行，会把遍历版写入的 intent_min/intent_max/call_status/页码等
@@ -792,7 +829,14 @@ export default function EnterprisesPage() {
       dataIndex: "source",
       width: 96,
       render: (_: unknown, r: Enterprise) => {
-        const meta = SOURCE_TAG[r.source ?? ""] ?? { label: r.source || "—", color: "grey" as const };
+        const key = r.source ?? "";
+        // SPEC-MULTI S1：registry 命中 → label 用返回值 + 类别色映射；未注册回退静态表
+        const meta = srcLabels[key]
+          ? {
+              label: srcLabels[key],
+              color: CATEGORY_TAG_COLOR[srcCategories[key] ?? ""] ?? ("grey" as const),
+            }
+          : SOURCE_TAG[key] ?? { label: r.source || "—", color: "grey" as const };
         return <Tag color={meta.color} type="light" size="small">{meta.label}</Tag>;
       },
     },
@@ -1088,7 +1132,7 @@ export default function EnterprisesPage() {
             ))}
           </Select>
           <Select style={ctl} optionList={COMPETITOR_OPTIONS} value={filters.is_competitor} onChange={(v) => set({ is_competitor: (v as number) ?? -1 })} />
-          <Select style={ctl} optionList={SOURCE_OPTIONS} placeholder="全部来源" showClear value={filters.source ?? undefined} onChange={(v) => set({ source: (v as string) || undefined })} />
+          <Select style={ctl} optionList={sourceSelectOptions} placeholder="全部来源" showClear value={filters.source ?? undefined} onChange={(v) => set({ source: (v as string) || undefined })} />
           <Button size="small" theme="outline" onClick={() => { setPage(1); setApplied(filters); }}>应用</Button>
         </div>
       )}

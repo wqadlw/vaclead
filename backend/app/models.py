@@ -137,6 +137,12 @@ class Enterprise(Base):
     # oem=应用设备制造商（买泵装设备）| end_user=终端用户 | reseller=分销 |
     # integrator=系统工程商 | NULL 未定。与 is_competitor（泵制造商）正交。
     customer_role: Mapped[str | None] = mapped_column(Text)
+    # SPEC-MULTI S2 工商深解析（chinacheck 快照扩展；写入点只补空不覆盖）
+    biz_status: Mapped[str | None] = mapped_column(Text)  # 存续/在业/注销/吊销/迁出/清算…
+    biz_status_at: Mapped[str | None] = mapped_column(Text)  # 状态核验时间 ISO
+    staff_size: Mapped[str | None] = mapped_column(Text)  # 规模带，如 "100-499人"
+    paid_in_capital_wan: Mapped[float | None] = mapped_column(REAL)  # 实缴资本（万元）
+    former_names: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON 数组曾用名
     # SPEC-PROV 字段级溯源（用户定焦 2026-11-12）：工商五字段逐字段记录
     # {来源, 操作人, 时间}——风鸟搬运/对照表回填/公告采集分得清，不再黑箱。
     # 结构：{"legal_rep": {"source": "...", "by": "...", "at": "..."}, ...}

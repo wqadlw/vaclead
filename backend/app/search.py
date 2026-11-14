@@ -13,6 +13,8 @@ import os
 from functools import lru_cache
 from typing import Any
 
+from .sources import channel_variants
+
 logger = logging.getLogger("vaclead.meili")
 
 _MEILI_URL = os.environ.get("MEILI_URL", "http://127.0.0.1:7700")
@@ -198,10 +200,8 @@ def search(
     if city:
         filters.append(f'city = "{city}"')
     if source:
-        # 采集通道含多个来源值（ggzy/ggzy_buyer…）用 OR 归为一个通道
-        channel = {"ggzy": ("ggzy", "ggzy_buyer"), "ccgp": ("ccgp", "ccgp_buyer")}.get(
-            source, (source,)
-        )
+        # 采集通道含多个来源值（ggzy/ggzy_buyer…）用 OR 归为一个通道（注册表派生，S1）
+        channel = channel_variants(source)
         if len(channel) == 1:
             filters.append(f'source = "{channel[0]}"')
         else:

@@ -124,6 +124,9 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, d
     # 计数器放外层作用域：TaskCancelled 兜底分支需要读取（审计修复）
     inserted = 0
     merged = 0
+    # SPEC-MULTI S3：新面孔预览（cap 50，按入库顺序）——POI 暂无 source_batch_id，
+    # 只记 id/name/省/行业供任务结果页展示
+    new_enterprises: list[dict] = []
     poi_contact_done: set[int] = set()  # 本轮已建 POI 电话联系人的企业（防 autoflush 盲区撞唯一约束）
 
     async def _main() -> None:
@@ -174,6 +177,13 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, d
                     _nm = poi["name"]
                     if any(k in _nm for k in ("设备制造", "机械制造", "装备制造", "仪器制造")):
                         ent.customer_role = "oem"
+                # SPEC-MULTI S3：行业检测后快照（新面孔预览，cap 50）
+                if is_new and len(new_enterprises) < 50:
+                    new_enterprises.append({
+                        "id": ent.id, "name": ent.name,
+                        "province": ent.province,
+                        "industry_name": ent.industry_name,
+                    })
                 # SPEC-AH 补：POI 自主公开电话 → 规范化联系人（地图公开信息，合规）
                 # poi_contact_done：同批两个 poi_id 可解析到同一企业（autoflush=False
                 # 下 exists 查不到 pending 写，西安 96% 撞 uq_contact 实证）——集合兜底
@@ -208,7 +218,11 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, d
                     _checkpoint(
                         task_id,
                         progress=80 + int((i + 1) / max(len(pois), 1) * 19),
-                        state_json=json.dumps({"inserted": inserted, "merged": merged}, ensure_ascii=False),
+                        state_json=json.dumps(
+                            {"inserted": inserted, "merged": merged,
+                             "new_enterprises": new_enterprises},
+                            ensure_ascii=False,
+                        ),
                     )
             s.commit()
         _checkpoint(
@@ -216,7 +230,9 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, d
             status="done",
             progress=100,
             state_json=json.dumps(
-                {"inserted": inserted, "merged": merged, "logs": logs[-20:]}, ensure_ascii=False
+                {"inserted": inserted, "merged": merged,
+                 "new_enterprises": new_enterprises, "logs": logs[-20:]},
+                ensure_ascii=False,
             ),
         )
         _broadcast(task_id, {"type": "done", "inserted": inserted, "merged": merged})
@@ -230,7 +246,9 @@ def _run_poi_task(task_id: str, city: str, keywords: list[str], amap_key: str, d
             task_id,
             status="cancelled",
             state_json=json.dumps(
-                {"inserted": inserted, "merged": merged}, ensure_ascii=False
+                {"inserted": inserted, "merged": merged,
+                 "new_enterprises": new_enterprises},
+                ensure_ascii=False,
             ),
         )
         _broadcast(task_id, {"type": "done", "cancelled": True})
@@ -251,6 +269,10 @@ def start_poi_task(
     amap_key = _get_setting(session, "amap_key")
     if not amap_key:
         raise HTTPException(400, "缺少高德Key，请在设置页配置")
+    from ..sources import any_source_disabled
+
+    if any_source_disabled("poi"):
+        raise HTTPException(422, "POI 来源已停用，请在数据源管理中启用后再采集")
     keywords = body.keywords_override
     if not keywords:
         keywords = []
@@ -324,8 +346,11 @@ def start_tender_scan(
         import asyncio
 
         from ..collectors.tender import fetch_zhiliaoke_tenders
+        from ..sources import any_source_disabled
         from .task_runtime import signal_exists
 
+        if any_source_disabled("tender"):
+            return {"skipped_disabled": True}  # SPEC-MULTI S1：来源停用短路
         totals: dict = {"signals_created": 0}
 
         async def _main() -> None:
@@ -422,7 +447,23 @@ def start_ggzy_harvest(
         return None
 
     def _worker() -> dict:  # SPEC-E E2：返回 totals 交给 lifecycle
-        totals = {"entities": 0, "new_entities": 0, "bids": 0, "signals": 0, "buyers": 0}
+        from ..sources import any_source_disabled
+
+        if any_source_disabled("ggzy"):
+            return {"skipped_disabled": True}  # SPEC-MULTI S1：来源停用短路
+        totals = {
+            "entities": 0, "new_entities": 0, "bids": 0, "signals": 0, "buyers": 0,
+            # SPEC-MULTI S3：新面孔预览（cap 50，按入库顺序）
+            "new_enterprises": [],
+        }
+
+        def _note_new(ent, is_new: bool) -> None:
+            if is_new and len(totals["new_enterprises"]) < 50:
+                totals["new_enterprises"].append({
+                    "id": ent.id, "name": ent.name,
+                    "province": ent.province, "industry_name": ent.industry_name,
+                })
+
         affected: set[int] = set()
         competitor_ids: set[int] = set()  # 采集端基于中标事实的同行打标（apply_icp 不许覆盖）
         try:
@@ -444,6 +485,7 @@ def start_ggzy_harvest(
                         )
                         if is_new:
                             totals["new_entities"] += 1
+                            _note_new(ent, True)
                         totals["entities"] += 1
                         if rec["uscc"] and not ent.uscc:
                             ent.uscc = rec["uscc"]
@@ -515,6 +557,7 @@ def start_ggzy_harvest(
                                 )
                                 if buyer_new:
                                     totals["buyers"] += 1
+                                    _note_new(buyer_ent, True)
                                 buyer_sig_exists = (
                                     s.query(Signal)
                                     .filter(
@@ -603,6 +646,37 @@ def task_status(
     }
 
 
+@router.get("/tasks/{task_id}/results")
+def task_results(
+    task_id: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """任务结果明细（SPEC-MULTI S3 fire-enrich 契约）：本次新采企业 + 失败清单。
+
+    复用 GET /tasks/{task_id} 的鉴权与 404 语义；state_json 缺键返回空数组
+    （兼容旧任务）。total=totals 原样透出（含既有计数键）。"""
+    import json as _json
+
+    cp = session.get(TaskCheckpoint, task_id)
+    if cp is None:
+        raise HTTPException(404, "任务不存在")
+    try:
+        state = _json.loads(cp.state_json or "{}")
+    except ValueError:
+        state = {}
+    if not isinstance(state, dict):
+        state = {}
+    return {
+        "task_id": cp.task_id,
+        "kind": cp.kind,
+        "status": cp.status,
+        "new_enterprises": state.get("new_enterprises") or [],
+        "failures": state.get("failures") or [],
+        "totals": state,
+    }
+
+
 class CcgpScanIn(BaseModel):
     """政采网公告扫描（search.ccgp.gov.cn/bxsearch，普通 HTTP）。"""
     keywords: list[str] | None = None  # 缺省用设备强词表
@@ -650,7 +724,23 @@ def start_ccgp_scan(
         return None
 
     def _worker() -> dict:  # SPEC-E E2：返回 totals 交给 lifecycle
-        totals = {"announcements": 0, "buyers": 0, "signals": 0, "suppliers": 0}
+        from ..sources import any_source_disabled
+
+        if any_source_disabled("ccgp"):
+            return {"skipped_disabled": True}  # SPEC-MULTI S1：来源停用短路
+        totals = {
+            "announcements": 0, "buyers": 0, "signals": 0, "suppliers": 0,
+            # SPEC-MULTI S3：新面孔预览（cap 50，按入库顺序）
+            "new_enterprises": [],
+        }
+
+        def _note_new(ent, is_new: bool) -> None:
+            if is_new and len(totals["new_enterprises"]) < 50:
+                totals["new_enterprises"].append({
+                    "id": ent.id, "name": ent.name,
+                    "province": ent.province, "industry_name": ent.industry_name,
+                })
+
         affected: set[int] = set()
         competitor_ids: set[int] = set()
         try:
@@ -676,6 +766,7 @@ def start_ccgp_scan(
                             )
                             if buyer_new:
                                 totals["buyers"] += 1
+                                _note_new(buyer_ent, True)
                         elif item["summary"]:
                             # 无采购人字段时从摘要抽归属（复用导入抽取器）
                             guessed = extract_enterprise_name(item["title"], item["summary"])
@@ -685,6 +776,7 @@ def start_ccgp_scan(
                                 )
                                 if buyer_new:
                                     totals["buyers"] += 1
+                                    _note_new(buyer_ent, True)
                         if buyer_ent is None:
                             buyer_ent, _ = resolve_enterprise(
                                 s, f"待归属·{item['title'][:18].strip()}", source="ccgp_buyer"
@@ -731,6 +823,7 @@ def start_ccgp_scan(
                                 )
                                 if sup_new:
                                     totals["suppliers"] += 1
+                                    _note_new(sup_ent, True)
                                 if any(t in winner for t in strong):
                                     sup_ent.is_competitor = 1
                                     competitor_ids.add(sup_ent.id)
@@ -804,10 +897,15 @@ def start_gongshang_enrich(
 
     offline provider 不发明数据，实际补全需在设置页配置 chinacheck_token /
     aliyun_qcc_key；本端点同步执行（provider 内置限速与失败容错）。
+    SPEC-MULTI S1/S2：gongshang 停用即短路；写入走 apply_gongshang_fields
+    （只补空不覆盖 + PROV 打标 + biz_dead），失败明细进 failures（cap 50）。
     """
-    from ..collectors.gongshang import get_provider
+    from ..collectors.gongshang import apply_gongshang_fields, get_provider
     from ..models import Enterprise
+    from ..sources import any_source_disabled
 
+    if any_source_disabled("gongshang"):
+        return {"task_id": None, "skipped_disabled": True}
     provider = get_provider(session)
     rows = (
         session.query(Enterprise)
@@ -819,6 +917,7 @@ def start_gongshang_enrich(
     if not rows:
         return {"task_id": None, "updated": 0, "skipped": "无待补全企业"}
     updated = 0
+    failures: list[dict] = []
     for e in rows:
         try:
             data = provider.enrich(e.uscc or "")
@@ -826,18 +925,28 @@ def start_gongshang_enrich(
             raise HTTPException(
                 400, f"provider {provider.name} 适配器未实现，请在设置页配置可用凭证"
             )
-        if not data:
+        except Exception as exc:  # noqa: BLE001 — 单企业失败不中断批次
+            if len(failures) < 50:
+                failures.append({
+                    "enterprise_id": e.id, "name": e.name,
+                    "stage": "gongshang", "error": str(exc)[:200],
+                })
             continue
-        if data.get("registered_capital_wan") is not None:
-            e.registered_capital_wan = float(data["registered_capital_wan"])
-        if data.get("business_scope"):
-            e.business_scope = data["business_scope"]
-        if data.get("industry") and not e.industry_name:
-            e.industry_name = data["industry"]
-        apply_icp(e)
-        updated += 1
+        if not data:
+            if len(failures) < 50:
+                failures.append({
+                    "enterprise_id": e.id, "name": e.name,
+                    "stage": "gongshang", "error": "provider 未返回数据",
+                })
+            continue
+        if apply_gongshang_fields(e, data):
+            apply_icp(e)
+            updated += 1
     session.commit()
-    return {"task_id": None, "updated": updated, "provider": provider.name, "scanned": len(rows)}
+    return {
+        "task_id": None, "updated": updated, "provider": provider.name,
+        "scanned": len(rows), "failures": failures,
+    }
 
 
 
@@ -1178,8 +1287,14 @@ def start_enrich_pipeline(
     session.commit()
 
     def _worker() -> dict:  # SPEC-E E2：返回 totals 交给 lifecycle
+        from ..collectors.gongshang import apply_gongshang_fields
+
         totals = {"scanned": 0, "uscc_found": 0, "legal_added": 0,
-                  "stat_built": 0, "gongshang_updated": 0, "failed": 0}
+                  "stat_built": 0, "gongshang_updated": 0, "failed": 0,
+                  # SPEC-MULTI S2：Stage A chinacheck 按名兜底命中数
+                  "stage_a_chinacheck_hits": 0,
+                  # SPEC-MULTI S3：失败明细（cap 50，error 截 200 字）
+                  "failures": []}
         try:
             with SessionLocal() as s:
                 ents = s.query(Enterprise).limit(min(body.limit, 500)).all()
@@ -1189,12 +1304,14 @@ def start_enrich_pipeline(
                 if is_cancel_requested(task_id):
                     raise TaskCancelled(task_id)
                 stage_hits: list[str] = []
+                stage = "A:discovery"  # 失败明细定位到阶段（S3 fire-enrich 契约）
                 try:
                     with SessionLocal() as s:
                         e = s.get(Enterprise, ent_ref.id)
                         if e is None:
                             continue
                         # Stage A: discovery
+                        rec = None
                         if not e.uscc:
                             result = search_entities(e.name, page=1, size=1)
                             records = result.get("records") or []
@@ -1227,21 +1344,34 @@ def start_enrich_pipeline(
                                         ))
                                         totals["legal_added"] += 1
                                         stage_hits.append("法人")
+                            if not (rec and rec["uscc"]):
+                                # SPEC-MULTI S2：ggzy 按名未命中 → chinacheck
+                                # 按名兜底（provider 支持时；异常降级不阻塞）
+                                by_name = getattr(provider, "search_by_name", None)
+                                if callable(by_name):
+                                    try:
+                                        found = by_name(e.name)
+                                    except Exception:  # noqa: BLE001
+                                        found = None
+                                    if found and found.get("uscc"):
+                                        e.uscc = found["uscc"]
+                                        totals["uscc_found"] += 1
+                                        totals["stage_a_chinacheck_hits"] += 1
+                                        stage_hits.append("工商按名")
                         # Stage B: profile
+                        stage = "B:profile"
                         stat = enrich_stats(s, e.id)
                         if stat.get("bid_count", 0) > 0:
                             totals["stat_built"] += 1
                             stage_hits.append("画像")
                         # Stage C: gongshang
+                        stage = "C:gongshang"
                         if e.uscc and e.registered_capital_wan is None:
                             try:
                                 data = provider.enrich(e.uscc or "")
                             except NotImplementedError:
                                 data = None
-                            if data and data.get("registered_capital_wan") is not None:
-                                e.registered_capital_wan = float(data["registered_capital_wan"])
-                                if data.get("business_scope"):
-                                    e.business_scope = data["business_scope"]
+                            if data and apply_gongshang_fields(e, data):
                                 apply_icp(e)
                                 totals["gongshang_updated"] += 1
                                 stage_hits.append("工商")
@@ -1253,6 +1383,12 @@ def start_enrich_pipeline(
                         _log(task_id, f"  [{i + 1}/{len(targets)}] {ent_ref.name[:22]}：{' + '.join(stage_hits)}")
                 except Exception as exc:  # noqa: BLE001 — 单企业失败不中断流水线
                     totals["failed"] += 1
+                    if len(totals["failures"]) < 50:
+                        totals["failures"].append({
+                            "enterprise_id": ent_ref.id, "name": ent_ref.name,
+                            "stage": stage, "error": str(exc)[:200],
+                        })
+                    _log(task_id, f"  [{i + 1}/{len(targets)}] {ent_ref.name[:22]} 失败（{stage}）：{str(exc)[:120]}")
                     logger.warning("补全失败 %s: %s", ent_ref.name[:22], exc)
                 pct = 5 + int((i + 1) / max(len(targets), 1) * 90)
                 _checkpoint(task_id, progress=pct,

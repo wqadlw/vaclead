@@ -13,17 +13,27 @@ from sqlalchemy.orm import Session
 from ..auth import admin_only, current_user
 from ..db import get_session
 from ..models import Contact
+from ..sources import SOURCES
 
 # SPEC-DASH：数据新鲜度 SLA 分级（OpenMetadata/Snowflake 惯例——
 # 每个数据源/任务定义预期间隔，超期=stale 红标）。hours=预期间隔上限。
-_FRESHNESS_SLA: dict[str, dict] = {
-    # job_name → 中文标签 + 预期间隔（小时）
+# SPEC-MULTI S1：source 类 job 的 SLA 从注册表派生（sla_job 登记即上仪表盘，
+# 补齐 proposal_gd/hb/js 三省漏登记）；registry 外的运维 job 仍在此地维护。
+_FRESHNESS_SLA: dict[str, dict] = {}
+for _src in SOURCES.values():
+    if _src.sla_job:
+        # 多源共用一个 job（ggzy/ccgp/tender → hourly_tender）取先登记者
+        _FRESHNESS_SLA.setdefault(_src.sla_job, {
+            "label": _src.sla_label or _src.label_cn,
+            "hours": _src.sla_hours if _src.sla_hours is not None else 26,
+        })
+_FRESHNESS_SLA.update({
+    # job_name → 中文标签 + 预期间隔（小时）——非 source 类运维项
     "webhook_flush": {"label": "群播报投递", "hours": 0.5},
     "owner_signal": {"label": "老户雷达", "hours": 1},
     "competitor_alert": {"label": "竞对雷达", "hours": 1},
     "subscription_rules": {"label": "订阅扫播", "hours": 1},
     "watch_radar": {"label": "官网监控雷达", "hours": 1},
-    "hourly_tender": {"label": "政采抓取", "hours": 2},
     "recycle_leads": {"label": "公海回收", "hours": 2},
     "outreach_dispatch": {"label": "序列触达发送", "hours": 6},
     "daily_incremental": {"label": "每日增量采集", "hours": 26},
@@ -33,10 +43,9 @@ _FRESHNESS_SLA: dict[str, dict] = {
     "consumable_clock": {"label": "耗材时钟", "hours": 26},
     "health_refresh": {"label": "健康度刷新", "hours": 26},
     "contract_renewals": {"label": "续约提醒", "hours": 26},
-    "proposal_zj": {"label": "浙江备案采集", "hours": 26},
     "product_seed": {"label": "产品目录种子", "hours": 26},
     "dup_scan": {"label": "全库查重", "hours": 24 * 8},
-}
+})
 
 
 def phone_sharing_map(session: Session, min_ents: int = 3) -> dict[str, set[int]]:

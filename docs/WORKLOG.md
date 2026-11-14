@@ -4,6 +4,52 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-14 · SPEC-MULTI：多源注册表 + 工商深解析 + 任务结果可观测（正规流程全轮）
+
+**流程**：双摸底 Agent（采集架构 recon + refs/ 15 项目扫描）→ 网上调研
+（HF 拓客开源 Top30 印证分层）→ SPEC-MULTI 契约级 → 双子 Agent 并行
+实施（后端/前端按契约解耦）→ 门禁（亲跑 434 全绿 + build + 实弹冒烟
+4 项）→ 沉淀（本文档 + STUDY.md 吸收轮 + DATA_ACQUISITION §9）。
+
+**S1 Source 注册表**（keelead SourceManager 模式，refs 蓝本首次真搬架构）：
+新 `app/sources.py` 唯一登记 12 源（frozen SourceDef：label/category/
+aliases/sla_job）——标签/SLA/通道归并/徽章全派生，**新增源成本 12 处
+枚举点 → 1 处**。消费方改接线行为逐字节保持（label 取现网文案）。
+修复：proposal_gd/hb/js 水位 SLA 漏登记（此前永不上仪表盘，实测 18 job
+四省全列）。新端点 GET /api/sources + POST /{key}/toggle（SettingsKV
+source_disabled；sweep/worker 入口短路）→ 设置页「数据源」启停卡。
+
+**S2 chinacheck 深解析**（china-company-check-mcp 字段契约）：4→10 字段。
+**biz_status 存续状态=免费快照里最值钱字段**（注销/吊销/迁出/清算→tags
+biz_dead 红标，线索死刑警示）；staff_size/paid_in_capital_wan/former_names/
+address 补空，逐字段 mark_prov。search_by_name() 启用为 enrich Stage A
+找 uscc 第二通道（ggzy 失败兜底，totals 记 hits）。5 新列走 db.py 幂等 ALTER。
+
+**S3 任务结果可观测**（fire-enrich RowEnrichmentResult 契约补完 + 上轮
+实测断点）：ggzy/ccgp/POI worker 收 new_enterprises（cap 50）、enrich 收
+failures 明细（stage/error 截 200 + SSE）；新端点 GET /tasks/{id}/results
+（旧 checkpoint 优雅兼容实测）；前端 done 分支「本次新采企业」预览卡
+（行点击进详情）+ 红字失败明细。**潜伏 bug 修复**：intel.py:908 给
+Signal 传不存在的 source 列——recon 信号从未落库（TypeError 被 except
+吞），删形参 + 回归测试。
+
+**S4 四省 job 基座**：run_proposal_scan 配置驱动（jobs.py 净 -96 行），
+新增省边际成本 90→20 行（ZhaoBiaoSpider 33 端点图谱=下轮弹药）；
+测试零改动全绿=行为保持验收。
+
+**顺带修复**：db.py ALTER 清单 dict 重复键静默覆盖（customer_role/
+deleted_at 迁移实为死代码）——合并单键全列清单。
+
+**双子 Agent 偏离决策（合理，已采纳）**：POI 主 key 用 `poi` 非 `amap`
+（企业库实际落库值优先）；enrich 写入统一收敛"只补空"（旧 business_scope
+无条件覆盖违背 PROV 语义）；资本解析兼容"5000万人民币"。
+
+**门禁**：后端全量 **434**（415+19 新测试）亲跑 ✓ + build ✓ + 实弹冒烟
+（sources 12 源计数归并/results 兼容/toggle 往返复原/freshness 四省）✓。
+踩坑：bat 经 Git Bash 转发 GBK 注释嚼坏（改后台直启 uvicorn）；curl 必须
+--noproxy（代理拦 localhost 老坑）；results 查库先确认 WAL 主库路径
+（backend/data 是空壳 stub，真库在根 data/ + 22MB WAL）。
+
 ## 2026-11-14 · 采集功能实测走查 + 断点修复（任务找回：状态端点 + 刷新恢复）
 
 **方法升级**：这轮不先写代码——以使用者身份实测完整采集流程（ggzy

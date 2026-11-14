@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -297,43 +299,177 @@ def backfill_province_geo() -> dict:
     return {"scanned": len(rows), **by_rule}
 
 
-def run_proposal_gd_scan(max_pages: int = 5) -> dict:
-    """广东备案公示扫描：单位级拟建信号（proposal），幂等可重扫。
+# ---------------------------------------------------------------------------
+# SPEC-MULTI S4：备案公示扫描基座（配置驱动）——四省 job 同构 ~250 行收敛于此，
+# 新增省政采站点边际成本 90 → ~15 行配置。
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ProposalScanConfig:
+    """单省备案扫描配置：站点形状 + 字段映射全部声明在此。
 
-    采集节奏：每日 05:00 cron；失败记水位不静默（SPEC-AB AB1）。
+    collector/fetch/keywords 均存**名字**而非函数引用——运行时经
+    importlib/getattr 解析，测试 monkeypatch 模块属性照常生效
+    （test_spec_ab/ag/br/bs 的既有打桩方式零改动）。"""
+
+    source_key: str                       # 注册表 source（同时是停用开关键）
+    province: str                         # SPEC-BP BP0：通道→省份确定性映射
+    collector: str                        # collectors 子模块名
+    signal_url_attr: str                  # 信号 url 常量名（collector 模块内）
+    unit_field: str                       # rec 中单位字段（gd=name / hb=unit / jszj=project）
+    title_of: Callable[[dict], str]       # 信号标题模板
+    pub_date_of: Callable[[dict], object] # pub_date 取值
+    excerpt_of: Callable[[dict], str]     # raw_excerpt 模板
+    evidence_of: Callable[[dict], str]    # evidence_claim 模板
+    fetch_page: str | None = None         # 无关键词分页函数名（gd/hb：f(page_no, client=None)）
+    fetch_by_kw: str | None = None        # 关键词分页函数名（js/zj：f(kw, page_no=page_no)）
+    keywords_fn: str | None = None        # 关键词表函数名（vertical 模块内）
+    max_keywords: int = 12                # 关键词数上限（12 请求/日口径）
+    min_unit_len: int = 0                 # >0 时启用单位长度下限（js/zj=4，抽不到跳过计数）
+    with_subscription: bool = False       # gd/hb：扫描尾部订阅即时命中（SPEC-AI AI4）
+
+
+_PROPOSAL_CONFIGS: dict[str, ProposalScanConfig] = {
+    "proposal_gd": ProposalScanConfig(
+        source_key="proposal_gd", province="广东省",
+        collector="proposal_gd", signal_url_attr="PROPOSAL_PAGE_URL",
+        unit_field="name", fetch_page="fetch_proposal_page",
+        with_subscription=True,
+        title_of=lambda rec: f"广东项目备案：{rec['name']}（{rec.get('work_time') or ''}年度）",
+        pub_date_of=lambda rec: rec.get("ba_time"),
+        excerpt_of=lambda rec: f"项目备案 {rec.get('ba_code') or ''}｜{rec.get('ba_num') or ''} 项",
+        evidence_of=lambda rec: (
+            f"该单位于 {rec.get('ba_time') or '近期'} 在广东省投资项目"
+            f"在线审批监管平台完成项目备案（编号 {rec.get('ba_code') or '—'}）"
+        ),
+    ),
+    "proposal_hb": ProposalScanConfig(
+        source_key="proposal_hb", province="湖北省",
+        collector="proposal_hb", signal_url_attr="HB_XXGK_URL",
+        unit_field="unit", fetch_page="fetch_hb_filing_page",
+        with_subscription=True,
+        title_of=lambda rec: (
+            f"湖北项目备案：{(rec.get('project') or rec['unit'])[:60]}｜{rec['unit']}"
+        ),
+        pub_date_of=lambda rec: rec.get("declared_at"),
+        excerpt_of=lambda rec: f"项目备案 {rec.get('project_code') or '—'}",
+        evidence_of=lambda rec: (
+            f"该单位于 {rec.get('declared_at') or '近期'} 在湖北省投资项目"
+            f"在线审批监管平台完成「{(rec.get('project') or rec['unit'])[:40]}」项目备案"
+        ),
+    ),
+    "proposal_js": ProposalScanConfig(
+        source_key="proposal_js", province="江苏省",
+        collector="proposal_js", signal_url_attr="JS_LIST_URL",
+        unit_field="project", fetch_by_kw="fetch_js_beian",
+        keywords_fn="device_strong_terms", min_unit_len=4,
+        title_of=lambda rec: f"江苏项目备案：{rec['project'][:60]}",
+        pub_date_of=lambda rec: rec.get("ba_date"),
+        excerpt_of=lambda rec: (
+            f"项目备案 {rec.get('beian_no') or '—'}｜{rec.get('approve_org') or '—'}"
+        ),
+        evidence_of=lambda rec: (
+            f"该单位在江苏省投资项目在线审批监管平台完成"
+            f"「{rec['project']}」项目备案（编号 "
+            f"{rec.get('beian_no') or '—'}，审批部门 "
+            f"{rec.get('approve_org') or '—'}）"
+        ),
+    ),
+    "proposal_zj": ProposalScanConfig(
+        source_key="proposal_zj", province="浙江省",
+        collector="proposal_zj", signal_url_attr="ZJ_LIST_URL",
+        unit_field="project", fetch_by_kw="fetch_zj_items",
+        keywords_fn="ggzy_name_terms", min_unit_len=4,
+        # 事项名全量放前段：同项目不同审批节点（备案/规划许可/水保）
+        # 各自成信号=项目推进被分段跟踪；截断只落在项目名上
+        title_of=lambda rec: f"浙江办理公示：{rec['item_name']}｜{rec['project'][:42]}",
+        pub_date_of=lambda rec: rec.get("deal_time"),
+        excerpt_of=lambda rec: (
+            f"{rec.get('item_name') or '审批事项'}｜"
+            f"{rec.get('deal_name') or '—'}｜{rec.get('dept_name') or '—'}"
+        ),
+        evidence_of=lambda rec: (
+            f"该单位「{rec['project']}」项目在浙江省投资项目在线"
+            f"审批监管平台完成「{rec.get('item_name') or '审批事项'}」"
+            f"（状态：{rec.get('deal_name') or '—'}，"
+            f"办理部门 {rec.get('dept_name') or '—'}）"
+        ),
+    ),
+}
+
+
+def run_proposal_scan(cfg: ProposalScanConfig, max_pages: int) -> dict:
+    """备案公示扫描基座：取数 → 建档（省份映射+ICP 分类）→ proposal 信号
+    （url+title 幂等去重）→（可选）尾部订阅即时命中。幂等可重扫。
+
+    SPEC-MULTI S1：来源停用即入口短路（cron 与直接调用同语义）。
     """
-    from .collectors.proposal_gd import PROPOSAL_PAGE_URL, fetch_proposal_page
+    import importlib
+
+    from .api.imports import apply_icp
     from .db import SessionLocal
     from .normalize import resolve_enterprise
+    from .sources import any_source_disabled
 
-    stats = {"pages": 0, "records": 0, "new_ents": 0, "new_signals": 0}
-    for page_no in range(1, max_pages + 1):
-        records = fetch_proposal_page(page_no, client=None)
-        if not records:
-            break
+    if any_source_disabled(cfg.source_key):
+        return {"skipped_disabled": True}
+    collector_mod = importlib.import_module(f".collectors.{cfg.collector}", __package__)
+    signal_url = getattr(collector_mod, cfg.signal_url_attr)
+    stats: dict = {"pages": 0, "records": 0, "new_ents": 0, "new_signals": 0}
+    if cfg.min_unit_len:
+        stats["no_unit_skipped"] = 0
+    if cfg.fetch_by_kw:
+        fetch = getattr(collector_mod, cfg.fetch_by_kw)
+        kw_fn = getattr(importlib.import_module(".vertical", __package__), cfg.keywords_fn)
+
+        def _iter_records():
+            # 关键词×分页：单页空即停该词翻页（服务端第 1 页=最新）
+            for kw in kw_fn()[: cfg.max_keywords]:
+                for page_no in range(1, max_pages + 1):
+                    records = fetch(kw, page_no=page_no)
+                    if not records:
+                        break
+                    yield records
+    else:
+        fetch = getattr(collector_mod, cfg.fetch_page)
+
+        def _iter_records():
+            for page_no in range(1, max_pages + 1):
+                records = fetch(page_no, client=None)
+                if not records:
+                    break
+                yield records
+
+    for records in _iter_records():
         stats["pages"] += 1
         stats["records"] += len(records)
         with SessionLocal() as s:
             for rec in records:
-                ent, is_new = resolve_enterprise(s, rec["name"], source="proposal_gd")
+                if cfg.min_unit_len:
+                    # js/zj：单位抽取自项目名（命名习惯=企业名开头），
+                    # 抽不到如实计数跳过不发明归属
+                    from .api.imports import extract_enterprise_name
+
+                    unit = extract_enterprise_name(rec[cfg.unit_field], "")
+                    if not unit or len(unit) < cfg.min_unit_len:
+                        stats["no_unit_skipped"] += 1
+                        continue
+                else:
+                    unit = rec[cfg.unit_field]
+                ent, is_new = resolve_enterprise(s, unit, source=cfg.source_key)
                 # SPEC-BP BP0：来源通道→省份是确定性映射（非发明数据）
                 if not ent.province:
-                    ent.province = "广东省"
+                    ent.province = cfg.province
                 if is_new:
                     stats["new_ents"] += 1
-                    # W40 同款：GD 链路建档即分类（首轮漏接，AG 补齐）
+                    # W40 同款：建档即分类（首轮漏接，AG 补齐）
                     if ent.industry_key is None:
-                        from .api.imports import apply_icp
-
                         apply_icp(ent)
-                year = rec.get("work_time") or ""
-                ba = rec.get("ba_num")
-                title = f"广东项目备案：{rec['name']}（{year}年度）"
+                title = cfg.title_of(rec)
                 exists = (
                     s.query(Signal)
                     .filter(
                         Signal.enterprise_id == ent.id,
-                        Signal.url == PROPOSAL_PAGE_URL,
+                        Signal.url == signal_url,
                         Signal.title == title,
                     )
                     .first()
@@ -343,28 +479,34 @@ def run_proposal_gd_scan(max_pages: int = 5) -> dict:
                         enterprise_id=ent.id,
                         type="proposal",
                         title=title,
-                        url=PROPOSAL_PAGE_URL,
-                        pub_date=rec.get("ba_time"),
+                        url=signal_url,
+                        pub_date=cfg.pub_date_of(rec),
                         matched_terms="[]",
                         hit_part="title",
-                        raw_excerpt=f"项目备案 {rec.get('ba_code') or ''}｜{ba or ''} 项",
-                        evidence_claim=(
-                            f"该单位于 {rec.get('ba_time') or '近期'} 在广东省投资项目"
-                            f"在线审批监管平台完成项目备案（编号 {rec.get('ba_code') or '—'}）"
-                        ),
+                        raw_excerpt=cfg.excerpt_of(rec),
+                        evidence_claim=cfg.evidence_of(rec),
                         base_score=40.0,
                     ))
                     stats["new_signals"] += 1
             s.commit()
-    # SPEC-AI AI4：扫描尾部订阅即时命中（水位幂等零重复）
-    try:
-        from .db import SessionLocal
+    if cfg.with_subscription:
+        # SPEC-AI AI4：扫描尾部订阅即时命中（水位幂等零重复）
+        try:
+            from .db import SessionLocal
 
-        with SessionLocal() as _ss:
-            stats["subscription"] = run_subscription_rules(_ss)
-    except Exception:  # noqa: BLE001 — 订阅侧失败不影响采集
-        logger.warning("订阅即时命中失败", exc_info=True)
+            with SessionLocal() as _ss:
+                stats["subscription"] = run_subscription_rules(_ss)
+        except Exception:  # noqa: BLE001 — 订阅侧失败不影响采集
+            logger.warning("订阅即时命中失败", exc_info=True)
     return stats
+
+
+def run_proposal_gd_scan(max_pages: int = 5) -> dict:
+    """广东备案公示扫描：单位级拟建信号（proposal），幂等可重扫。
+
+    采集节奏：每日 05:00 cron；失败记水位不静默（SPEC-AB AB1）。
+    """
+    return run_proposal_scan(_PROPOSAL_CONFIGS["proposal_gd"], max_pages)
 
 
 def run_proposal_hb_scan(max_pages: int = 5) -> dict:
@@ -373,68 +515,7 @@ def run_proposal_hb_scan(max_pages: int = 5) -> dict:
     与广东（run_proposal_gd_scan 单位级）互为镜像；每日 05:10 cron 错峰。
     title 直接带项目名——广东 P2 边界（项目名在未暴露详情接口）在湖北列表可得。
     """
-    from .collectors.proposal_hb import HB_XXGK_URL, fetch_hb_filing_page
-    from .db import SessionLocal
-    from .normalize import resolve_enterprise
-
-    stats = {"pages": 0, "records": 0, "new_ents": 0, "new_signals": 0}
-    for page_no in range(1, max_pages + 1):
-        records = fetch_hb_filing_page(page_no, client=None)
-        if not records:
-            break
-        stats["pages"] += 1
-        stats["records"] += len(records)
-        with SessionLocal() as s:
-            for rec in records:
-                ent, is_new = resolve_enterprise(s, rec["unit"], source="proposal_hb")
-                # SPEC-BP BP0：来源通道→省份是确定性映射（非发明数据）
-                if not ent.province:
-                    ent.province = "湖北省"
-                if is_new:
-                    stats["new_ents"] += 1
-                    # W40 教训在湖北链路的预防性接线：建档即分类
-                    if ent.industry_key is None:
-                        from .api.imports import apply_icp
-
-                        apply_icp(ent)
-                project = rec.get("project") or rec["unit"]
-                title = f"湖北项目备案：{project[:60]}｜{rec['unit']}"
-                exists = (
-                    s.query(Signal)
-                    .filter(
-                        Signal.enterprise_id == ent.id,
-                        Signal.url == HB_XXGK_URL,
-                        Signal.title == title,
-                    )
-                    .first()
-                )
-                if exists is None:
-                    s.add(Signal(
-                        enterprise_id=ent.id,
-                        type="proposal",
-                        title=title,
-                        url=HB_XXGK_URL,
-                        pub_date=rec.get("declared_at"),
-                        matched_terms="[]",
-                        hit_part="title",
-                        raw_excerpt=f"项目备案 {rec.get('project_code') or '—'}",
-                        evidence_claim=(
-                            f"该单位于 {rec.get('declared_at') or '近期'} 在湖北省投资项目"
-                            f"在线审批监管平台完成「{project[:40]}」项目备案"
-                        ),
-                        base_score=40.0,
-                    ))
-                    stats["new_signals"] += 1
-            s.commit()
-    # SPEC-AI AI4：扫描尾部订阅即时命中
-    try:
-        from .db import SessionLocal
-
-        with SessionLocal() as _ss:
-            stats["subscription"] = run_subscription_rules(_ss)
-    except Exception:  # noqa: BLE001 — 订阅侧失败不影响采集
-        logger.warning("订阅即时命中失败", exc_info=True)
-    return stats
+    return run_proposal_scan(_PROPOSAL_CONFIGS["proposal_hb"], max_pages)
 
 
 def run_proposal_js_scan(max_pages: int = 1) -> dict:
@@ -446,69 +527,7 @@ def run_proposal_js_scan(max_pages: int = 1) -> dict:
     （湖北同款实测）；单位抽取自项目名（江苏命名习惯=企业名开头），
     抽不到如实计数跳过不发明归属。
     """
-    from .api.imports import apply_icp, extract_enterprise_name
-    from .collectors.proposal_js import JS_LIST_URL, fetch_js_beian
-    from .db import SessionLocal
-    from .normalize import resolve_enterprise
-    from .vertical import device_strong_terms
-
-    stats = {"pages": 0, "records": 0, "new_ents": 0, "new_signals": 0,
-             "no_unit_skipped": 0}
-    for kw in device_strong_terms()[:12]:
-        for page_no in range(1, max_pages + 1):
-            records = fetch_js_beian(kw, page_no=page_no)
-            if not records:
-                break
-            stats["pages"] += 1
-            stats["records"] += len(records)
-            with SessionLocal() as s:
-                for rec in records:
-                    unit = extract_enterprise_name(rec["project"], "")
-                    if not unit or len(unit) < 4:
-                        stats["no_unit_skipped"] += 1
-                        continue
-                    ent, is_new = resolve_enterprise(s, unit, source="proposal_js")
-                    # SPEC-BP BP0 同款：来源通道→省份确定性映射
-                    if not ent.province:
-                        ent.province = "江苏省"
-                    if is_new:
-                        stats["new_ents"] += 1
-                        if ent.industry_key is None:
-                            apply_icp(ent)
-                    title = f"江苏项目备案：{rec['project'][:60]}"
-                    exists = (
-                        s.query(Signal)
-                        .filter(
-                            Signal.enterprise_id == ent.id,
-                            Signal.url == JS_LIST_URL,
-                            Signal.title == title,
-                        )
-                        .first()
-                    )
-                    if exists is None:
-                        s.add(Signal(
-                            enterprise_id=ent.id,
-                            type="proposal",
-                            title=title,
-                            url=JS_LIST_URL,
-                            pub_date=rec.get("ba_date"),
-                            matched_terms="[]",
-                            hit_part="title",
-                            raw_excerpt=(
-                                f"项目备案 {rec.get('beian_no') or '—'}｜"
-                                f"{rec.get('approve_org') or '—'}"
-                            ),
-                            evidence_claim=(
-                                f"该单位在江苏省投资项目在线审批监管平台完成"
-                                f"「{rec['project']}」项目备案（编号 "
-                                f"{rec.get('beian_no') or '—'}，审批部门 "
-                                f"{rec.get('approve_org') or '—'}）"
-                            ),
-                            base_score=40.0,
-                        ))
-                        stats["new_signals"] += 1
-                s.commit()
-    return stats
+    return run_proposal_scan(_PROPOSAL_CONFIGS["proposal_js"], max_pages)
 
 
 def run_proposal_zj_scan(max_pages: int = 1) -> dict:
@@ -521,71 +540,7 @@ def run_proposal_zj_scan(max_pages: int = 1) -> dict:
     泵品类细词在浙江项目名召回≈0，宽词「真空」counts=255）；平台已是
     工业多行业定位（SPEC-L），电梯/水泵等宽词买家同样在射程。
     """
-    from .api.imports import apply_icp, extract_enterprise_name
-    from .collectors.proposal_zj import ZJ_LIST_URL, fetch_zj_items
-    from .db import SessionLocal
-    from .normalize import resolve_enterprise
-    from .vertical import ggzy_name_terms
-
-    stats = {"pages": 0, "records": 0, "new_ents": 0, "new_signals": 0,
-             "no_unit_skipped": 0}
-    for kw in ggzy_name_terms()[:12]:
-        for page_no in range(1, max_pages + 1):
-            records = fetch_zj_items(kw, page_no=page_no)
-            if not records:
-                break
-            stats["pages"] += 1
-            stats["records"] += len(records)
-            with SessionLocal() as s:
-                for rec in records:
-                    unit = extract_enterprise_name(rec["project"], "")
-                    if not unit or len(unit) < 4:
-                        stats["no_unit_skipped"] += 1
-                        continue
-                    ent, is_new = resolve_enterprise(s, unit, source="proposal_zj")
-                    # SPEC-BP BP0 同款：来源通道→省份确定性映射
-                    if not ent.province:
-                        ent.province = "浙江省"
-                    if is_new:
-                        stats["new_ents"] += 1
-                        if ent.industry_key is None:
-                            apply_icp(ent)
-                    # 事项名全量放前段：同项目不同审批节点（备案/规划许可/水保）
-                    # 各自成信号=项目推进被分段跟踪；截断只落在项目名上
-                    title = f"浙江办理公示：{rec['item_name']}｜{rec['project'][:42]}"
-                    exists = (
-                        s.query(Signal)
-                        .filter(
-                            Signal.enterprise_id == ent.id,
-                            Signal.url == ZJ_LIST_URL,
-                            Signal.title == title,
-                        )
-                        .first()
-                    )
-                    if exists is None:
-                        s.add(Signal(
-                            enterprise_id=ent.id,
-                            type="proposal",
-                            title=title,
-                            url=ZJ_LIST_URL,
-                            pub_date=rec.get("deal_time"),
-                            matched_terms="[]",
-                            hit_part="title",
-                            raw_excerpt=(
-                                f"{rec.get('item_name') or '审批事项'}｜"
-                                f"{rec.get('deal_name') or '—'}｜{rec.get('dept_name') or '—'}"
-                            ),
-                            evidence_claim=(
-                                f"该单位「{rec['project']}」项目在浙江省投资项目在线"
-                                f"审批监管平台完成「{rec.get('item_name') or '审批事项'}」"
-                                f"（状态：{rec.get('deal_name') or '—'}，"
-                                f"办理部门 {rec.get('dept_name') or '—'}）"
-                            ),
-                            base_score=40.0,
-                        ))
-                        stats["new_signals"] += 1
-                s.commit()
-    return stats
+    return run_proposal_scan(_PROPOSAL_CONFIGS["proposal_zj"], max_pages)
 
 
 # ---------------------------------------------------------------------------
@@ -1119,7 +1074,12 @@ def run_hourly_tender_scan() -> dict:
     对齐"小时级到达"而不触碰 ccgp 限流实测线（密集 400+/日出拦截页）；
     resilience 遇拦截页自动熔断，日批 03:30 全量不动。
     一周实测无拦截页 → 提频只改注册参数（"7-21/2" → "7-21"）。
+    SPEC-MULTI S1：ccgp 停用即短路（数据源管理）。
     """
+    from .sources import any_source_disabled
+
+    if any_source_disabled("ccgp"):
+        return {"skipped_disabled": True}
     stats = {"scanned_words": 12, "ccgp_signals": 0}
     _scan_ccgp_words(stats, days=2, max_pages=1)
     return stats
@@ -1129,18 +1089,24 @@ def run_daily_incremental() -> dict:
     """每日增量：ggzy 宽词近 7 天 + ccgp 强词近 7 天（同步小批次，失败记水位）。
 
     采集器自带限速与去重，重复词安全；时长可控（分钟级）。
+    SPEC-MULTI S1：ggzy/ccgp 各自停用即跳过对应段，双双停用整体短路。
     """
     from .db import SessionLocal
     from .normalize import resolve_enterprise
     from .vertical import device_strong_terms, ggzy_name_terms
     from .api.imports import extract_enterprise_name
     from .models import Signal
+    from .sources import any_source_disabled
 
+    ggzy_off = any_source_disabled("ggzy")
+    ccgp_off = any_source_disabled("ccgp")
+    if ggzy_off and ccgp_off:
+        return {"skipped_disabled": True}
     stats = {"ggzy_new": 0, "ccgp_signals": 0}
     # --- ggzy 宽词增量 ---
     from .collectors.ggzy import list_bids, normalize_bid_record, normalize_entity_record, search_all_entities
 
-    for kw in ggzy_name_terms():
+    for kw in ([] if ggzy_off else ggzy_name_terms()):
         for raw in search_all_entities(kw, max_pages=1, size=200):
             rec = normalize_entity_record(raw)
             if rec is None:
@@ -1224,7 +1190,8 @@ def run_daily_incremental() -> dict:
                 )
 
     # --- ccgp 强词增量（近 7 天，只扫第一页；SPEC-BO 抽出 _scan_ccgp_words 共用）---
-    _scan_ccgp_words(stats, days=7, max_pages=1)
+    if not ccgp_off:
+        _scan_ccgp_words(stats, days=7, max_pages=1)
 
     # 意图/画像/检索投影收尾
     from .api.imports import recompute_intent

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from ..auth import current_user
 from ..db import get_session
 from ..models import Enterprise, Signal, Todo, User, utcnow
+from ..sources import channel_badge
 
 router = APIRouter(tags=["proposals"])
 
@@ -85,7 +86,8 @@ def proposals_center(
         if m:
             project = m.group(1)
         # SPEC-BR/BS：四通道徽章（粤=单位级/鄂=项目级/苏=表单站/浙=事项流）
-        channel = {"proposal_gd": "gd", "proposal_hb": "hb", "proposal_zj": "zj"}.get(e.source, "js")
+        # SPEC-MULTI S1：注册表精确派生（proposal_<prov> → prov），废除 js 兜底
+        channel = channel_badge(e.source or "")
         if qq and qq not in (e.name or "") and qq not in (sig.title or "") and qq not in project:
             continue
         items.append({

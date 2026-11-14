@@ -204,3 +204,28 @@ gongshang.py 协议位预留 riskbird（与 chinacheck/aliyun_qcc 并列）—�
 ### 前端入口
 
 拓客任务页「工商补数（风鸟）」卡：下载清单按钮 + 三步说明。
+
+## 9. SPEC-MULTI 落地（2026-11-14：多源注册表 + chinacheck 深解析）
+
+### Source 注册表（新文件 app/sources.py）
+
+全部落库 source 值在 `SOURCES` 唯一登记（12 个：ggzy/ccgp/tender/poi/
+proposal_四省/csv/gongshang/manual/riskbird），标签/SLA/通道归并/徽章
+全部派生——**新增来源只改注册表一处**，不再散布 12 处硬编码枚举。
+设置页「数据源」卡可启停（SettingsKV `source_disabled`，停用后定时
+巡采与手动任务入口短路）。顺带修复：proposal_gd/hb/js 水位 SLA 漏登记
+（此前永远不上新鲜度仪表盘）。
+
+### chinacheck 快照深解析（对照 china-company-check-mcp/data-fields.md）
+
+解析字段 4 → 10：新增 **biz_status 存续状态**（注销/吊销/迁出/清算 →
+tags 打 `biz_dead` 红标——线索死刑字段，免费快照里最值钱的）、
+staff_size 规模带、paid_in_capital_wan 实缴资本、former_names 曾用名、
+registeredAddress→address 补空。每字段 mark_prov 溯源（source=
+"工商补数·chinacheck"）。`search_by_name()` 按名搜索工具启用（enrich
+Stage A 找 uscc 的第二通道，ggzy 失败后兜底）。
+
+### 合规边界（不变）
+
+chinacheck 免费快照不含处罚/失信/诉讼（付费报告层）；风险信息合规
+路径仍是 §8 风鸟人工通道。企业库快照深解析仅"只补空不覆盖"。

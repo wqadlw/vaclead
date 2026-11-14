@@ -1237,6 +1237,143 @@ function parseDryRun(
   return { rule, targets };
 }
 
+/* ---------------- SPEC-MULTI S1：数据源注册表（GET /api/sources + toggle） ---------------- */
+
+interface SourceRow {
+  key: string;
+  label: string;
+  category: string;
+  enterprise_count: number;
+  last_harvest: string | null;
+  enabled: boolean;
+}
+
+const CATEGORY_LABEL: Record<string, string> = {
+  tender: "招标中标",
+  proposal: "备案公告",
+  poi: "地图 POI",
+  enrich: "工商补数",
+  import: "导入",
+};
+const CATEGORY_TAG: Record<string, "blue" | "cyan" | "green" | "orange" | "grey"> = {
+  tender: "blue",
+  proposal: "cyan",
+  poi: "green",
+  enrich: "orange",
+  import: "grey",
+};
+
+function SourcesPanel() {
+  // rows === null 表示 /api/sources 请求失败 → 整卡「暂不可用」，不报错不白屏
+  const [rows, setRows] = useState<SourceRow[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [actingKey, setActingKey] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api
+      .get<{ sources: SourceRow[] }>("/api/sources")
+      .then((d) => setRows(Array.isArray(d?.sources) ? d.sources : []))
+      .catch(() => setRows(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => load(), [load]);
+
+  const toggle = async (r: SourceRow) => {
+    setActingKey(r.key);
+    try {
+      await api.post(`/api/sources/${r.key}/toggle`);
+      // 成功：本地翻转状态（后端 SettingsKV 已落库）
+      setRows((prev) =>
+        prev ? prev.map((x) => (x.key === r.key ? { ...x, enabled: !x.enabled } : x)) : prev,
+      );
+      Toast.success(r.enabled ? `已停用「${r.label}」——巡采与手动任务将跳过` : `已启用「${r.label}」`);
+    } catch (e) {
+      Toast.error(e instanceof Error ? e.message : "操作失败");
+    } finally {
+      setActingKey(null);
+    }
+  };
+
+  return (
+    <div className="p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="max-w-[640px] text-[13px] leading-6 text-[var(--muted)]">
+          采集来源注册表：所有入库来源统一登记于此。停用后定时巡采与手动任务都会跳过该来源（已入库数据不受影响）。
+        </p>
+        <Button size="small" theme="borderless" type="tertiary" loading={loading} onClick={load}>
+          刷新
+        </Button>
+      </div>
+      {rows === null ? (
+        <div className="rounded-lg border border-[var(--border)] bg-white py-10 text-center text-[13px] text-[var(--muted)]">
+          暂不可用 —— 数据源服务未就绪，稍后点「刷新」重试
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="text-left text-[12.5px] font-normal text-[var(--muted)]">
+                <th className="py-2 pr-4 font-normal">来源</th>
+                <th className="py-2 pr-4 font-normal">类别</th>
+                <th className="py-2 pr-4 text-right font-normal">企业数</th>
+                <th className="py-2 pr-4 font-normal">最近入库</th>
+                <th className="py-2 pr-4 font-normal">状态</th>
+                <th className="py-2 text-right font-normal">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((s) => (
+                <tr key={s.key} className="border-t border-[var(--rule)] hover:bg-[var(--raised)]">
+                  <td className="py-2 pr-4 font-medium text-[var(--ink)]">
+                    {s.label || s.key}
+                    <span className="ml-2 font-mono text-[11px] text-[var(--muted)]">{s.key}</span>
+                  </td>
+                  <td className="py-2 pr-4">
+                    <Tag color={CATEGORY_TAG[s.category] ?? "grey"} type="light" size="small">
+                      {CATEGORY_LABEL[s.category] ?? (s.category || "—")}
+                    </Tag>
+                  </td>
+                  <td className="py-2 pr-4 text-right tabular-nums">
+                    {(s.enterprise_count ?? 0).toLocaleString("zh-CN")}
+                  </td>
+                  <td className="py-2 pr-4 tabular-nums text-[var(--muted)]">{s.last_harvest || "—"}</td>
+                  <td className="py-2 pr-4">
+                    {s.enabled ? (
+                      <Tag color="cyan" type="light" size="small">启用</Tag>
+                    ) : (
+                      <Tag color="grey" type="light" size="small">停用</Tag>
+                    )}
+                  </td>
+                  <td className="py-2 text-right">
+                    <Button
+                      size="small"
+                      theme="borderless"
+                      type={s.enabled ? "danger" : "primary"}
+                      loading={actingKey === s.key}
+                      onClick={() => void toggle(s)}
+                    >
+                      {s.enabled ? "停用" : "启用"}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-[13px] text-[var(--muted)]">
+                    注册表为空 —— 后端尚未登记任何来源
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [pool, setPool] = useState<PoolSettingsData | null>(null);
@@ -1482,6 +1619,7 @@ export default function SettingsPage() {
           className="rounded-xl border border-[var(--border)] bg-white !px-2"
           tabList={[
             { tab: "数据源 Key", itemKey: "keys" },
+            { tab: "数据源", itemKey: "sources" },
             { tab: "公海规则", itemKey: "pool" },
             { tab: "成员管理", itemKey: "members" },
             { tab: "团队", itemKey: "teams" },
@@ -1551,6 +1689,11 @@ export default function SettingsPage() {
               </Button>
             </div>
           </div>
+          </TabPane>
+
+          {/* SPEC-MULTI S1：数据源注册表 */}
+          <TabPane itemKey="sources">
+            <SourcesPanel />
           </TabPane>
 
           {/* 公海规则 */}

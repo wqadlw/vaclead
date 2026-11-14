@@ -5,30 +5,16 @@
 质量运维（漏斗/缺口/水位）仍在 quality 页，此处链接过去。"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
-from ..auth import current_user
+from ..auth import admin_only, current_user
 from ..db import get_session
-from ..models import Contact, Enterprise, Signal, Lead
+from ..models import Contact, Enterprise, SettingsKV, Signal, Lead
+from ..sources import SOURCES, channel_variants, source_disabled_keys, source_label
 
 router = APIRouter(tags=["data"])
-
-SOURCE_CN = {
-    "poi": "高德 POI 采集",
-    "ggzy": "公共资源交易",
-    "ccgp": "政采网公告",
-    "ccgp_buyer": "政采买家",
-    "ggzy_buyer": "公采买家",
-    "proposal_hb": "湖北备案",
-    "proposal_zj": "浙江备案",
-    "proposal_js": "江苏备案",
-    "proposal_gd": "广东备案",
-    "csv": "手工导入",
-    "tender": "招标导入",
-    "riskbird": "风鸟搬运",
-}
 
 _DIALABLE = (
     Contact.phones_json.is_not(None),
@@ -87,7 +73,7 @@ def data_overview(
     for src, n, first_at, last_at, batch_n in src_rows:
         sources.append({
             "source": src,
-            "label": SOURCE_CN.get(src, src),
+            "label": source_label(src),
             "count": n,
             "dialable": dial_by_src.get(src, 0),
             "first_at": (first_at or "")[:10],
@@ -113,7 +99,7 @@ def data_overview(
     )
     batches = [
         {
-            "batch_id": bid, "source": src, "label": SOURCE_CN.get(src, src),
+            "batch_id": bid, "source": src, "label": source_label(src),
             "count": n,
             "first_at": (first or "")[:19], "last_at": (last or "")[:19],
         }
@@ -212,3 +198,72 @@ def data_overview(
         },
         "completeness_dist": completeness_dist,
     }
+
+
+@router.get("/sources")
+def list_sources(
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """SPEC-MULTI S1：数据源注册表总览（keelead getStats 模式）。
+
+    全部注册来源逐行透出（含零企业来源）；变体企业数归并到主 key；
+    enabled 读 SettingsKV source_disabled（默认全启用）。"""
+    alive = Enterprise.deleted_at.is_(None)
+    count_by_src = dict(
+        session.query(Enterprise.source, func.count())
+        .filter(alive)
+        .group_by(Enterprise.source)
+        .all()
+    )
+    last_by_src = dict(
+        session.query(Enterprise.source, func.max(Enterprise.created_at))
+        .filter(alive)
+        .group_by(Enterprise.source)
+        .all()
+    )
+    disabled = source_disabled_keys(session)
+    out = []
+    for d in SOURCES.values():
+        variants = channel_variants(d.key)
+        last = max(
+            (last_by_src.get(v) or "" for v in variants), default=""
+        ) or None
+        out.append({
+            "key": d.key,
+            "label": d.label_cn,
+            "category": d.category,
+            "enterprise_count": sum(int(count_by_src.get(v) or 0) for v in variants),
+            "last_harvest": (last or "")[:16] or None,
+            "enabled": d.key not in disabled,
+        })
+    out.sort(key=lambda s: (-s["enterprise_count"], s["key"]))
+    return {"sources": out}
+
+
+@router.post("/sources/{key}/toggle")
+def toggle_source(
+    key: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """停用/启用数据源（SPEC-MULTI S1）：SettingsKV source_disabled JSON array。
+
+    停用的源：对应 sweep 函数入口短路（cron 与手动任务 worker 均检查），
+    enrich-gongshang 同理查 gongshang 注册态。"""
+    import json as _json
+
+    if key not in SOURCES:
+        raise HTTPException(404, "未注册的数据源")
+    disabled = source_disabled_keys(session)
+    if key in disabled:
+        disabled.discard(key)
+    else:
+        disabled.add(key)
+    row = session.get(SettingsKV, "source_disabled")
+    if row is None:
+        row = SettingsKV(key="source_disabled", value="")
+        session.add(row)
+    row.value = _json.dumps(sorted(disabled), ensure_ascii=False)
+    session.commit()
+    return {"key": key, "enabled": key not in disabled, "disabled": sorted(disabled)}

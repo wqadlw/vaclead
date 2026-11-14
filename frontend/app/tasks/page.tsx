@@ -20,6 +20,28 @@ const DONE_LABELS: Record<string, string> = {
   suppliers: "供应商",
 };
 
+/** SPEC-MULTI S3：任务结果契约（GET /api/tasks/{id}/results，旧任务缺键返回空数组） */
+interface TaskResultRow {
+  id: number;
+  name: string;
+  province?: string | null;
+  industry_name?: string | null;
+}
+interface TaskFailureRow {
+  enterprise_id?: number | null;
+  name: string;
+  stage?: string | null;
+  error?: string | null;
+}
+interface TaskResultsResp {
+  task_id?: string;
+  kind?: string;
+  status?: string;
+  new_enterprises?: TaskResultRow[];
+  failures?: TaskFailureRow[];
+  totals?: Record<string, unknown>;
+}
+
 /** SPEC-IMP：上传导入向导的目标字段选项（比粘贴路径多 established_at / legal_rep） */
 const UPLOAD_FIELDS: { value: string; label: string }[] = [
   { value: "name", label: "企业名称（必填）" },
@@ -151,6 +173,12 @@ export default function TasksPage() {
   const [progress, setProgress] = useState<number | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [taskId, setTaskId] = useState<string | null>(null);
+  // SPEC-MULTI S3：完成后拉取的结果预览（新采企业 + 失败明细）；null = 无数据/请求失败（不渲染）
+  const [taskResults, setTaskResults] = useState<{
+    total: number;
+    rows: TaskResultRow[];
+    failures: TaskFailureRow[];
+  } | null>(null);
   const esRef = useRef<EventSource | null>(null);
   const router = useRouter();
 
@@ -211,10 +239,30 @@ export default function TasksPage() {
                 : "任务完成"
               : formatDone(payload.summary as Record<string, unknown>);
           setLogs((prev) => [...prev, summary]);
+          // SPEC-MULTI S3：先存刚完成的 task_id 再清运行态，用于拉取结果预览
+          const finishedTaskId = tid;
           sessionStorage.removeItem("runningTaskId");
           es.close();
           setStarting(false);
           setTaskId(null);
+          if (!payload.cancelled && finishedTaskId) {
+            api
+              .get<TaskResultsResp>(`/api/tasks/${finishedTaskId}/results`)
+              .then((d) => {
+                const rows = Array.isArray(d?.new_enterprises) ? d.new_enterprises : [];
+                const fails = Array.isArray(d?.failures) ? d.failures : [];
+                if (rows.length === 0 && fails.length === 0) {
+                  setTaskResults(null);
+                  return;
+                }
+                // 后端 cap 50：totals.new_entities 有真总数且 ≥ 列表长度时优先用之
+                const totalsNew = d?.totals?.new_entities;
+                const total =
+                  typeof totalsNew === "number" && totalsNew >= rows.length ? totalsNew : rows.length;
+                setTaskResults({ total, rows, failures: fails });
+              })
+              .catch(() => setTaskResults(null)); // 404/网络失败静默——结果卡不渲染
+          }
         } else if (payload.type === "cancelled") {
           setProgress(100);
           setLogs((prev) => [...prev, `⏹ 任务已取消：${formatDone(payload.summary as Record<string, unknown>)}`]);
@@ -258,6 +306,7 @@ export default function TasksPage() {
     setStarting(true);
     setProgress(0);
     setLogs(["任务提交中…"]);
+    setTaskResults(null); // SPEC-MULTI S3：新任务开始，清掉上一轮结果预览
     try {
       const res = await api.post<{ task_id: string }>("/api/tasks/poi", {
         city,
@@ -280,6 +329,7 @@ export default function TasksPage() {
     setStarting(true);
     setProgress(0);
     setLogs([`${channel === "ggzy" ? "官方中标数据" : "政采网公告"}采集任务提交中…`]);
+    setTaskResults(null); // SPEC-MULTI S3：新任务开始，清掉上一轮结果预览
     try {
       const res =
         channel === "ggzy"
@@ -822,7 +872,8 @@ export default function TasksPage() {
           </Card>
         </div>
 
-        {/* 右列：进度 */}
+        {/* 右列：实时进度 + SPEC-MULTI S3 任务结果预览 */}
+        <div className="space-y-4 self-start">
         <Card
           title={
             <span className="flex items-center gap-2 text-[14.5px] font-semibold text-slate-700">
@@ -844,6 +895,56 @@ export default function TasksPage() {
             </>
           )}
         </Card>
+
+          {/* SPEC-MULTI S3：本次新采企业 + 失败明细（results 请求 404/失败则不渲染） */}
+          {taskResults && (taskResults.rows.length > 0 || taskResults.failures.length > 0) && (
+            <Card
+              title={
+                <span className="flex items-center gap-2 text-[14.5px] font-semibold text-slate-700">
+                  <Building2 size={16} className="text-[var(--accent)]" /> 本次新采企业
+                </span>
+              }
+            >
+              <div className="text-[11.5px] text-[var(--muted)]">共 {taskResults.total} 家新入库</div>
+              <div className="mt-2 max-h-[320px] space-y-1 overflow-auto">
+                {taskResults.rows.slice(0, 50).map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => router.push(`/enterprises/view?id=${r.id}`)}
+                    className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-3 py-1.5 text-left transition-colors hover:border-[var(--accent)]"
+                    title={`${r.name} · 打开企业详情`}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--ink)]">{r.name}</span>
+                    <span className="shrink-0 text-[12px] text-[var(--muted)]">{r.province || "—"}</span>
+                    <span className="shrink-0 text-[12px] text-[var(--muted)]">{r.industry_name || "行业未知"}</span>
+                  </button>
+                ))}
+                {taskResults.rows.length === 0 && (
+                  <div className="py-3 text-center text-[12.5px] text-[var(--muted)]">本次无新入库企业</div>
+                )}
+              </div>
+              {taskResults.failures.length > 0 && (
+                <div className="mt-3">
+                  <div className="mb-1.5 text-[12.5px] font-medium text-[var(--negative)]">
+                    失败明细（{taskResults.failures.length}）
+                  </div>
+                  <div className="max-h-[200px] space-y-1 overflow-auto">
+                    {taskResults.failures.map((f, i) => (
+                      <div
+                        key={`${f.enterprise_id ?? "x"}-${i}`}
+                        className="rounded-lg border border-[var(--border)] bg-white px-3 py-1.5 text-[12px] leading-5"
+                      >
+                        <span className="font-medium text-[var(--ink)]">{f.name}</span>
+                        {f.stage ? <span className="mx-1.5 text-[var(--muted)]">· {f.stage}</span> : null}
+                        <span className="text-[var(--negative)]">{f.error || ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
+        </div>
       </div>
       {/* 粘贴导入弹窗（twenty spreadsheet-import 模式） */}
       <Modal

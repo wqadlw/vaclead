@@ -12,6 +12,7 @@ from ..auth import admin_only, current_user
 from ..api.leads import _claim_guard
 from ..db import get_session
 from ..models import Contact, Enterprise, Lead, Signal, User, utcnow
+from ..sources import channel_variants
 from .. import search as meili
 
 router = APIRouter(tags=["enterprises"])
@@ -174,6 +175,8 @@ def list_enterprises(
                             "industry_name": e.industry_name,
                             "business_scope": e.business_scope,
                             "registered_capital_wan": e.registered_capital_wan,
+                            # SPEC-MULTI S2：工商存续状态（前端红标；Meili 轻投影仅补此一项）
+                            "biz_status": e.biz_status,
                             "icp_score": e.icp_score,
                             "icp_reasons": e.reasons_list(),
                             "intent_score": e.intent_score,
@@ -240,10 +243,8 @@ def list_enterprises(
     if district:
         stmt = stmt.where(Enterprise.district == district)
     if source:
-        # 与 Meili 路径同语义：通道名归并到多个来源值
-        channel = {"ggzy": ("ggzy", "ggzy_buyer"), "ccgp": ("ccgp", "ccgp_buyer")}.get(
-            source, (source,)
-        )
+        # 与 Meili 路径同语义：通道名归并到多个来源值（注册表派生，S1）
+        channel = channel_variants(source)
         stmt = stmt.where(Enterprise.source.in_(channel))
     if capital_min is not None:
         stmt = stmt.where(Enterprise.registered_capital_wan >= capital_min)
@@ -342,6 +343,8 @@ def list_enterprises(
                 "industry_name": e.industry_name,
                 "business_scope": e.business_scope,
                 "registered_capital_wan": e.registered_capital_wan,
+                # SPEC-MULTI S2 工商存续状态（注销/吊销=线索死刑，前端红标）
+                "biz_status": e.biz_status,
                 "icp_score": e.icp_score,
                 "icp_reasons": e.reasons_list(),
                 "intent_score": e.intent_score,
@@ -703,9 +706,7 @@ def export_enterprises(
     if is_competitor in (0, 1):
         stmt = stmt.where(Enterprise.is_competitor == is_competitor)
     if source:
-        channel = {"ggzy": ("ggzy", "ggzy_buyer"), "ccgp": ("ccgp", "ccgp_buyer")}.get(
-            source, (source,)
-        )
+        channel = channel_variants(source)
         stmt = stmt.where(Enterprise.source.in_(channel))
     if q:
         like = f"%{q.strip()}%"
@@ -865,6 +866,17 @@ def _tags_of(e) -> list[str]:
         return []
 
 
+def _former_names_of(e) -> list[str]:
+    """Enterprise.former_names JSON 列 → 数组（SPEC-MULTI S2，损坏容错）。"""
+    import json as _json
+
+    try:
+        arr = _json.loads(e.former_names or "[]")
+        return arr if isinstance(arr, list) else []
+    except ValueError:
+        return []
+
+
 # ---------------- 回收站（SPEC-AM AM1） ----------------
 # 注意：/enterprises/trash 静态段必须在 /enterprises/{eid} 之前注册（路由顺序坑）
 @router.get("/enterprises/trash")
@@ -936,6 +948,12 @@ def enterprise_detail(
         "industry_name": e.industry_name,
         "business_scope": e.business_scope,
         "registered_capital_wan": e.registered_capital_wan,
+        # SPEC-MULTI S2 工商深解析五字段（chinacheck 快照，只补空不覆盖）
+        "biz_status": e.biz_status,
+        "biz_status_at": e.biz_status_at,
+        "staff_size": e.staff_size,
+        "paid_in_capital_wan": e.paid_in_capital_wan,
+        "former_names": _former_names_of(e),
         "status": e.status,
         "source": e.source,
         "icp_score": e.icp_score,

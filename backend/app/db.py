@@ -102,17 +102,21 @@ _EVOLUTION_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("called_at", "TEXT"),
     ],
     "enterprise": [
-        ("deleted_at", "TEXT"),
-        ("customer_role", "TEXT"),
+        ("deleted_at", "TEXT"),  # SPEC-AM AM1 软删除
+        ("customer_role", "TEXT"),  # SPEC-AS AS2 客户角色
+        ("prov_json", "TEXT NOT NULL DEFAULT '{}'"),  # SPEC-PROV 字段级溯源
+        # SPEC-MULTI S2 工商深解析（chinacheck 快照）
+        ("biz_status", "TEXT"),
+        ("biz_status_at", "TEXT"),
+        ("staff_size", "TEXT"),
+        ("paid_in_capital_wan", "REAL"),
+        ("former_names", "TEXT NOT NULL DEFAULT '[]'"),
     ],
     "product": [
         ("application_industries", "TEXT NOT NULL DEFAULT '[]'"),
     ],
     "signal": [
         ("amount_wan", "REAL"),  # SPEC-AMT 成交金额（万元）持久列——排序/惰性回填
-    ],
-    "enterprise": [
-        ("prov_json", "TEXT NOT NULL DEFAULT '{}'"),  # SPEC-PROV 字段级溯源
     ],
     "watch": [
         ("snapshot_text", "TEXT"),  # SPEC-RADAR v2：正文全文（diff）
