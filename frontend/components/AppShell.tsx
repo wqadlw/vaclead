@@ -12,6 +12,7 @@ import {
   Gauge,
   GitCompare,
   Inbox,
+  Layers,
   LogOut,
   Map,
   Megaphone,
@@ -58,11 +59,11 @@ const RADAR_NAV = [
   { href: "/intel/market", label: "区域市场", icon: Map },
   { href: "/competitors", label: "竞对雷达", icon: Crosshair },
   { href: "/proposals", label: "拟建雷达", icon: Sprout },
+  { href: "/data", label: "信息中心", icon: Layers },  // SPEC-INFO：数据资产
 ];
 const TOOL_NAV = [
   { href: "/products", label: "产品目录", icon: Package },
   { href: "/compare", label: "企业对比", icon: GitCompare },  // 流程打磨：孤儿页收编（原仅 Toast 提示可及）
-  { href: "/data", label: "信息中心", icon: Database },  // SPEC-INFO：数据资产总览
 ];
 
 const NAV_GROUPS: {

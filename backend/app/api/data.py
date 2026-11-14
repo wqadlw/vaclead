@@ -120,6 +120,35 @@ def data_overview(
         for src, bid, n, first, last in batch_rows
     ]
 
+    # SPEC-INFO v2：行业分布（资产视角——哪些行业的客户储备最厚）
+    ind_rows = (
+        session.query(
+            Enterprise.industry_key,
+            Enterprise.industry_name,
+            func.count(),
+        )
+        .filter(alive, Enterprise.industry_key.is_not(None), Enterprise.industry_key != "")
+        .group_by(Enterprise.industry_key, Enterprise.industry_name)
+        .order_by(func.count().desc())
+        .limit(10)
+    )
+    industries = [
+        {"key": k, "name": name or k, "count": n}
+        for k, name, n in ind_rows
+    ]
+    # SPEC-PROV 溯源概览：prov_json 全表聚合——各来源贡献的字段计数
+    prov_src: dict[str, int] = {}
+    for (pj,) in session.query(Enterprise.prov_json).filter(alive, Enterprise.prov_json != "{}").all():
+        try:
+            import json as _json
+
+            prov = _json.loads(pj)
+        except ValueError:
+            continue
+        for rec in prov.values():
+            if isinstance(rec, dict) and rec.get("source"):
+                prov_src[rec["source"]] = prov_src.get(rec["source"], 0) + 1
+
     return {
         "assets": {
             "total": total,
@@ -129,4 +158,6 @@ def data_overview(
         },
         "sources": sources,
         "batches": batches,
+        "industries": industries,
+        "prov_stats": sorted(prov_src.items(), key=lambda x: -x[1]),
     }

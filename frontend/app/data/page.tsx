@@ -35,6 +35,9 @@ interface OverviewData {
   assets: { total: number; contacts_dialable: number; signals: number; leads: number };
   sources: SourceRow[];
   batches: BatchRow[];
+  /** SPEC-INFO v2：行业分布 + 字段溯源概览 */
+  industries: { key: string; name: string; count: number }[];
+  prov_stats: [string, number][];
 }
 
 export default function DataCenterPage() {
@@ -146,12 +149,56 @@ export default function DataCenterPage() {
         </div>
       </div>
 
+      {/* SPEC-INFO v2：行业分布 + 溯源概览（双卡并排，移动端纵排） */}
+      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="rounded-lg border border-[var(--border)] bg-white p-4">
+          <h2 className="text-[15px] font-medium text-[var(--ink)]">行业分布 Top 10</h2>
+          <p className="mt-0.5 text-[12px] text-[var(--muted)]">客户储备按行业——哪个行业储备最厚，哪个就是优先主攻方向</p>
+          <div className="mt-2.5 space-y-1.5">
+            {(data?.industries ?? []).map((ind) => {
+              const max = Math.max(...(data?.industries ?? []).map((x) => x.count), 1);
+              return (
+                <div key={ind.key} className="flex items-center gap-2.5">
+                  <span className="w-32 shrink-0 truncate text-[12px] text-[var(--ink)]" title={ind.name}>{ind.name}</span>
+                  <div className="h-4 flex-1 rounded-sm bg-[var(--raised)]">
+                    <div className="h-full rounded-sm bg-[var(--accent)]" style={{ width: `${Math.max((ind.count / max) * 100, 2)}%` }} />
+                  </div>
+                  <span className="w-12 shrink-0 text-right text-[12px] tabular-nums text-[var(--muted)]">{ind.count.toLocaleString()}</span>
+                </div>
+              );
+            })}
+            {(data?.industries ?? []).length === 0 && (
+              <div className="py-4 text-center text-[12px] text-[var(--muted)]">暂无行业分类</div>
+            )}
+          </div>
+        </div>
+        <div className="rounded-lg border border-[var(--border)] bg-white p-4">
+          <h2 className="text-[15px] font-medium text-[var(--ink)]">信息溯源概览</h2>
+          <p className="mt-0.5 text-[12px] text-[var(--muted)]">
+            工商字段按来源统计——每条信息都记录"从哪来、谁来写、何时写"（字段级溯源）
+          </p>
+          <div className="mt-2.5 space-y-1.5">
+            {(data?.prov_stats ?? []).map(([src, n]) => (
+              <div key={src} className="flex items-center justify-between rounded-lg border border-[var(--rule)] px-3 py-2">
+                <span className="text-[12.5px] text-[var(--ink)]">{src}</span>
+                <span className="text-[12.5px] tabular-nums font-medium text-[var(--accent)]">{n} 个字段</span>
+              </div>
+            ))}
+            {(data?.prov_stats ?? []).length === 0 && (
+              <div className="py-4 text-center text-[12px] text-[var(--muted)]">
+                暂无溯源记录——通过「风鸟搬运」或「工商补数」录入后此处可见
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* 姊妹页入口 */}
       <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
         {[
           { t: "数据质量", d: "覆盖漏斗 / 缺口回填 / 号码共享分析 / 查重复核", href: "/quality" },
           { t: "拓客任务", d: "采集与导入入口（官方数据 / POI / Excel / 工商补数）", href: "/tasks" },
-          { t: "官网监控雷达", d: "竞对与重点客户官网变更监控（diff 视图）", href: "/competitors" },
+          { t: "采集水位", d: "各采集源新鲜度 SLA 监控（超期红标）", href: "/quality" },
         ].map((c) => (
           <a key={c.href} href={c.href} className="rounded-lg border border-[var(--border)] bg-white px-4 py-3 transition-colors hover:border-[var(--accent)]">
             <div className="text-[13.5px] font-medium text-[var(--ink)]">{c.t}</div>
