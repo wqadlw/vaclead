@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
@@ -149,6 +149,52 @@ def data_overview(
             if isinstance(rec, dict) and rec.get("source"):
                 prov_src[rec["source"]] = prov_src.get(rec["source"], 0) + 1
 
+    # SPEC-DASH v2 趋势：信号/企业 近 30 天按日入库量（AreaTrend 数据源）
+    cut30 = func.date(Enterprise.created_at)
+    trend_days = 30
+    sig_trend_rows = (
+        session.query(
+            func.date(Signal.created_at).label("d"),
+            func.count(),
+        )
+        .filter(Signal.created_at >= func.datetime("now", f"-{trend_days} days"))
+        .group_by("d")
+        .order_by("d")
+        .all()
+    )
+    ent_trend_rows = (
+        session.query(
+            func.date(Enterprise.created_at).label("d"),
+            func.count(),
+        )
+        .filter(
+            alive,
+            Enterprise.created_at >= func.datetime("now", f"-{trend_days} days"),
+        )
+        .group_by("d")
+        .order_by("d")
+        .all()
+    )
+    signal_trend = [{"date": str(d), "count": n} for d, n in sig_trend_rows]
+    ent_trend = [{"date": str(d), "count": n} for d, n in ent_trend_rows]
+
+    # 资料完整度分布（0-4 要素计数分组，SPEC-U U3 口径 SQL 化）
+    comp_score = (
+        case((Enterprise.legal_rep.is_not(None), 1), else_=0)
+        + case((Enterprise.established_at.is_not(None), 1), else_=0)
+        + case((Enterprise.registered_capital_wan.is_not(None), 1), else_=0)
+        + case((Enterprise.business_scope.is_not(None), 1), else_=0)
+    ).label("cs")
+    comp_rows = (
+        session.query(comp_score, func.count())
+        .filter(alive)
+        .group_by(comp_score)
+        .all()
+    )
+    completeness_dist = [
+        {"score": int(score), "count": n} for score, n in comp_rows
+    ]
+
     return {
         "assets": {
             "total": total,
@@ -160,4 +206,9 @@ def data_overview(
         "batches": batches,
         "industries": industries,
         "prov_stats": sorted(prov_src.items(), key=lambda x: -x[1]),
+        "trends": {
+            "signal_trend": signal_trend,
+            "ent_trend": ent_trend,
+        },
+        "completeness_dist": completeness_dist,
     }

@@ -10,6 +10,7 @@ import { Tag } from "@douyinfe/semi-ui";
 import { Database, RefreshCw } from "lucide-react";
 import { Button } from "@douyinfe/semi-ui";
 import AppShell from "@/components/AppShell";
+import { AreaTrend, BarList } from "@/components/charts";
 import { api } from "@/lib/api";
 
 interface SourceRow {
@@ -38,6 +39,12 @@ interface OverviewData {
   /** SPEC-INFO v2：行业分布 + 字段溯源概览 */
   industries: { key: string; name: string; count: number }[];
   prov_stats: [string, number][];
+  /** SPEC-DASH v2：趋势 + 完整度分布 */
+  trends: {
+    signal_trend: { date: string; count: number }[];
+    ent_trend: { date: string; count: number }[];
+  };
+  completeness_dist: { score: number; count: number }[];
 }
 
 export default function DataCenterPage() {
@@ -123,6 +130,50 @@ export default function DataCenterPage() {
           {loading && (
             <div className="py-8 text-center text-[13px] text-[var(--muted)]">加载中…</div>
           )}
+        </div>
+      </div>
+
+      {/* SPEC-DASH v2：双趋势——信号入库 + 企业增长（采集节奏可视化） */}
+      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="rounded-lg border border-[var(--border)] bg-white p-4">
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-[15px] font-medium text-[var(--ink)]">信号入库趋势 · 30 天</h2>
+            <span className="text-[11.5px] text-[var(--muted)]">
+              {(data?.trends.signal_trend ?? []).reduce((a, b) => a + b.count, 0).toLocaleString()} 条
+            </span>
+          </div>
+          <AreaTrend data={data?.trends.signal_trend ?? []} />
+        </div>
+        <div className="rounded-lg border border-[var(--border)] bg-white p-4">
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-[15px] font-medium text-[var(--ink)]">企业增长趋势 · 30 天</h2>
+            <span className="text-[11.5px] text-[var(--muted)]">
+              {(data?.trends.ent_trend ?? []).reduce((a, b) => a + b.count, 0).toLocaleString()} 家
+            </span>
+          </div>
+          <AreaTrend data={data?.trends.ent_trend ?? []} />
+        </div>
+      </div>
+
+      {/* 资料完整度分布（SPEC-U U3 口径 SQL 化——四要素计数 0-4） */}
+      <div className="mt-4 rounded-lg border border-[var(--border)] bg-white p-4">
+        <h2 className="text-[15px] font-medium text-[var(--ink)]">资料完整度分布</h2>
+        <p className="mt-0.5 text-[12px] text-[var(--muted)]">
+          法人/成立日期/注册资本/经营范围四要素计数——0 分=纯名单，4 分=工商资料齐全
+        </p>
+        <div className="mt-2.5 grid grid-cols-5 gap-px overflow-hidden rounded-lg bg-[var(--border)]">
+          {[4, 3, 2, 1, 0].map((score) => {
+            const rec = (data?.completeness_dist ?? []).find((c) => c.score === score);
+            const n = rec?.count ?? 0;
+            return (
+              <div key={score} className="bg-white px-3 py-2.5">
+                <div className="text-[11.5px] text-[var(--muted)]">{score} 要素</div>
+                <div className="mt-0.5 text-[18px] font-semibold tabular-nums text-[var(--ink)]">
+                  {n.toLocaleString()}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
