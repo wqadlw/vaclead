@@ -840,3 +840,101 @@ def intel_market(
         })
     items.sort(key=lambda x: -x["market"])
     return {"items": items[:24], "days": days}
+    return {"items": items[:24], "days": days}
+
+
+# ---- SPEC-RECON 企业深度侦察：公开平台自动调查 ----
+# 输入企业名 → 政采网搜索全部公开记录（中标/采购/代理）→ 新公告入库 +
+# 采购联系人沉淀。合规：仅国家公示平台法定公开内容，礼貌限速沿用
+# collectors 健康度管理。这是"人工去风鸟查"的自动化前站。
+
+
+_RECON_TYPE_MAP = (
+    ("中标", "tender_win"), ("成交", "tender_win"), ("合同", "tender_win"),
+    ("招标", "tender"), ("磋商", "tender"), ("谈判", "tender"),
+    ("询价", "tender"), ("资格预审", "tender"), ("采购", "tender_buy"),
+)
+
+
+@router.post("/enterprises/{eid}/recon")
+def enterprise_recon(
+    eid: int,
+    body: dict | None = None,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """企业深度侦察（SPEC-RECON）：政采网自动调查该企业全部公开记录。
+
+    body: {days: 365, max_pages: 3}。新公告入库（去重 by url），
+    公告自带采购人沉淀为联系人（role=buyer_contact, source=recon）。"""
+    from datetime import datetime, timedelta
+
+    from ..collectors.ccgp import fetch_notice_detail, search_ccgp_all
+
+    e = session.get(Enterprise, eid)
+    if e is None or e.deleted_at is not None:
+        raise HTTPException(404, "企业不存在")
+    name = (e.name or "").strip()
+    if not name:
+        raise HTTPException(422, "企业缺少名称，无法侦察")
+    body = body or {}
+    days = int(body.get("days") or 365)
+    max_pages = max(1, min(int(body.get("max_pages") or 3), 5))
+
+    # 已有 url 集去重（全库，不只该企业——公告可能已被其他采集入库）
+    known_urls = {
+        u for (u,) in session.query(Signal.url).filter(
+            Signal.url.is_not(None), Signal.url != ""
+        ).all()
+    }
+    found = new_signals = new_contacts = 0
+    errors: list[str] = []
+    by_type: dict[str, int] = {}
+    try:
+        for item in search_ccgp_all(name, days=days, max_pages=max_pages):
+            found += 1
+            url = item.get("url") or ""
+            if url in known_urls:
+                continue
+            ntype = item.get("notice_type") or ""
+            sig_type = next((t for kw, t in _RECON_TYPE_MAP if kw in ntype), None)
+            if sig_type is None:
+                continue  # 更正/废标/终止=噪音
+            sig = Signal(
+                enterprise_id=e.id, type=sig_type,
+                title=item.get("title") or name,
+                url=url, pub_date=item.get("pub_date"),
+                raw_excerpt=(item.get("summary") or "")[:400],
+                source="recon:ccgp",
+                base_score=60,
+            )
+            session.add(sig)
+            session.flush()
+            known_urls.add(url)
+            new_signals += 1
+            by_type[sig_type] = by_type.get(sig_type, 0) + 1
+            # 采购人沉淀为联系人（公告自带，无需进详情页）
+            buyer = item.get("buyer") or ""
+            if buyer and buyer != name:
+                dup = session.query(Contact).filter(
+                    Contact.enterprise_id == e.id, Contact.name == buyer
+                ).first()
+                if dup is None:
+                    session.add(Contact(
+                        enterprise_id=e.id, name=buyer, role="buyer_contact",
+                        source="recon",
+                        evidence_claim="政采网侦察：" + (item.get("title") or "")[:60],
+                    ))
+                    new_contacts += 1
+            # 限速：每条公告后礼貌间隔（沿用 collectors 健康度管理语义）
+            import time as _time
+
+            _time.sleep(1.2)
+    except Exception as exc:  # noqa: BLE001 — 网络错误转可读
+        errors.append(str(exc)[:120])
+    session.commit()
+    return {
+        "found": found, "new_signals": new_signals, "new_contacts": new_contacts,
+        "by_type": by_type, "errors": errors,
+    }
+

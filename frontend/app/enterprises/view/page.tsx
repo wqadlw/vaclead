@@ -178,6 +178,8 @@ function IntelInner() {
   const [loading, setLoading] = useState(true);
   const [subscribed, setSubscribed] = useState(false);
   const [converting, setConverting] = useState(false);
+  // SPEC-RECON：深度调查（政采网自动侦察该企业公开记录）
+  const [reconBusy, setReconBusy] = useState(false);
   // SPEC-PROV：字段级溯源解析（工商卡逐字段标注来源/时间）
   const prov = useMemo(() => {
     try {
@@ -578,6 +580,33 @@ function IntelInner() {
                 }}
               >
                 作战简报
+              </Button>
+              <Button
+                size="small"
+                theme="outline"
+                loading={reconBusy}
+                title="自动去政采网调查该企业全部公开记录（中标/采购），新发现入库"
+                onClick={async () => {
+                  setReconBusy(true);
+                  try {
+                    const d = await api.post<{ found: number; new_signals: number; new_contacts: number; by_type: Record<string, number> }>(
+                      `/api/enterprises/${eid}/recon`,
+                      { days: 365, max_pages: 2 },
+                    );
+                    if (d.new_signals > 0) {
+                      Toast.success(`侦察完成：发现 ${d.found} 条公开记录，新入库 ${d.new_signals} 条（含采购人 ${d.new_contacts} 个）——情报晨报已更新`);
+                      load(); // 详情/信号时间线刷新
+                    } else {
+                      Toast.info(`侦察完成：政采网近一年未发现「${detail.name}」的公开记录`);
+                    }
+                  } catch (e) {
+                    Toast.error(e instanceof Error ? e.message : "侦察失败");
+                  } finally {
+                    setReconBusy(false);
+                  }
+                }}
+              >
+                深度调查
               </Button>
             </div>
             <div className="mt-1.5 text-[13px] text-[var(--muted)]">
