@@ -34,7 +34,10 @@ export function AreaTrend({
   const W = 720;
   const H = height;
   const pad = { l: 8, r: 8, t: 12, b: 18 };
-  if (data.length < 2) {
+  // 渲染层归一为时间升序（summary 的 trend 是降序返回——不排序图表左右镜像，
+  // 2026-11-14 走查发现 /data 双趋势图与工作台趋势卡自上线起一直反着画）
+  const series = [...data].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  if (series.length < 2) {
     return (
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="趋势图">
         <line x1={pad.l} y1={H - pad.b} x2={W - pad.r} y2={H - pad.b} stroke="var(--frame)" />
@@ -44,13 +47,13 @@ export function AreaTrend({
       </svg>
     );
   }
-  const max = Math.max(...data.map((d) => d.count), 1);
-  const n = data.length;
+  const max = Math.max(...series.map((d) => d.count), 1);
+  const n = series.length;
   const x = (i: number) => pad.l + (i / Math.max(n - 1, 1)) * (W - pad.l - pad.r);
   const y = (v: number) => pad.t + (1 - v / max) * (H - pad.t - pad.b);
-  const pts = data.map((d, i) => `${x(i)},${y(d.count)}`).join(" ");
+  const pts = series.map((d, i) => `${x(i)},${y(d.count)}`).join(" ");
   const area = `${pad.l},${H - pad.b} ${pts} ${x(n - 1)},${H - pad.b}`;
-  const last = data[n - 1];
+  const last = series[n - 1];
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="趋势图">
       <polygon points={area} fill={stroke} opacity="0.08" />

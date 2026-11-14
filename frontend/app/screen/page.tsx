@@ -84,16 +84,17 @@ function managedLeads(sum: SummaryData | null): number | null {
   return pick("new") + pick("following") + pick("intent");
 }
 
-/** 近 7 天新信号 = 30 天趋势序列最后 7 天求和 */
+/** 近 7 天新信号 = 30 天趋势序列最新 7 天求和（trend 降序返回——先按日期排序再取） */
 function signals7d(sum: SummaryData | null): number | null {
   const trend = sum?.trend;
   if (!Array.isArray(trend) || trend.length === 0) return null;
-  return trend.slice(-7).reduce((a, b) => a + (b.count ?? 0), 0);
+  const desc = [...trend].sort((a, b) => (a.date < b.date ? 1 : -1));
+  return desc.slice(0, 7).reduce((a, b) => a + (b.count ?? 0), 0);
 }
 
 export default function ScreenPage() {
   const [sum, setSum] = useState<SummaryData | null>(null);
-  const [cover, setCover] = useState<{ withPhone: number | null; total: number | null } | null>(null);
+  const [cover, setCover] = useState<{ dialable: number | null; total: number | null } | null>(null);
   const [recos, setRecos] = useState<RecoItem[]>([]);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [strip, setStrip] = useState<RadarStrip | null>(null);
@@ -123,22 +124,13 @@ export default function ScreenPage() {
       .then(setSum)
       .catch(() => setSum(null));
     api
-      .get<{ stats?: { with_phone?: number }; total?: number }>("/api/contacts?limit=1&has_phone=0")
-      .then((d) =>
-        setCover({
-          withPhone: typeof d?.stats?.with_phone === "number" ? d.stats.with_phone : null,
-          total: typeof d?.total === "number" ? d.total : null,
-        }),
-      )
-      .catch(() => setCover(null));
+      .get<{ items?: FeedItem[] }>("/api/competitors/feed?days=30&type=tender_win&limit=8")
+      .then((d) => setFeed(Array.isArray(d?.items) ? d.items : []))
+      .catch(() => setFeed([]));
     api
       .get<{ items?: RecoItem[] }>("/api/recommendations?limit=5")
       .then((d) => setRecos(Array.isArray(d?.items) ? d.items : []))
       .catch(() => setRecos([]));
-    api
-      .get<{ items?: FeedItem[] }>("/api/competitors/feed?days=30&type=tender_win&limit=8")
-      .then((d) => setFeed(Array.isArray(d?.items) ? d.items : []))
-      .catch(() => setFeed([]));
     api
       .get<RadarStrip>("/api/dashboard/radar-strip")
       .then(setStrip)
@@ -150,6 +142,24 @@ export default function ScreenPage() {
     const t = setInterval(loadAll, REFRESH_MS);
     return () => clearInterval(t);
   }, [loadAll]);
+
+  // 可拨覆盖=企业级质量漏斗口径（overview 全表扫描重，独立 10 分钟慢轮询不进 60s 快循环）
+  const loadCover = useCallback(() => {
+    api
+      .get<{ funnel?: { dialable?: number; total?: number } }>("/api/quality/overview")
+      .then((d) =>
+        setCover({
+          dialable: typeof d?.funnel?.dialable === "number" ? d.funnel.dialable : null,
+          total: typeof d?.funnel?.total === "number" ? d.funnel.total : null,
+        }),
+      )
+      .catch(() => setCover(null));
+  }, []);
+  useEffect(() => {
+    loadCover();
+    const t = setInterval(loadCover, 10 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [loadCover]);
 
   // 轮播：8s 自动切换（数据更新后游标越界回 0）
   useEffect(() => {
@@ -163,8 +173,8 @@ export default function ScreenPage() {
 
   const kpiEnterprise = typeof sum?.kpis?.enterprises?.total === "number" ? sum.kpis.enterprises.total : null;
   const coverPct =
-    cover?.withPhone != null && cover?.total != null && cover.total > 0
-      ? Math.round((cover.withPhone / cover.total) * 1000) / 10
+    cover?.dialable != null && cover?.total != null && cover.total > 0
+      ? Math.round((cover.dialable / cover.total) * 1000) / 10
       : null;
   const managed = managedLeads(sum);
   const sig7 = signals7d(sum);
@@ -208,7 +218,7 @@ export default function ScreenPage() {
             <div className="grid shrink-0 grid-cols-2 gap-3">
               {[
                 { k: "企业池", v: fmtNum(kpiEnterprise), sub: "在库企业总数", icon: Building2 },
-                { k: "可拨覆盖", v: coverPct == null ? "—" : `${coverPct}%`, sub: "有号码联系人占比", icon: PhoneCall },
+                { k: "可拨覆盖", v: coverPct == null ? "—" : `${coverPct}%`, sub: "有可拨电话企业占比", icon: PhoneCall },
                 { k: "近 7 天新信号", v: fmtNum(sig7), sub: "中标/采购/备案", icon: Radar },
                 { k: "在管线索", v: fmtNum(managed), sub: "新线索+跟进+意向", icon: Target },
               ].map((c) => (

@@ -42,3 +42,6 @@ meili/data/
 
 tsconfig.tsbuildinfo
 test-results/
+
+# 走查/审查截图产物
+scripts/flow/
