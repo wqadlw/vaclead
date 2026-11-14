@@ -4,6 +4,51 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-14 · SPEC-SALE 销售赋能轮（话术卡系统化 + buyer 省份 + 老板大屏）
+
+**调研=排除法（本轮最大价值是验尸报告）**：官网通道五路发现源全部实测
+证伪——高德 place/detail 的 website/email **实弹 0/10**（字段在 schema
+但深层信息未填，25k 配额换零产出，路死）；beianx.cn 搜索 410；
+creditchina 本网络不可达；ggzy bid_detail 端点不存在（仅结构化记录，
+**areaCode 直接是省名**=S2 的意外收获）；boss-zhipin 登录墙实锤
+（LOGIN_RESTRICTED_CODES + LoginGateError，红线不动）；存量语料再挖
+产出实测 **3 封邮箱/164 个号码**（5677 条信号）——不值得立任务。
+**结论：采集侧免费合规弹药已打光，转向把 SALES_PLAYBOOK 独有内容
+做成系统功能**（竞品抄不走的层）。
+
+**S1 话术卡**：script_card 表（create_all 直建）+ 5 张昊志种子卡
+（PLAYBOOK 提炼：首联官方授权开场/竞对替换工况痛点/老户复购耗材时钟/
+拟建窗口免费勘测/确定性收尾），seed 双保险（SyncWatermark DB 标记+
+标题查重，SPEC-AS 内存缓存教训规避）+ 06:19 cron + lifespan 启动即种。
+prep 端点扩 script_cards——场景映射优先级 competitor_replace >
+proposal_window > repeat_purchase > first_contact（竞对 30 天同项目名
+tender_win 交叉、proposal 90 天窗）+ role_hint 对齐 customer_role
+排序 + generic 兜底。前端驾驶舱「话术」折叠卡+一键复制、设置页
+「话术库」CRUD 面板。
+**双子 Agent 对接缺口（门禁捞出）**：_card_dict 漏 enabled 键 +
+GET 无停用卡口径（管理面板永远无法重新启用）——修 _card_dict +
+include_disabled=1（admin 校验）+ 前端带参拉全量。
+
+**S2 ggzy_buyer 省份**（上轮挂起转正）：实测 areaCode="山东省"直落——
+harvest 与 daily_incremental 双路建档补 province（只补空，中标方不落
+不发明）+ POST /tasks/backfill-buyer-province（cap 500 幂等）。真库
+80 家 buyer 缺省 0（此前回填轮已补齐，任务上线即空转收口新增量）。
+**附**：daily_incremental 原无 buyer 建档段（grep 实锤摸底报告误记），
+本次补齐与 harvest 同语义。
+
+**S3 数据大屏 /screen**：纯前端零后端——1920×1080 三列（KPI 大字 48px
++省分布 / 今日推荐 8s 轮播 / 竞对中标流+晨检三格），60s 自刷、?token=
+认证回退可挂 TV、AppShell FULLSCREEN_ROUTES 沉浸式（不渲染侧栏顶栏
+底栏）、强制浅色。数据全复用现有端点（radar-strip 实际路径
+/api/dashboard/radar-strip，前端按实路由接）。
+
+**S4 导出修复**（latent 债）：「联系人」列读 title 恒空（SPEC-CU 后
+槽位回归职务本义）→ 改 dump_phones(phones_json) + email 拼接。
+
+**门禁**：后端全量 **443**（434+9）亲跑 ✓ + build ✓（/screen 4.35kB
+静态导出）+ 实弹冒烟 4 项（screen.html 200/种子 5 张/prep 场景卡 2 张/
+enabled 修复往返）✓。
+
 ## 2026-11-14 · SPEC-MULTI：多源注册表 + 工商深解析 + 任务结果可观测（正规流程全轮）
 
 **流程**：双摸底 Agent（采集架构 recon + refs/ 15 项目扫描）→ 网上调研

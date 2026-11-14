@@ -726,14 +726,19 @@ def export_enterprises(
         else []
     )
     by_ent: dict[int, list[str]] = {}
-    import re as _re
+    from ..phones import load_phones
 
     for c in export_contacts:
-        phone = c.title or ""
-        # 电话槽位含数字才展示（legal_rep 回填的槽位是角色名，非号码）
-        phone_part = f":{phone}" if phone and _re.search(r"\d", phone) else ""
+        # SPEC-SALE S4：联系人列改读 phones_json（SPEC-CU 后 title 槽位不再
+        # 存号码，旧逻辑读 title 导出列恒空）；email 有值时拼入
+        # （"姓名(角色):电话 邮箱"，企业内多条联系人以分号分隔）
+        phones = load_phones(c.phones_json)
+        parts = f":{'/'.join(phones)}" if phones else ""
+        email = (c.email or "").strip()
+        if email:
+            parts = f"{parts} {email}" if parts else f":{email}"
         by_ent.setdefault(c.enterprise_id, []).append(
-            f"{c.name}({ROLE_CN_EXPORT.get(c.role, c.role)}){phone_part}"
+            f"{c.name}({ROLE_CN_EXPORT.get(c.role, c.role)}){parts}"
         )
 
     buf = io.StringIO()

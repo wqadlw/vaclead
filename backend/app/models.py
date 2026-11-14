@@ -1095,3 +1095,28 @@ class PaymentMilestone(Base):
     # pending→paid|overdue
     paid_date: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+
+
+class ScriptCard(Base):
+    """话术卡（SPEC-SALE S1）：SALES_PLAYBOOK → 系统，通话驾驶舱按场景取卡。
+
+    scene 枚举（pydantic 层校验，DB 不设约束保旧库兼容）：
+    first_contact（首联）/ competitor_replace（竞对替换）/ repeat_purchase（老户复购）/
+    proposal_window（拟建窗口）/ generic（通用收尾）。
+    role_hint 对齐 Enterprise.customer_role（oem/end_user/reseller/integrator，
+    空=通用卡）。
+    """
+
+    __tablename__ = "script_card"
+    __table_args__ = (Index("ix_script_card_scene", "scene", "sort"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    scene: Mapped[str] = mapped_column(Text, nullable=False, default="generic")
+    role_hint: Mapped[str | None] = mapped_column(Text)
+    body_md: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    sort: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

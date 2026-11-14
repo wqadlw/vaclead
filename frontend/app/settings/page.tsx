@@ -19,6 +19,7 @@ import {
 import { Bot, KeyRound } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import AutomationPanel from "@/components/AutomationPanel";
+import ScriptCardsPanel from "@/components/ScriptCardsPanel";
 import { ApiKeysPanel, AuditPanel, SubRulesPanel, TargetPanel } from "@/components/GovernancePanels";
 import { api } from "@/lib/api";
 import type { PageData } from "@/lib/api";
@@ -1494,6 +1495,10 @@ export default function SettingsPage() {
     return new URLSearchParams(window.location.search).get("tab") || "keys";
   });
   useEffect(() => setRole(localStorage.getItem("vaclead_role") || "sales"), []);
+  // SPEC-SALE S1：话术库 tab 仅管理员可见——非 admin 手拼 ?tab=scripts 时回退默认页（防空白面板）
+  useEffect(() => {
+    if (role !== "admin" && settingsTab === "scripts") setSettingsTab("keys");
+  }, [role, settingsTab]);
 
   const loadNotifyPrefs = useCallback(() => {
     api
@@ -1627,6 +1632,8 @@ export default function SettingsPage() {
             { tab: "数据复核", itemKey: "review" },
             { tab: "团队动态", itemKey: "activity" },
             { tab: "自动化", itemKey: "automation" },
+            // SPEC-SALE S1：话术库管理（仅管理员可见，判定照群机器人卡同款 localStorage role）
+            ...(role === "admin" ? [{ tab: "话术库", itemKey: "scripts" }] : []),
             { tab: "通知偏好", itemKey: "notify" },
             { tab: "订阅规则", itemKey: "subrules" },
             { tab: "月度目标", itemKey: "target" },
@@ -1863,6 +1870,13 @@ export default function SettingsPage() {
           <TabPane itemKey="automation">
             <AutomationPanel />
           </TabPane>
+
+          {/* SPEC-SALE S1：话术库（admin CRUD，SALES_PLAYBOOK 系统化） */}
+          {role === "admin" && (
+            <TabPane itemKey="scripts">
+              <ScriptCardsPanel />
+            </TabPane>
+          )}
 
           {/* 通知偏好（Novu subscriber preferences 模式） */}
           <TabPane itemKey="notify">

@@ -161,6 +161,17 @@ def _stale_incremental_hours() -> float | None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # SPEC-SALE S1：话术卡种子随启动即种（幂等 DB 标记防重，免等 06:19 cron；
+    # 失败不阻断启动，cron 次日兜底）
+    try:
+        from .api.script_cards import seed_script_cards
+
+        with SessionLocal() as _seed_s:
+            seed_script_cards(_seed_s)
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger("vaclead.jobs").warning("话术卡种子失败", exc_info=True)
     _inject_tools()
     _recover_interrupted_tasks()
     # 日志按天滚动（I6 P2）：data/logs/vaclead.log，保留 14 天
@@ -415,6 +426,16 @@ async def lifespan(app: FastAPI):
 
         _register_cron("product_seed", _seed_products, 6, 18)
 
+        # SPEC-SALE S1：话术卡种子（幂等 DB 标记防重，与 product_seed 错峰 1 分钟）
+        def _seed_script_cards() -> dict:
+            from .api.script_cards import seed_script_cards
+            from .db import SessionLocal as _SL
+
+            with _SL() as s:
+                return {"seeded": seed_script_cards(s)}
+
+        _register_cron("script_card_seed", _seed_script_cards, 6, 19)
+
         def _oem_touch_sweep() -> dict:
             from .jobs import oem_touch_sweep
 
@@ -655,6 +676,9 @@ app.include_router(units.router, prefix="/api")
 from .api import proposal  # noqa: E402
 
 app.include_router(proposal.router, prefix="/api")
+from .api import script_cards  # noqa: E402
+
+app.include_router(script_cards.router, prefix="/api")
 
 
 # ---- 单进程部署：托管前端静态导出（frontend/out），SPA 回退 ----

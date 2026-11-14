@@ -555,6 +555,12 @@ def start_ggzy_harvest(
                                 buyer_ent, buyer_new = resolve_enterprise(
                                     s, buyer, source="ggzy_buyer"
                                 )
+                                # SPEC-SALE S2：bid_list 的 areaCode 实锤是省名
+                                # （"山东省"）=项目所在地=采购人所在地，建 buyer 帧时
+                                # 只补空不覆盖；中标方（bidder）不落——area 不是
+                                # 其注册地，不发明
+                                if not (buyer_ent.province or ""):
+                                    buyer_ent.province = nb.get("area")
                                 if buyer_new:
                                     totals["buyers"] += 1
                                     _note_new(buyer_ent, True)
@@ -1604,4 +1610,91 @@ def start_backfill_icp(
     from .task_runtime import spawn
 
     spawn(task_id, _worker, label="backfill-icp")
+    return {"task_id": task_id}
+
+
+@router.post("/tasks/backfill-buyer-province")
+def start_backfill_buyer_province(
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """ggzy_buyer 省份存量回填（SPEC-SALE S2）。
+
+    查 source='ggzy_buyer' 且 uscc 非空、province 为空的企业，逐家调
+    ggzy bid_list 取最近一条有 area 的记录补 province（bid_list 的
+    areaCode 实锤是省名="山东省"，即项目所在地=采购人所在地；中标方
+    bidder 不落——area 非其注册地，不发明）。1.5s 礼貌间隔由 ggzy
+    collector 内置限速（REQUEST_INTERVAL_S）承担；cap 500/轮；checkpoint
+    进度；幂等（province 非空的企业下一轮不再命中）。
+    """
+    from ..collectors.ggzy import list_bids, normalize_bid_record
+    from ..db import SessionLocal
+
+    task_id = uuid.uuid4().hex[:12]
+    cap = 500  # 单轮上限（真库现缺 34 家，一轮即收口；量大时分轮跑）
+    session.add(TaskCheckpoint(
+        task_id=task_id, kind="backfill_buyer_province", status="running", progress=0,
+    ))
+    session.commit()
+
+    def _worker() -> dict:
+        stats = {"processed": 0, "filled": 0, "no_area": 0, "errors": 0, "remaining": 0}
+        with SessionLocal() as s:
+            rows = (
+                s.query(Enterprise)
+                .filter(
+                    Enterprise.source == "ggzy_buyer",
+                    Enterprise.uscc.isnot(None),
+                    Enterprise.uscc != "",
+                    or_(Enterprise.province.is_(None), Enterprise.province == ""),
+                )
+                .order_by(Enterprise.id.asc())
+                .limit(cap)
+                .all()
+            )
+            total = len(rows)
+            for i, e in enumerate(rows):
+                if is_cancel_requested(task_id):
+                    raise TaskCancelled(task_id)
+                stats["processed"] += 1
+                try:
+                    result = list_bids(e.uscc or "", page=1, size=5)
+                except Exception:  # noqa: BLE001 — 单家失败不中断批次
+                    stats["errors"] += 1
+                    continue
+                area = None
+                for b in result.get("records") or []:
+                    nb = normalize_bid_record(b)
+                    if nb and nb.get("area"):
+                        area = nb["area"]  # 取最近一条有省名的记录
+                        break
+                if area:
+                    e.province = area
+                    stats["filled"] += 1
+                else:
+                    stats["no_area"] += 1
+                if (i + 1) % 20 == 0 or i == total - 1:
+                    _checkpoint(
+                        task_id,
+                        progress=int((i + 1) / max(total, 1) * 90),
+                        state_json=json.dumps(stats, ensure_ascii=False),
+                    )
+            s.commit()
+        stats["remaining"] = (
+            session.query(func.count())
+            .select_from(Enterprise)
+            .filter(
+                Enterprise.source == "ggzy_buyer",
+                Enterprise.uscc.isnot(None),
+                Enterprise.uscc != "",
+                or_(Enterprise.province.is_(None), Enterprise.province == ""),
+            )
+            .scalar()
+            or 0
+        )
+        return stats
+
+    from .task_runtime import spawn
+
+    spawn(task_id, _worker, label="backfill-buyer-province")
     return {"task_id": task_id}

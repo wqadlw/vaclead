@@ -1102,7 +1102,7 @@ def run_daily_incremental() -> dict:
     ccgp_off = any_source_disabled("ccgp")
     if ggzy_off and ccgp_off:
         return {"skipped_disabled": True}
-    stats = {"ggzy_new": 0, "ccgp_signals": 0}
+    stats = {"ggzy_new": 0, "ccgp_signals": 0, "ggzy_buyers": 0}
     # --- ggzy 宽词增量 ---
     from .collectors.ggzy import list_bids, normalize_bid_record, normalize_entity_record, search_all_entities
 
@@ -1181,6 +1181,46 @@ def run_daily_incremental() -> dict:
                                 evidence_claim=f"该主体在公共资源交易平台中标「{nb['project_name']}」",
                                 base_score=50.0,
                             ))
+                        # SPEC-SALE S2：ggzy 采购人是真买家——与 ggzy-harvest 同语义
+                        # 建 buyer（ggzy_buyer）帧 + tender_buy 信号。bid_list 的
+                        # areaCode 实锤是省名（"山东省"）=项目所在地=采购人所在地，
+                        # 建 buyer 帧时只补空不覆盖；中标方（bidder）不落——area
+                        # 不是其注册地，不发明。.get() 容错（测试 mock 可能缺键）。
+                        buyer = nb.get("tender_org")
+                        if buyer and len(buyer) >= 4 and buyer != ent.name:
+                            buyer_ent, buyer_new = resolve_enterprise(
+                                s, buyer, source="ggzy_buyer"
+                            )
+                            if not (buyer_ent.province or ""):
+                                buyer_ent.province = nb.get("area")
+                            if buyer_new:
+                                stats["ggzy_buyers"] += 1
+                            buyer_sig = (
+                                s.query(Signal)
+                                .filter(
+                                    Signal.enterprise_id == buyer_ent.id,
+                                    Signal.url == "",
+                                    Signal.title == nb["project_name"],
+                                    Signal.type == "tender_buy",
+                                )
+                                .first()
+                            )
+                            if buyer_sig is None:
+                                s.add(Signal(
+                                    enterprise_id=buyer_ent.id,
+                                    type="tender_buy",
+                                    title=nb["project_name"],
+                                    url="",
+                                    pub_date=nb.get("pub_date"),
+                                    matched_terms="[]",
+                                    hit_part="title",
+                                    raw_excerpt=f"作为采购人由「{ent.name}」中标成交",
+                                    evidence_claim=(
+                                        f"该单位公开采购「{nb['project_name']}」，"
+                                        f"由{ent.name}中标"
+                                    ),
+                                    base_score=50.0,
+                                ))
                     s.commit()
             except IntegrityError:
                 # 单主体批次降级：一条脏数据不再炸整条每日增量管道

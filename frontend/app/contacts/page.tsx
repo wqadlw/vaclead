@@ -10,6 +10,7 @@ import { Button, Input, Modal, Select, Tag, Toast, Tooltip } from "@douyinfe/sem
 import { Download, Keyboard, Phone } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import CallResultTag, { CALL_RESULTS } from "@/components/CallResultTag";
+import PrepScriptCards from "@/components/PrepScriptCards";
 import { api } from "@/lib/api";
 import { INDUSTRY_OPTIONS } from "@/lib/constants";
 
@@ -63,6 +64,8 @@ interface PrepData {
   last_followup: { content: string; created_at: string } | null;
   /** SPEC-CUX CUX3 通话时间线：拨打 + 跟进合流（时间倒序） */
   timeline?: { kind: "call" | "followup"; at: string; label?: string; content?: string }[];
+  /** SPEC-SALE S1 话术卡：prep 场景映射产出（后端并行上线中——键缺失/空数组时话术区不渲染） */
+  script_cards?: { title: string; scene: string; role_hint: string | null; body_md: string }[];
 }
 
 interface Worklist {
@@ -790,6 +793,10 @@ export default function ContactsPage() {
                       上次跟进（{prep.last_followup.created_at.replace("T", " ").slice(0, 16)}）：{prep.last_followup.content.slice(0, 60)}
                     </div>
                   )}
+                  {/* SPEC-SALE S1 话术区：prep.script_cards 场景映射卡（空/缺键静默不渲染） */}
+                  <div className="mt-4">
+                    <PrepScriptCards cards={prep.script_cards} />
+                  </div>
                   {/* SPEC-CUX CUX3 通话时间线：拨打 + 跟进合流，最近 5 条，>5 折叠可展开 */}
                   {tl.length > 0 && (
                     <div className="mt-3">

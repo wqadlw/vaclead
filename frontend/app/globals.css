@@ -422,3 +422,35 @@ html[theme-mode="dark"] {
 [data-theme="dark"] .bg-\[\#10202a\] {
   background: #0d1117 !important;
 }
+
+/* ---- SPEC-SALE S3 数据大屏（/screen，TV 挂载 1920×1080 优先）----
+   纯 CSS 动效：推荐轮播 8s 进度条 + 竞对动态无缝上滚；禁阴影禁渐变红线不破 */
+@keyframes screen-progress {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+.screen-progress {
+  animation: screen-progress 8s linear both;
+}
+@keyframes screen-feed-scroll {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+.screen-feed-scroll {
+  animation: screen-feed-scroll 36s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .screen-progress,
+  .screen-feed-scroll {
+    animation: none;
+  }
+  .screen-progress {
+    width: 100%;
+  }
+}
+.screen-no-scrollbar {
+  scrollbar-width: none;
+}
+.screen-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

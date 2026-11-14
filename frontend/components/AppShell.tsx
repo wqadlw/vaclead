@@ -84,6 +84,10 @@ const NAV_GROUPS: {
 const matchNavItem = (href: string, path: string) =>
   href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`);
 
+/** SPEC-SALE S3：TV 数据大屏（/screen）——全屏沉浸路由，AppShell 只包不装。
+ *  该路由不渲染侧栏/顶栏/底部导航，也不做管理入口（从命令面板/设置页进入）。 */
+const FULLSCREEN_ROUTES = ["/screen"];
+
 const ADMIN_NAV = [
   { href: "/quality", label: "数据质量", icon: Database },
   { href: "/tasks", label: "拓客任务", icon: Rocket },
@@ -309,6 +313,8 @@ function CommandPalette() {
     { label: "收件箱", path: "/outreach/inbox" },
     { label: "拓客任务", path: "/tasks" },
     { label: "设置", path: "/settings" },
+    // SPEC-SALE S3：老板大屏入口（不进侧栏导航，命令面板直达）
+    { label: "数据大屏", path: "/screen" },
   ].filter((p) => !q || p.label.includes(q.trim()));
 
   const go = (path: string) => {
@@ -415,8 +421,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState("");
   // SPEC-CB 移动端抽屉
   const [mobileNav, setMobileNav] = useState(false);
+  // SPEC-SALE S3：全屏沉浸路由（TV 大屏）——不渲染任何框架 chrome
+  const fullscreen = FULLSCREEN_ROUTES.includes(pathname);
 
   useEffect(() => {
+    // SPEC-SALE S3：TV 大屏 `?token=` 回退（AA 轮机制同款）——
+    // 电视/投屏终端没有登录页交互，URL 直接携带 token；先落 localStorage
+    // 再走统一鉴权检查，随后清掉地址栏参数（防投屏截图/分享泄漏）。
+    // token 无效时各接口 401 静默 → 大屏按无数据处理显示「—」，不白屏。
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      const urlToken = sp.get("token");
+      if (urlToken) {
+        localStorage.setItem("vaclead_token", urlToken);
+        if (!localStorage.getItem("vaclead_role")) localStorage.setItem("vaclead_role", "sales");
+        if (!localStorage.getItem("vaclead_user")) localStorage.setItem("vaclead_user", "大屏");
+        // 只摘掉 token，保留其余查询参数（如 settings?tab=）
+        sp.delete("token");
+        const rest = sp.toString();
+        window.history.replaceState(null, "", rest ? `${window.location.pathname}?${rest}` : window.location.pathname);
+      }
+    }
     const token = getToken();
     if (!token) {
       router.replace("/login");
@@ -428,8 +453,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   // SPEC-AI AI3：新信号轮询感知（5s 游标增量）——前台 Toast（节流 10s），
-  // 页面隐藏时走 Web Notification（需一次授权，拒绝则仅 Toast）
+  // 页面隐藏时走 Web Notification（需一次授权，拒绝则仅 Toast）；
+  // 全屏大屏路由跳过（TV 无铃铛，省掉无谓轮询）
   useEffect(() => {
+    if (fullscreen) return;
     const token = getToken();
     if (!token) return;
     let lastId = 0;
@@ -474,13 +501,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     void tick();
     const timer = setInterval(tick, 5000);
     return () => clearInterval(timer);
-  }, []);
+  }, [fullscreen]);
 
   if (!ready) {
+    // 全屏路由加载态同样保持沉浸（无框架 chrome）
+    if (fullscreen) {
+      return <div className="min-h-screen bg-[var(--ground)]" />;
+    }
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--ground)]">
         <div className="text-[13px] text-[var(--muted)]">加载中…</div>
       </div>
+    );
+  }
+
+  // SPEC-SALE S3：TV 大屏全屏模式——直接放行 children，不渲染
+  // 侧栏/顶栏/组内导航条/底部 tabbar/命令面板（页面自带头部与刷新逻辑）
+  if (fullscreen) {
+    return (
+      <div className="min-h-screen bg-[var(--ground)]">{children}</div>
     );
   }
 

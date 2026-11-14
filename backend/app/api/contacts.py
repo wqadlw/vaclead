@@ -439,6 +439,12 @@ def contact_prep(
 
     sharing = phone_sharing_map(session, min_ents=3)
     shared_ent_count = max((len(sharing.get(p, set())) for p in phones), default=0)
+    # SPEC-SALE S1：话术卡接线——场景映射（优先级 competitor_replace >
+    # proposal_window > repeat_purchase > first_contact）+ role_hint 优先，
+    # 另附 1 张 generic 兜底卡
+    from .script_cards import pick_script_cards
+
+    script_cards = pick_script_cards(session, e, lead, has_followup=bool(followups))
     return {
         "contact": {
             "id": c.id, "name": c.name, "role": c.role, "title": c.title,
@@ -479,4 +485,6 @@ def contact_prep(
         "last_followup": last_followup,
         # SPEC-CUX CUX3：通话时间线（拨打 + 跟进合流，时间倒序）
         "timeline": timeline,
+        # SPEC-SALE S1：话术卡（场景映射取卡，主场景卡在前 + generic 兜底）
+        "script_cards": script_cards,
     }
