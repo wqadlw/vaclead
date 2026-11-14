@@ -164,6 +164,25 @@ export default function TasksPage() {
       .catch(() => setGgzyOptions([{ value: "真空", label: "真空" }]));
   }, []);
 
+  // SPEC-CUX5：刷新/离开页面后找回运行中任务（读 sessionStorage + 状态端点，
+  // running 则重新订阅 SSE 恢复进度显示——修复"发起后刷新即失联"断点）
+  useEffect(() => {
+    const saved = sessionStorage.getItem("runningTaskId");
+    if (!saved) return;
+    api
+      .get<{ status: string }>(`/api/tasks/${saved}`)
+      .then((d) => {
+        if (d.status === "running") {
+          subscribeTask(saved);
+          setLogs((prev) => [...prev, "已恢复对运行中任务的跟踪"]);
+        } else {
+          sessionStorage.removeItem("runningTaskId");
+        }
+      })
+      .catch(() => sessionStorage.removeItem("runningTaskId"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const termOptions = channel === "ggzy" ? ggzyOptions : ccgpOptions;
 
   const subscribeTask = (tid: string) => {
@@ -172,6 +191,8 @@ export default function TasksPage() {
     const es = new EventSource(`${base}/api/tasks/${tid}/events`);
     esRef.current = es;
     setTaskId(tid);
+    // SPEC-CUX5：运行中任务持久化——刷新/离开页面后可找回（配合状态端点）
+    sessionStorage.setItem("runningTaskId", tid);
     es.onmessage = (ev) => {
       try {
         const payload = JSON.parse(ev.data);
@@ -190,17 +211,20 @@ export default function TasksPage() {
                 : "任务完成"
               : formatDone(payload.summary as Record<string, unknown>);
           setLogs((prev) => [...prev, summary]);
+          sessionStorage.removeItem("runningTaskId");
           es.close();
           setStarting(false);
           setTaskId(null);
         } else if (payload.type === "cancelled") {
           setProgress(100);
           setLogs((prev) => [...prev, `⏹ 任务已取消：${formatDone(payload.summary as Record<string, unknown>)}`]);
+          sessionStorage.removeItem("runningTaskId");
           es.close();
           setStarting(false);
           setTaskId(null);
         } else if (payload.type === "error") {
           setLogs((prev) => [...prev, `失败：${payload.message ?? payload.log ?? "任务失败"}`]);
+          sessionStorage.removeItem("runningTaskId");
           es.close();
           setStarting(false);
           setTaskId(null);

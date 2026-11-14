@@ -264,3 +264,37 @@ def test_ggzy_harvest_end_to_end(client, admin_headers, monkeypatch):
     assert status == "done"
     with SessionLocal() as s:
         assert s.query(Signal).count() == total_signals_before  # 去重生效
+
+
+def test_task_status_endpoint(client, admin_headers, sales_headers):
+    """任务状态查询端点（2026-11-13 采集实测断点修复）：发起任务后刷新/
+    离开页面即与任务失联——checkpoint 在库但无查询入口。存在→返回
+    kind/status/progress/state；不存在→404。sales 同样可查（找回任务
+    是所有使用者的权利，非管理员专属）。"""
+    from app.db import SessionLocal
+    from app.models import TaskCheckpoint
+
+    tid = "task-status-test-001"
+    with SessionLocal() as s:
+        s.add(TaskCheckpoint(
+            task_id=tid, kind="ggzy_harvest", status="running",
+            progress=40, state_json='{"pages_done": 2}',
+        ))
+        s.commit()
+
+    r = client.get(f"/api/tasks/{tid}", headers=admin_headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["task_id"] == tid
+    assert body["kind"] == "ggzy_harvest"
+    assert body["status"] == "running"
+    assert body["progress"] == 40
+    assert body["state"] == {"pages_done": 2}
+    assert body["updated_at"]  # 有时间戳（前端展示"最近更新"用）
+
+    # 权限：sales 也可查——使用者刷新后找回运行中任务是主用例
+    r_sales = client.get(f"/api/tasks/{tid}", headers=sales_headers)
+    assert r_sales.status_code == 200
+
+    r404 = client.get("/api/tasks/task-not-exist-xyz", headers=admin_headers)
+    assert r404.status_code == 404

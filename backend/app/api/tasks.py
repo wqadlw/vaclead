@@ -574,6 +574,35 @@ def start_ggzy_harvest(
     return {"task_id": task_id, "keywords": keywords}
 
 
+@router.get("/tasks/{task_id}")
+def task_status(
+    task_id: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """任务状态查询（2026-11-13 采集实测断点修复：发起后刷新/离开页面
+    即与任务失联——checkpoint 在库但无查询端点）。使用者在任意页面
+    可恢复查看运行中/已完成任务的状态与结果。"""
+    import json as _json
+
+    cp = session.get(TaskCheckpoint, task_id)
+    if cp is None:
+        raise HTTPException(404, "任务不存在")
+    state = {}
+    try:
+        state = _json.loads(cp.state_json or "{}")
+    except ValueError:
+        pass
+    return {
+        "task_id": cp.task_id,
+        "kind": cp.kind,
+        "status": cp.status,
+        "progress": cp.progress,
+        "updated_at": (cp.updated_at or "")[:19],
+        "state": state,
+    }
+
+
 class CcgpScanIn(BaseModel):
     """政采网公告扫描（search.ccgp.gov.cn/bxsearch，普通 HTTP）。"""
     keywords: list[str] | None = None  # 缺省用设备强词表
