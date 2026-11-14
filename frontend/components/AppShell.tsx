@@ -50,14 +50,14 @@ const FIND_NAV = [
   { href: "/enterprises", label: "企业列表", icon: Search },
   { href: "/map", label: "客户地图", icon: Map },
 ];
+// SPEC-SIMPLIFY：序列触达/收件箱（EmailEngine 空壳）/留资表单（0 使用）/
+// 企业对比（低频）导航移除——路由与代码保留，业务启动后导航加回一行
 const RADAR_NAV = [
   { href: "/intel/brief", label: "情报晨报", icon: Megaphone },
   { href: "/intel/opp", label: "机会雷达", icon: Rocket },
   { href: "/intel/market", label: "区域市场", icon: Map },
   { href: "/competitors", label: "竞对雷达", icon: Crosshair },
   { href: "/proposals", label: "拟建雷达", icon: Sprout },
-  { href: "/outreach", label: "序列触达", icon: Send },
-  { href: "/outreach/inbox", label: "收件箱", icon: Inbox },
 ];
 const TOOL_NAV = [
   { href: "/products", label: "产品目录", icon: Package },
@@ -75,7 +75,7 @@ const NAV_GROUPS: {
   { key: "home", label: "工作台", icon: Gauge, defaultPath: "/", items: NAV },
   { key: "daily", label: "每日行动", icon: ClipboardList, defaultPath: "/contacts", items: DAILY_NAV },
   { key: "find", label: "找客户", icon: Search, defaultPath: "/signals", items: FIND_NAV },
-  { key: "radar", label: "情报雷达", icon: Radar, defaultPath: "/competitors", items: RADAR_NAV },
+  { key: "radar", label: "情报中心", icon: Radar, defaultPath: "/intel/brief", items: RADAR_NAV },
   { key: "tool", label: "工具", icon: Package, defaultPath: "/products", items: TOOL_NAV },
 ];
 

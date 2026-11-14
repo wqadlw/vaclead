@@ -70,20 +70,6 @@ const FRESH_CN: Record<string, { label: string; color: string }> = {
   unknown: { label: "未知", color: "var(--muted)" },
 };
 
-const SOURCE_CN: Record<string, string> = {
-  poi: "高德 POI",
-  ggzy: "公共资源交易",
-  ccgp_buyer: "政采买家",
-  ggzy_buyer: "公采买家",
-  ccgp: "政采网",
-  csv: "手工导入",
-  proposal_gd: "广东备案",
-  proposal_hb: "湖北备案",
-  proposal_js: "江苏备案",
-  proposal_zj: "浙江办理",
-  tender: "历史导入",
-};
-
 export default function QualityPage() {
   const [data, setData] = useState<QualityData | null>(null);
   const [error, setError] = useState("");
@@ -208,53 +194,19 @@ export default function QualityPage() {
         ))}
       </div>
 
-      {/* 信号覆盖 + 来源分层 */}
+      {/* 信号覆盖（来源矩阵的权威视图在信息中心 /data） */}
       <div className="mt-4 rounded-lg border border-[var(--border)] bg-white p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-[15px] font-medium text-[var(--ink)]">来源分层</h2>
-          {g && (
-            <span className="text-[12.5px] text-[var(--muted)]">
-              信号覆盖：{g.signal_coverage.toLocaleString()} 家（{g.signal_coverage_pct}%）
-            </span>
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[15px] font-medium text-[var(--ink)]">信号覆盖</h2>
+          <a href="/data" className="text-[12px] text-[var(--accent)] hover:underline">
+            来源矩阵见「信息中心」→
+          </a>
         </div>
-        <div className="mt-2 overflow-x-auto">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="text-left text-[12.5px] font-normal text-[var(--muted)]">
-                <th className="py-2 pr-4 font-normal">来源</th>
-                <th className="py-2 pr-4 text-right font-normal">企业数</th>
-                <th className="py-2 pr-4 text-right font-normal">有坐标</th>
-                <th className="py-2 pr-4 text-right font-normal">有行业</th>
-                <th className="py-2 pr-4 text-right font-normal">有联系人</th>
-                <th className="py-2 text-right font-normal">可拨</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(data?.by_source ?? {}).map(([src, st]) => (
-                <tr key={src} className="border-t border-[var(--rule)] hover:bg-[var(--raised)]">
-                  <td className="py-2 pr-4">{SOURCE_CN[src] ?? src}</td>
-                  <td className="py-2 pr-4 text-right tabular-nums">{st.count.toLocaleString()}</td>
-                  <td className="py-2 pr-4 text-right tabular-nums">{st.geo_pct}%</td>
-                  <td className="py-2 pr-4 text-right tabular-nums">{st.industry_pct}%</td>
-                  <td className="py-2 pr-4 text-right tabular-nums">{st.contact_pct}%</td>
-                  <td className="py-2 text-right tabular-nums">
-                    <span className={st.dialable_pct >= 30 ? "font-medium text-[var(--positive)]" : ""}>
-                      {st.dialable_pct}%
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {Object.keys(data?.by_source ?? {}).length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-[13px] text-[var(--muted)]">
-                    暂无数据
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {g && (
+          <div className="mt-2 text-[12.5px] text-[var(--muted)]">
+            信号覆盖：{g.signal_coverage.toLocaleString()} 家（{g.signal_coverage_pct}%）
+          </div>
+        )}
       </div>
 
       {/* SPEC-DQ：号码共享分析——同一号码挂 ≥3 家企业 = 疑似招标代理/中介
