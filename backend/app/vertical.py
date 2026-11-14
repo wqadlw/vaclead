@@ -76,6 +76,12 @@ def device_weak_terms() -> list[str]:
 # 仅从所有"先打给谁"类推荐面隐去（推荐/拨名单/补数清单/情报雷达）。
 NON_BUYER_INDUSTRIES = frozenset({"research_edu", "medical_health"})
 
+# 政采买家源（2026-11-14 用户拍板："我们不做政采买家"）——采购人建档
+# （ggzy_buyer/ccgp_buyer/sdgp_buyer）=机关/事业单位/学校/医院主体，整体
+# 出局。处置与学校同款：数据保留（竞对雷达"卖给了谁"的证据主体+装机地图
+# 素材），退出全部客户工作面（推荐/拨名单/补数清单/联系人中心/情报雷达）。
+NON_CUSTOMER_SOURCES = frozenset({"ggzy_buyer", "ccgp_buyer", "sdgp_buyer"})
+
 # 名称形态兜底词：行业字段未分类但名称是公共机构形态（不带"公司"才生效，
 # 民营企业名带"公司"一律保留）。词表校准闭环第五轮补充：检验所/质检所/
 # 计量所类 ccgp_buyer 建档时行业未打中（"检验所"不在 lab_instrument 词表）。
@@ -85,8 +91,15 @@ PUB_INSTITUTION_NAME_WORDS = (
 )
 
 
-def is_non_buyer(industry_key: str | None, name: str | None = None) -> bool:
-    """行业级+名称级公共机构判定（推荐面排除用，非删除）。"""
+def is_non_buyer(
+    industry_key: str | None, name: str | None = None, source: str | None = None
+) -> bool:
+    """行业级+名称级+来源级非客户判定（推荐面排除用，非删除）。
+
+    source 判定（2026-11-14）：政采买家建档源整体出局——CUSTOMER_PROFILE.md
+    第一节拍板。"""
+    if source and source in NON_CUSTOMER_SOURCES:
+        return True
     if industry_key in NON_BUYER_INDUSTRIES:
         return True
     if name and "公司" not in name:

@@ -164,9 +164,9 @@ def score_candidates(session: Session, limit: int = 50, product: str | None = No
             continue  # 一企业多联系人多行——只评一次
         seen_ent.add(ent.id)
 
-        # 2026-11-08 学校 + 2026-11-14 公共机构扩面（医疗/检验事业单位）用户拍板——
-        # 不进"先打给谁"（数据保留可查，见 vertical.is_non_buyer）
-        if is_non_buyer(ent.industry_key, ent.name):
+        # 2026-11-08 学校 + 2026-11-14 公共机构扩面 + 2026-11-14 政采买家出局
+        # （用户拍板）——不进"先打给谁"（数据保留可查，见 vertical.is_non_buyer）
+        if is_non_buyer(ent.industry_key, ent.name, ent.source):
             continue
 
         # SPEC-CH CH3：产品线过滤——行业不在该产品应用面则跳过

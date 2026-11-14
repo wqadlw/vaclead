@@ -714,8 +714,9 @@ def gongshang_lookup_export(
     from ..vertical import is_non_buyer
 
     for e in ents:
-        # 2026-11-08 学校 + 2026-11-14 公共机构扩面用户拍板——配额不花在非客户身上
-        if is_non_buyer(e.industry_key, e.name):
+        # 2026-11-08 学校 + 2026-11-14 公共机构扩面 + 2026-11-14 政采买家出局
+        # 用户拍板——配额不花在非客户身上
+        if is_non_buyer(e.industry_key, e.name, e.source):
             continue
         missing = []
         if not e.uscc:

@@ -495,7 +495,11 @@ def _intel_exclusions(session: Session):
     用户定稿不做的生意）。与 vertical.is_non_buyer 同语义。"""
     from sqlalchemy import and_, or_
 
-    from ..vertical import NON_BUYER_INDUSTRIES, PUB_INSTITUTION_NAME_WORDS
+    from ..vertical import (
+        NON_BUYER_INDUSTRIES,
+        NON_CUSTOMER_SOURCES,
+        PUB_INSTITUTION_NAME_WORDS,
+    )
 
     ids = {
         row[0]
@@ -503,6 +507,8 @@ def _intel_exclusions(session: Session):
             or_(
                 Enterprise.industry_key == "research_edu",
                 Enterprise.industry_key == "medical_health",
+                # 2026-11-14 政采买家出局（用户拍板）——*_buyer 建档源
+                Enterprise.source.in_(NON_CUSTOMER_SOURCES),
             )
         )
     }

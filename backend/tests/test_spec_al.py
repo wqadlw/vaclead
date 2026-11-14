@@ -155,6 +155,36 @@ def test_recommend_excludes_public_sector():
         assert gov.id not in ids, "未分类但名称为公共机构形态（检验所）应被兜底排除"
 
 
+def test_recommend_excludes_procurement_buyers():
+    """2026-11-14 用户拍板："我们不做政采买家"——*_buyer 建档源（机关/
+    事业单位/学校/医院主体）整体出局推荐面；同企业改民用源后应进。"""
+    from app.recommend import score_candidates
+
+    with SessionLocal() as s:
+        buyer = _seed_ent(s, "青岛大学分析测试中心", industry="lab_instrument", intent=90)
+        buyer.source = "ggzy_buyer"
+        _seed_phone(s, buyer.id, "0532-20202020")
+        # 同名同行业但民用源（对照组：证明排除按 source 而非名称/行业）
+        twin = _seed_ent(s, "青岛同力真空装备有限公司", industry="coating", intent=90)
+        twin.source = "ggzy_buyer"
+        _seed_phone(s, twin.id, "0532-20202021")
+        normal = _seed_ent(s, "青岛恒锐真空技术有限公司", industry="coating", intent=90)
+        _seed_phone(s, normal.id, "0532-20202022")
+        s.commit()
+
+        recs = score_candidates(s, limit=50)
+        ids = {r["ent_id"] for r in recs}
+        assert buyer.id not in ids, "政采买家建档源（*_buyer）应被排除"
+        assert twin.id not in ids, "同企业民用行业但买家建档源仍应排除（按 source 判定）"
+        assert normal.id in ids, "民用源同行业企业应保留"
+
+        # is_non_buyer 直测（三参形态）
+        from app.vertical import is_non_buyer
+        assert is_non_buyer(None, None, "ccgp_buyer")
+        assert is_non_buyer("coating", "某公司", "sdgp_buyer")
+        assert not is_non_buyer("coating", "某公司", "poi")
+
+
 def test_recommend_endpoint(client, admin_headers):
     d = client.get("/api/recommendations", params={"limit": 5}, headers=admin_headers).json()
     assert isinstance(d["items"], list)
