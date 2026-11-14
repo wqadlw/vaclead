@@ -362,7 +362,7 @@ def test_sdgp_registry_completeness():
     assert d is not None, "sdgp 必须注册进 SOURCES"
     assert d.label_cn == "山东政采" and d.category == "tender"
     assert d.aliases == ("sdgp_buyer",)
-    assert d.sla_job == "sdgp" and d.sla_label == "山东政采采集" and d.sla_hours == 26
+    assert d.sla_job == "sdgp" and d.sla_label == "山东政采采集" and d.sla_hours == 14  # 双时段后最大间隔 ~12h
     assert channel_variants("sdgp") == ("sdgp", "sdgp_buyer")
     assert source_label("sdgp_buyer") == "山东政采买家"  # ALIAS_LABELS 独立展示名
 
@@ -383,7 +383,7 @@ def test_sdgp_dashboard_rows(client, admin_headers):
         r = client.get("/api/quality/freshness", headers=admin_headers)
         assert r.status_code == 200
         row = next(x for x in r.json()["items"] if x["job"] == "sdgp")
-        assert row["label"] == "山东政采采集" and row["sla_hours"] == 26
+        assert row["label"] == "山东政采采集" and row["sla_hours"] == 14
 
         r2 = client.get("/api/data/overview", headers=admin_headers)
         assert r2.status_code == 200

@@ -388,7 +388,9 @@ async def lifespan(app: FastAPI):
             return run_sdgp_scan(max_pages=3)
 
         # SPEC-SDGP：山东政采分网直采（昊志本省+ccgp 冗余备份；05:40 错峰于四省后）
-        _register_cron("sdgp", _sdgp_sweep, 5, 40)
+        # 2026-11-14 夜：每日 05:40+12:40 双时段——WAF 解封恢复机会翻倍；被封时
+        # 每轮仅 1-3 请求即熔断，成本低。单任务名双触发，看门狗/水印不变。
+        _register_cron("sdgp", _sdgp_sweep, "5,12", 40)
 
         def _contract_renewals_sweep() -> dict:
             from .api.contracts import check_contract_renewals

@@ -48,7 +48,7 @@ SOURCES: dict[str, SourceDef] = {
                              "&page_index=1&bidSort=0&pinMu=0&bidType=0"
                              "&dbselect=bidx&kw={keyword}&timeType=6"),
         SourceDef("sdgp", "山东政采", "tender", aliases=("sdgp_buyer",),
-                  sla_job="sdgp", sla_label="山东政采采集", sla_hours=26,
+                  sla_job="sdgp", sla_label="山东政采采集", sla_hours=14,
                   search_url="https://www.ccgp-shandong.gov.cn/search"
                              "?title={keyword}&colCode=0301&area=370000"),
         SourceDef("tender", "招标导入", "tender",
