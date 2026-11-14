@@ -38,10 +38,15 @@ sdgp（aliases sdgp_buyer，SLA 26h）+ cron 05:40 错峰 + 看门狗 stub 同�
 1-24h，05:40 cron 自然完成首轮；语义正确性由 11 个离线测试覆盖
 （MockTransport 四路+幂等二跑+山东建档断言）。
 
-**门禁**：457 全绿（446+11）+ build ✓。**下轮候选**：chinabidding.cn
-（全国聚合·企业自主采购语义，真域名/.cn，Nuxt SSR，搜索路径待解码）；
-山东 getNoticeBody 详情（解锁中标方+联系方式）；ccgp 分省镜像复制
-（山东模式验证后）。
+**门禁**：457 全绿（446+11）+ build ✓。**补刀（同日）**：sdgp 手动通道
+闭环——POST /tasks/sdgp-scan（admin spawn 同款 worker）+ tasks 页
+「山东政采分网·公告（本省直采）」通道（内置宽词表提示，关键词选择
+自动隐藏）；实弹自证：任务端到端 done，黑名单下 collector_health
+熔断自证（blocked:true 域级冷却不硬撞）——解封后手动/05:40 cron
+双通道就绪。**下轮候选**：chinabidding.cn（全国聚合·企业自主采购
+语义，真域名/.cn，Nuxt SSR，搜索路径待解码；WAF 405 拦截页=浏览器
+指纹级防护，归 P2 浏览器池范畴）；山东 getNoticeBody 详情（解锁中标
+方+联系方式）；ccgp 分省镜像复制（山东模式验证后）。
 
 ## 2026-11-14 · 闭环走查轮：销售一日流全链路实测（15/15）+ 三处真 bug
 
