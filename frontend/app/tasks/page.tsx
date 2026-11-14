@@ -8,7 +8,7 @@ import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
 import { INDUSTRY_OPTIONS, POI_CITIES } from "@/lib/constants";
 
-type Channel = "ggzy" | "ccgp";
+type Channel = "ggzy" | "ccgp" | "sdgp";
 
 const DONE_LABELS: Record<string, string> = {
   entities: "主体",
@@ -322,28 +322,30 @@ export default function TasksPage() {
   };
 
   const startOfficial = async () => {
-    if (terms.length === 0) {
+    if (channel !== "sdgp" && terms.length === 0) {
       Toast.warning("请至少选择一个设备关键词");
       return;
     }
     setStarting(true);
     setProgress(0);
-    setLogs([`${channel === "ggzy" ? "官方中标数据" : "政采网公告"}采集任务提交中…`]);
+    setLogs([channel === "sdgp" ? "山东政采采集任务提交中…" : `${channel === "ggzy" ? "官方中标数据" : "政采网公告"}采集任务提交中…`]);
     setTaskResults(null); // SPEC-MULTI S3：新任务开始，清掉上一轮结果预览
     try {
-      const res =
+      const res: { task_id: string; keywords?: string[] } =
         channel === "ggzy"
-          ? await api.post<{ task_id: string; keywords: string[] }>("/api/tasks/ggzy-harvest", {
+          ? await api.post("/api/tasks/ggzy-harvest", {
               keywords: terms,
               max_pages: maxPages,
               pull_bid_details: true,
             })
-          : await api.post<{ task_id: string; keywords: string[] }>("/api/tasks/ccgp-scan", {
-              keywords: terms,
-              days: scanDays,
-              max_pages: maxPages,
-            });
-      Toast.success(`任务已启动（${res.keywords?.length ?? terms.length} 个关键词）`);
+          : channel === "sdgp"
+            ? await api.post("/api/tasks/sdgp-scan", { max_pages: maxPages })
+            : await api.post("/api/tasks/ccgp-scan", {
+                keywords: terms,
+                days: scanDays,
+                max_pages: maxPages,
+              });
+      Toast.success(channel === "sdgp" ? "任务已启动（内置山东政采宽词表）" : `任务已启动（${res.keywords?.length ?? terms.length} 个关键词）`);
       subscribeTask(res.task_id);
     } catch (e) {
       Toast.error(e instanceof Error ? e.message : "启动失败");
@@ -353,7 +355,7 @@ export default function TasksPage() {
 
   const switchChannel = (c: Channel) => {
     setChannel(c);
-    setTerms(c === "ggzy" ? ["真空"] : ["真空设备"]);
+    setTerms(c === "ggzy" ? ["真空"] : c === "sdgp" ? [] : ["真空设备"]);
   };
 
   const TARGET_FIELDS = [
@@ -695,18 +697,25 @@ export default function TasksPage() {
                 optionList={[
                   { value: "ggzy", label: "全国公共资源交易·中标数据" },
                   { value: "ccgp", label: "中国政府采购网·公告" },
+                  { value: "sdgp", label: "山东政采分网·公告（本省直采）" },
                 ]}
               />
-              <Select
-                style={{ flex: 1, minWidth: 220 }}
-                placeholder="设备关键词（可多选）"
-                multiple
-                filter
-                maxTagCount={3}
-                optionList={termOptions}
-                value={terms}
-                onChange={(v) => setTerms(v as string[])}
-              />
+              {channel === "sdgp" ? (
+                <div className="flex-1 text-[12.5px] leading-8 text-[var(--muted)]">
+                  使用内置品类宽词表，自动检索山东全省采购公告与结果公告（昊志本省直采）
+                </div>
+              ) : (
+                <Select
+                  style={{ flex: 1, minWidth: 220 }}
+                  placeholder="设备关键词（可多选）"
+                  multiple
+                  filter
+                  maxTagCount={3}
+                  optionList={termOptions}
+                  value={terms}
+                  onChange={(v) => setTerms(v as string[])}
+                />
+              )}
             </div>
             <div className="flex gap-3 items-center mt-3">
               {channel === "ccgp" && (

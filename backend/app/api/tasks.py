@@ -683,6 +683,39 @@ def task_results(
     }
 
 
+class SdgpScanIn(BaseModel):
+    """山东政采分网手动触发（SPEC-SDGP；词表内置 ggzy_name_terms 宽词）。"""
+
+    max_pages: int = 3  # 每词每栏目分页上限
+
+
+@router.post("/tasks/sdgp-scan")
+def start_sdgp_scan(
+    body: SdgpScanIn,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """山东政采直采手动任务（cron 05:40 同款逻辑；解封后可立即手动采集）。"""
+    from ..jobs import run_sdgp_scan
+    from ..sources import any_source_disabled
+
+    if any_source_disabled("sdgp"):
+        raise HTTPException(422, "山东政采来源已停用（设置页→数据源）")
+    max_pages = max(1, min(int(body.max_pages or 3), 10))
+
+    task_id = uuid.uuid4().hex[:12]
+    session.add(TaskCheckpoint(task_id=task_id, kind="sdgp", status="running", progress=0))
+    session.commit()
+
+    def _worker() -> dict:
+        return run_sdgp_scan(max_pages=max_pages)
+
+    from .task_runtime import spawn
+
+    spawn(task_id, _worker, label="sdgp-scan")
+    return {"task_id": task_id}
+
+
 class CcgpScanIn(BaseModel):
     """政采网公告扫描（search.ccgp.gov.cn/bxsearch，普通 HTTP）。"""
     keywords: list[str] | None = None  # 缺省用设备强词表
