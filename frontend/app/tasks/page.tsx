@@ -132,6 +132,8 @@ export default function TasksPage() {
   const [ccgpOptions, setCcgpOptions] = useState<{ value: string; label: string }[]>([]);
   const [scanDays, setScanDays] = useState<number>(365);
   const [maxPages, setMaxPages] = useState<number>(2);
+  // SPEC-DEEPLINK：官网直查深链（采集受限时的替代动线）
+  const [outlinks, setOutlinks] = useState<{ key: string; label: string; url: string }[]>([]);
   // 粘贴导入两步向导（twenty MatchColumnsStep 模式）：粘贴→映射确认→导入
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -181,6 +183,17 @@ export default function TasksPage() {
   } | null>(null);
   const esRef = useRef<EventSource | null>(null);
   const router = useRouter();
+
+  // SPEC-DEEPLINK：官网直查深链——关键词取第一个已选词（缺省真空），随词变化刷新
+  const kw0 = terms[0] || "真空";
+  useEffect(() => {
+    api
+      .get<{ items?: { key: string; label: string; url: string }[] }>(
+        `/api/outlinks/collect?keyword=${encodeURIComponent(kw0)}`,
+      )
+      .then((d) => setOutlinks(Array.isArray(d?.items) ? d.items : []))
+      .catch(() => setOutlinks([]));
+  }, [kw0]);
 
   useEffect(() => {
     api
@@ -756,9 +769,29 @@ export default function TasksPage() {
             <p className="text-slate-400 text-[12px] leading-5 mt-3.5">
               {channel === "ggzy"
                 ? "直连国家信息中心数据服务（data.ggzy.gov.cn）：中标方与采购人双向建档，成交价与项目名自动生成证据句。限速 1.5s/请求。"
-                : "直连中国政府采购网（ccgp.gov.cn）：公告自带采购人，自动归到买家主体；中标公告同时抽取供应商。限速 3-6s/请求。"}
+                : channel === "sdgp"
+                  ? "直连山东政府采购分网（本省直采）：采购公告与结果公告双栏目，采购人自动建档（山东省确定性）。来源受限时用下方官网直查。"
+                  : "直连中国政府采购网（ccgp.gov.cn）：公告自带采购人，自动归到买家主体；中标公告同时抽取供应商。限速 3-6s/请求。"}
               采购人是真买家——优先「转线索」。
             </p>
+            {/* SPEC-DEEPLINK：官网直查——采集受限（WAF/冷却/验证码）时的替代动线，
+                用户定调"采不进来就跳出去"：带着关键词一键直达官网搜索页 */}
+            {outlinks.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-[var(--rule)] pt-2.5">
+                <span className="text-[12px] text-[var(--muted)]">来源受限？官网直查：</span>
+                {outlinks.map((o) => (
+                  <a
+                    key={o.key}
+                    href={o.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-md border border-[var(--border)] px-2 py-0.5 text-[12px] text-[var(--accent)] transition-colors hover:border-[var(--accent)]"
+                  >
+                    {o.label} ↗
+                  </a>
+                ))}
+              </div>
+            )}
           </Card>
 
           <Card

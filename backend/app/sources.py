@@ -28,6 +28,10 @@ class SourceDef:
     sla_label: str | None = None      # 仪表盘展示名（缺省用 label_cn）
     sla_hours: float | None = None    # 预期间隔上限（小时）
     cron_desc: str = ""               # 定时巡采说明（设置页展示）
+    # 导航层深链模板（SPEC-DEEPLINK，用户定调"采不进来就跳出去"）：
+    # 官网搜索页 URL，{keyword} 占位符 urlencode 后替换；空=无深链。
+    # 采集受限（WAF/冷却/验证码）时的标准替代动线——一键直达官网搜索。
+    search_url: str = ""
 
 
 #: 唯一注册表：所有来源必须在此登记（顺序即展示顺序的次序键，ggzy 在前
@@ -36,11 +40,17 @@ SOURCES: dict[str, SourceDef] = {
     d.key: d
     for d in (
         SourceDef("ggzy", "公共资源交易", "tender", aliases=("ggzy_buyer",),
-                  sla_job="hourly_tender", sla_label="政采抓取", sla_hours=2),
+                  sla_job="hourly_tender", sla_label="政采抓取", sla_hours=2,
+                  search_url="https://data.ggzy.gov.cn/#/yjcx"),
         SourceDef("ccgp", "政采网公告", "tender", aliases=("ccgp_buyer",),
-                  sla_job="hourly_tender", sla_hours=2),
+                  sla_job="hourly_tender", sla_hours=2,
+                  search_url="http://search.ccgp.gov.cn/bxsearch?searchtype=1"
+                             "&page_index=1&bidSort=0&pinMu=0&bidType=0"
+                             "&dbselect=bidx&kw={keyword}&timeType=6"),
         SourceDef("sdgp", "山东政采", "tender", aliases=("sdgp_buyer",),
-                  sla_job="sdgp", sla_label="山东政采采集", sla_hours=26),
+                  sla_job="sdgp", sla_label="山东政采采集", sla_hours=26,
+                  search_url="https://www.ccgp-shandong.gov.cn/search"
+                             "?title={keyword}&colCode=0301&area=370000"),
         SourceDef("tender", "招标导入", "tender",
                   sla_job="hourly_tender", sla_hours=2),
         SourceDef("poi", "高德 POI 采集", "poi"),

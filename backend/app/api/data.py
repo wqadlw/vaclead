@@ -267,3 +267,28 @@ def toggle_source(
     row.value = _json.dumps(sorted(disabled), ensure_ascii=False)
     session.commit()
     return {"key": key, "enabled": key not in disabled, "disabled": sorted(disabled)}
+
+
+@router.get("/outlinks/collect")
+def collect_outlinks(
+    keyword: str = "真空",
+    user: User = Depends(current_user),
+):
+    """采集源官网直查深链（SPEC-DEEPLINK，用户定调"采不进来就跳出去"）。
+
+    采集受限（WAF 黑名单/冷却/验证码）时的标准替代动线：带着关键词一键
+    直达官网搜索页。模板在注册表 SourceDef.search_url（单点维护），关键字
+    urlencode 后替换 {keyword}；未配置模板的源不返回。"""
+    from urllib.parse import quote
+
+    kw = (keyword or "").strip() or "真空"
+    items = []
+    for d in SOURCES.values():
+        if not d.search_url:
+            continue
+        items.append({
+            "key": d.key,
+            "label": d.label_cn,
+            "url": d.search_url.replace("{keyword}", quote(kw, safe="")),
+        })
+    return {"keyword": kw, "items": items}

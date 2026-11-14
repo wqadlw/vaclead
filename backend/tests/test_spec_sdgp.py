@@ -393,3 +393,33 @@ def test_sdgp_dashboard_rows(client, admin_headers):
         with SessionLocal() as s:
             s.query(Enterprise).filter(Enterprise.id == ent_id).delete()
             s.commit()
+
+
+def test_outlinks_collect(client, admin_headers):
+    """SPEC-DEEPLINK 官网直查深链（用户定调"采不进来就跳出去"）：
+    注册表 search_url 模板 → keyword urlencode 替换；未配置模板的源不返回。"""
+    from urllib.parse import quote
+
+    r = client.get("/api/outlinks/collect", params={"keyword": "真空镀膜"}, headers=admin_headers)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["keyword"] == "真空镀膜"
+    by_key = {x["key"]: x for x in d["items"]}
+    # 三个已配模板的源全部出现
+    assert {"ggzy", "ccgp", "sdgp"} <= set(by_key)
+    # sdgp：title 参数带 urlencode 关键词 + 栏目/区域固定
+    assert by_key["sdgp"]["label"] == "山东政采"
+    assert (
+        "https://www.ccgp-shandong.gov.cn/search?title="
+        + quote("真空镀膜", safe="")
+        + "&colCode=0301&area=370000"
+    ) == by_key["sdgp"]["url"]
+    # ccgp：kw 参数带 urlencode 关键词
+    assert "kw=" + quote("真空镀膜", safe="") in by_key["ccgp"]["url"]
+    # 未配置模板的源（poi/proposal_*）不出现
+    assert "poi" not in by_key and "proposal_gd" not in by_key
+    # 空关键词回退缺省
+    r2 = client.get("/api/outlinks/collect", headers=admin_headers)
+    assert r2.status_code == 200 and r2.json()["keyword"] == "真空"
+    # 未登录 401
+    assert client.get("/api/outlinks/collect").status_code == 401
