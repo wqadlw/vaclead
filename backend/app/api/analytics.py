@@ -75,6 +75,12 @@ def dashboard_summary(
             - _count(Contact, Contact.created_at, d14, d7),
         },
     }
+    # 2026-11-14 数据质量轮：存量池（企业/信号/联系人）的 delta 曾用"近7天新增-上7天新增"
+    # 的流量环比——demo 每日重置下出现 ↓26,943 这类巨跌徽章（第一眼杀）。
+    # 存量指标停用环比徽章（DeltaBadge 0 值不渲染）；增长趋势看 30 天信号趋势图。
+    kpis["enterprises"]["delta"] = 0
+    kpis["signals"]["delta"] = 0
+    kpis["contacts"]["delta"] = 0
 
     # ---- 30 天信号趋势（按创建日计数）----
     trend_rows = (

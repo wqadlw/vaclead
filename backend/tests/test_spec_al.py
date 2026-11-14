@@ -104,6 +104,33 @@ def test_recommend_scoring_and_reasons():
         assert ids[a.id]["phone"] == "0512-66668888"
 
 
+def test_recommend_shared_phone_demoted():
+    """2026-11-14 数据质量轮：号码挂 ≥3 家企业（总机/物业号）→ -15 分，
+    纯"电话+未在管"基线候选（45 分）被推出阈值；独立号码候选不受影响。"""
+    from app.recommend import score_candidates
+
+    with SessionLocal() as s:
+        shared = "0512-77777777"
+        a = _seed_ent(s, "苏州共享号甲镀膜有限公司")
+        _seed_phone(s, a.id, shared)
+        b = _seed_ent(s, "苏州共享号乙镀膜有限公司")
+        _seed_phone(s, b.id, shared)
+        c = _seed_ent(s, "苏州共享号丙镀膜有限公司")
+        _seed_phone(s, c.id, shared)
+        d = _seed_ent(s, "苏州独立号镀膜有限公司")
+        _seed_phone(s, d.id, "0512-88889999")
+        s.commit()
+
+        recs = score_candidates(s, limit=50)
+        ids = {r["ent_id"] for r in recs}
+        assert a.id not in ids and b.id not in ids and c.id not in ids, (
+            "共享号码候选应被降权出榜"
+        )
+        assert d.id in ids, "独立号码候选不受影响"
+        rec_d = next(r for r in recs if r["ent_id"] == d.id)
+        assert rec_d["phone"] == "0512-88889999"
+
+
 def test_recommend_endpoint(client, admin_headers):
     d = client.get("/api/recommendations", params={"limit": 5}, headers=admin_headers).json()
     assert isinstance(d["items"], list)

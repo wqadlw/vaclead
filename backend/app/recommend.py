@@ -70,6 +70,8 @@ def score_candidates(session: Session, limit: int = 50, product: str | None = No
     打分：电话+30 / 近30天信号+25 / 意图×0.2 / tier 加成 /
     未在管+15 / 近90天 proposal+15；阈值 45 起推。
     product（SPEC-CH CH3）：产品名过滤——只推应用面覆盖的行业候选。
+    共享号码降权（2026-11-14 数据质量轮）：号码挂 ≥3 家企业（物业总机/采集误挂）
+    → -15 分并给理由——"可拨"前提不可信的候选不配占榜。
     """
     ent_rows = session.execute(
         select(Enterprise, Contact.id, Contact.call_result)
@@ -129,6 +131,27 @@ def score_candidates(session: Session, limit: int = 50, product: str | None = No
         )
     ):
         call_states.setdefault(eid, []).append(result)
+
+    # 电话地图 + 共享号码集（2026-11-14 数据质量轮）——一遍联系人扫描出两样：
+    # phone_map：企业首个带号联系人的号码（title 数字槽位兜底）
+    # shared_phones：挂 ≥3 家企业的号码（总机/物业/采集误挂）
+    from .phones import load_phones
+
+    phone_map: dict[int, str | None] = {}
+    nums_ents: dict[str, set[int]] = {}
+    for eid, pjson, title in session.execute(
+        select(Contact.enterprise_id, Contact.phones_json, Contact.title).where(
+            Contact.phones_json != "[]"
+        )
+    ):
+        nums = load_phones(pjson)
+        for num in nums:
+            nums_ents.setdefault(num, set()).add(eid)
+        if eid not in phone_map:
+            if not nums and title:
+                nums = [t for t in (title.strip(),) if any(ch.isdigit() for ch in title)]
+            phone_map[eid] = nums[0] if nums else None
+    shared_phones = {n for n, es in nums_ents.items() if len(es) >= 3}
 
     out: list[dict] = []
     seen_ent: set[int] = set()
@@ -202,6 +225,12 @@ def score_candidates(session: Session, limit: int = 50, product: str | None = No
             score += 8
             reasons.append(f"工艺适配：{match} 适配其「{ent.industry_name}」工序")
 
+        # 共享号码降权（2026-11-14 数据质量轮）：号码挂 ≥3 家 → 可拨前提不可信
+        phone = phone_map.get(ent.id)
+        if phone is not None and phone in shared_phones:
+            score -= 15
+            reasons.append("号码被多家企业共用（总机/物业号），触达价值存疑")
+
         if score < 45:
             continue
 
@@ -215,23 +244,8 @@ def score_candidates(session: Session, limit: int = 50, product: str | None = No
             # SPEC-AW AW1：触达快标（企业级聚合态 + 主联系人 id）
             "call_state": _agg_call_state(states),
             "contact_id": primary_contact.get(ent.id),
+            "phone": phone,
         })
 
     out.sort(key=lambda x: (-x["score"], x["ent_id"]))  # 同分按 id 稳定序
-    out = out[:limit]
-
-    # 补电话（Top N 的 phones_json 首号）——or_ 链等值查询（本会话 .in_ 被锚定）
-    if out:
-        from .phones import load_phones
-
-        id_or = or_(*[Contact.enterprise_id == x["ent_id"] for x in out])
-        for eid, pjson, title in session.execute(
-            select(Contact.enterprise_id, Contact.phones_json, Contact.title).where(id_or)
-        ):
-            phones = load_phones(pjson)
-            if not phones and title:
-                phones = [t for t in (title.strip(),) if any(ch.isdigit() for ch in title)]
-            for x in out:
-                if x["ent_id"] == eid and "phone" not in x:
-                    x["phone"] = phones[0] if phones else None
-    return out
+    return out[:limit]

@@ -92,7 +92,10 @@ function xhr(
               ? parsedBody.detail
               : JSON.stringify(parsedBody.detail ?? parsedBody);
         } catch {
-          /* ignore */
+          // 非 JSON 响应体（如演示环境 nginx 拦截页）——给人话而不是裸状态码
+          if (req.status === 403) {
+            detail = "当前环境未开放此功能（演示版拦截了写操作）";
+          }
         }
         reject(new ApiError(req.status, detail));
       }

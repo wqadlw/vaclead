@@ -1571,15 +1571,18 @@ def bulk_cleanup(
     """POI 噪音批量软删（SPEC-AM 回收站能力 + SPEC-AN AN4）。
 
     patterns：名称子串列表（苑/家园/小区/便利店…）；dry_run=1 只预览计数。
+    exclude（2026-11-14 数据质量轮）：排除子串列表——如 pattern"体检"会误伤
+    "半导体检测"，exclude=["体检测"] 护住真买家（词表校准闭环第四次实战）。
     """
     patterns = [str(p).strip() for p in (body.get("patterns") or []) if str(p).strip()]
+    excludes = [str(x).strip() for x in (body.get("exclude") or []) if str(x).strip()]
     dry_run = int(body.get("dry_run") or 0)
     if not patterns:
         raise HTTPException(422, "patterns 不能为空")
     matched = []
     rows = session.scalars(select(Enterprise)).all()
     for e in rows:
-        if any(p in e.name for p in patterns):
+        if any(p in e.name for p in patterns) and not any(x in e.name for x in excludes):
             matched.append(e)
     if dry_run:
         return {"matched": len(matched), "dry_run": True,

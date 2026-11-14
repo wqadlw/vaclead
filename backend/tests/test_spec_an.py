@@ -143,3 +143,28 @@ def test_bulk_cleanup_dry_run_and_execute(client, admin_headers):
     # 列表隐藏（全局过滤器）
     d3 = client.get("/api/enterprises", params={"q": "锦苑"}, headers=admin_headers).json()
     assert not any("锦苑" in it["name"] for it in d3["items"])
+
+
+def test_bulk_cleanup_exclude_protects_false_positives(client, admin_headers):
+    """2026-11-14 数据质量轮："体检"会子串误伤"半导体检测"（真买家）——
+    exclude 参数必须把含排除词的名称护住。"""
+    with SessionLocal() as s:
+        for n in ("合肥盛源半导体检测有限公司", "无锡爱康体检中心", "无锡城东卫生院"):
+            s.add(Enterprise(name=n, source="poi", city="苏州"))
+        s.commit()
+    d = client.post("/api/enterprises/bulk-cleanup",
+                    json={"patterns": ["体检", "卫生院"], "exclude": ["体检测"],
+                          "dry_run": 1},
+                    headers=admin_headers).json()
+    assert d["dry_run"] is True and d["matched"] == 2
+    assert all("半导体" not in x for x in d["samples"]), "半导体检测必须被 exclude 护住"
+    d2 = client.post("/api/enterprises/bulk-cleanup",
+                     json={"patterns": ["体检", "卫生院"], "exclude": ["体检测"]},
+                     headers=admin_headers).json()
+    assert d2["deleted"] == 2
+    with SessionLocal() as s:
+        alive = s.query(Enterprise).filter(
+            Enterprise.name == "合肥盛源半导体检测有限公司",
+            Enterprise.deleted_at.is_(None),
+        ).count()
+        assert alive == 1, "半导体检测公司必须仍然在库"

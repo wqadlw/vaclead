@@ -692,7 +692,7 @@ export default function DashboardPage() {
                         className="cursor-pointer rounded border border-[var(--border)] bg-white px-2.5 py-1.5 text-[12.5px] md:px-1.5 md:py-0.5 md:text-[11px] text-[var(--ink)] hover:border-[var(--accent)]"
                         onClick={async (ev) => {
                           ev.preventDefault();
-                          await markRec(r.ent_id, "interested");
+                          await markRec(r.ent_id, "connected");
                         }}
                       >接通</button>
                       <button
@@ -719,7 +719,7 @@ export default function DashboardPage() {
                       {CALL_STATE_CN[r.call_state ?? "pending"]?.label ?? "未拨"}
                     </Tag>
                   )}
-                  <Button size="small" theme="outline" onClick={() => void convertRec(r.ent_id)}>
+                  <Button size="small" theme="outline" onClick={(ev) => { ev.preventDefault(); void convertRec(r.ent_id); }}>
                     转线索
                   </Button>
                 </div>

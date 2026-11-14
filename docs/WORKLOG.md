@@ -3860,3 +3860,16 @@ FIELD:root.items[0].title）——**API 拦截定位数据字段比源码推断�
 px-4 sm:px-6。**审计工具链**：hover 依赖审计（390px 全页 opacity
 扫描——0 项真隐藏，控件可见性健康）；390px 详情页 scrollWidth 390
 达标+截图复验。**门禁**：build + E2E 12 全绿。
+
+## 2026-11-14 · 玩具感诊断修复轮（写路径六修，本会话）
+
+用户"还是很像玩具，完全不像生产力工具"→ 全站调研（analysis/toy_audit/REPORT.md：真库审计+13 页走查+源码逐行+数据抽样）→ 用户"你来负责"→ 六项修复落地：
+
+1. **接通→interested 语义错位**（frontend/app/page.tsx）：工作台快标"接通"曾写 interested——漏斗 interest_rate 失真；改 connected。浏览器实走验证：卡显"已接通"绿标、分数不再 +25。
+2. **首屏转线索无效**（frontend/app/page.tsx）：按钮嵌卡片 <a> 缺 preventDefault→导航抢跑、转化请求中止（API 复核线索数不变）；补 preventDefault。实走验证：Toast"已转线索并建首联待办"+ 线索总数 49→50（验证写入已回滚清退）。
+3. **demo 403 人话提示**（frontend/lib/api.ts）：非 JSON 403（nginx 拦截页）→"当前环境未开放此功能（演示版拦截了写操作）"，替换裸"HTTP 403"。
+4. **KPI 存量环比徽章停用**（backend/app/api/analytics.py）：存量池（企业/信号/联系人）的 delta 曾=近7天新增-上7天新增的流量环比，demo 每日重置下出现 ↓26,943 巨跌徽章（第一眼杀）；存量 delta 归零（DeltaBadge 0 值不渲染），趋势看 30 天信号图。
+5. **共享号码降权**（backend/app/recommend.py）：号码挂 ≥3 家企业（物业总机/采集误挂，实测 025-83502829 挂 50 家）→ -15 分+理由；顺带重构电话补全为一遍联系人扫描（phone_map），去掉 TopN 二次 or_ 查询。单测 test_recommend_shared_phone_demoted。
+6. **POI 噪音批量清理**（backend/app/api/enterprises.py bulk-cleanup 新增 exclude 参数 + test_bulk_cleanup_exclude_protects_false_positives）：词表校准闭环第四次实战——27 噪音词三组（钟表零售/基层医疗/机动车检测）+4 排除词（"体检测"护住"半导体检测"真买家；康复设备/器械；汽车检测设备），SQL 预览+边界误伤逐一验证后真库软删 5,230 家（27,450→22,220；走回收站可恢复）。
+
+**门禁**：后端 445 全绿（443+2 新增）+ 前端 build 成功 + 本地单进程浏览器实走六修验证。**真库改动**：软删 5,230（回收站可恢复）；调研验证写（1 标+1 线索）已回滚。**未修（报告 A 组余项）**：垃圾企业名入库拦截、医院/公共机构推荐降权（等用户拍板）、demo 前端重部署（远端 out/ 仍是旧版）。
