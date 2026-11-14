@@ -39,6 +39,8 @@ SOURCES: dict[str, SourceDef] = {
                   sla_job="hourly_tender", sla_label="政采抓取", sla_hours=2),
         SourceDef("ccgp", "政采网公告", "tender", aliases=("ccgp_buyer",),
                   sla_job="hourly_tender", sla_hours=2),
+        SourceDef("sdgp", "山东政采", "tender", aliases=("sdgp_buyer",),
+                  sla_job="sdgp", sla_label="山东政采采集", sla_hours=26),
         SourceDef("tender", "招标导入", "tender",
                   sla_job="hourly_tender", sla_hours=2),
         SourceDef("poi", "高德 POI 采集", "poi"),
@@ -63,6 +65,7 @@ SOURCES: dict[str, SourceDef] = {
 ALIAS_LABELS: dict[str, str] = {
     "ggzy_buyer": "公采买家",
     "ccgp_buyer": "政采买家",
+    "sdgp_buyer": "山东政采买家",
 }
 
 

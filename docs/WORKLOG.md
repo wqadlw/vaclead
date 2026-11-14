@@ -4,6 +4,45 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-14 · SPEC-SDGP 山东政采分网直采（新采集源，用户定调"采集源是基石"）
+
+**背景**：上轮结论"免费合规弹药打光"被用户推翻——重审发现被低估的
+一块：**政采分省镜像**（同语义+抗单源冷却+本省直采更快更全）。
+
+**破译过程（金子级方法论沉淀）**：
+1. 老图谱（ZhaoBiaoSpider 2019 代）端点全死（JSP/was5/旧 do 全部 404/502
+   ——政府站 5 年内普遍重建）
+2. **shell 代理毒测**：第一轮探测全 502 是 httpx trust_env 吃了 Clash
+   代理（记忆坑第 N 次应验，采集器惯例 trust_env=False 的原因就在此）
+3. 山东政采重建为 Vue3 SPA → **bundle 逆推三步**：首页 script 清单 →
+   index chunk grep `/api/website/` → GlobleSearch chunk 拿参数对象
+   ——找到 `:8087/api/website/site/getListByCode`（POST JSON，
+   colCode/area/currentPage/pageSize/homePage/mergeType/title）
+4. **栏目图谱**（codeList chunk）：0301 采购公告/0302 结果公告/0305 更正/
+   0306 终止/2502 合同；title=服务端关键词过滤**无验证码**（searchAllByCode
+   有 captcha 门，弃用）；实弹 total：真空=32 采购+17 结果，样例=青岛大学
+   超高真空溅射仪/医科大真空冻干机（正中画像）
+5. getNoticeBody 详情接口请求方式未破解（POST 请求方式错误/GET 400/form
+   400）——v1 不做详情，列表语义已完整
+
+**实施**（单 Agent，前端 registry 派生零改动）：collectors/sdgp.py（严格
+7 参数 POST/trust_env=False/冷却短路/429 重试 4xx 快败）+ run_sdgp_scan
+（0301→tender+buyer sdgp_buyer 山东确定性+0302→tender_win 买方视角
+evidence 如实；无中标方不发明；apply_icp 建档即调）+ registry 注册
+sdgp（aliases sdgp_buyer，SLA 26h）+ cron 05:40 错峰 + 看门狗 stub 同步
+（test_spec_ar 7→8）。
+
+**实弹教训（花学费的）**：破译阶段 ~25 发探测触发山东 WAF **IP 黑名单**
+（blackIp_223.160.219.95）——实施轮冒烟第一请求即 400。**探针纪律与
+采集器纪律必须同级**：发现性探测也要 1.5s+ 间隔、预算封顶。解封通常
+1-24h，05:40 cron 自然完成首轮；语义正确性由 11 个离线测试覆盖
+（MockTransport 四路+幂等二跑+山东建档断言）。
+
+**门禁**：457 全绿（446+11）+ build ✓。**下轮候选**：chinabidding.cn
+（全国聚合·企业自主采购语义，真域名/.cn，Nuxt SSR，搜索路径待解码）；
+山东 getNoticeBody 详情（解锁中标方+联系方式）；ccgp 分省镜像复制
+（山东模式验证后）。
+
 ## 2026-11-14 · 闭环走查轮：销售一日流全链路实测（15/15）+ 三处真 bug
 
 **方法**：scripts/flow_walk.mjs 交互式走查（Playwright 真点不 API 直调）——

@@ -544,6 +544,108 @@ def run_proposal_zj_scan(max_pages: int = 1) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# SPEC-SDGP：山东政采分网直采（0301 采购公告 / 0302 结果公告）
+# ---------------------------------------------------------------------------
+def run_sdgp_scan(max_pages: int = 3) -> dict:
+    """山东政采分网直采扫描（SPEC-SDGP，每日 05:40 错峰）：昊志本省直采。
+
+    语义=政采（同 ccgp）：0301 采购公告 → 采购人自标题抽取
+    （extract_enterprise_name）建档（source=sdgp_buyer，省份=山东省
+    确定性映射只补空）+ tender 信号（base_score=30）；0302 结果公告 →
+    同样采购人沉淀 + tender_win 信号（base_score=60，evidence 如实标注
+    「（结果公告）」——买方视角语义=该买家此项目已成交=配套/后续窗口）。
+    本源无中标方名称（详情接口 getNoticeBody 未破解，v1 不做详情）——
+    同行打标不适用，不发明。apply_icp 建档即调（industry_key 空才调，
+    daily_incremental 同款）。
+
+    词表=vertical.ggzy_name_terms()（**项目名检索必须宽词**——BS 轮金子级
+    教训：细词召回≈0）；词表为空优雅跳过。查重=signal_exists 四元组
+    （ent+url=""+title+type；uq_signal_dedup 含 type 列）预查 + 唯一约束
+    兜底，幂等可重扫。单记录短事务（SQLite 单写者——写事务绝不跨 HTTP）。
+    """
+    from .api.imports import apply_icp, extract_enterprise_name
+    from .collectors.sdgp import COL_RESULT, COL_TENDER, normalize_notice, search_all
+    from .db import SessionLocal
+    from .normalize import resolve_enterprise
+    from .sources import any_source_disabled
+    from .vertical import ggzy_name_terms
+
+    if any_source_disabled("sdgp"):
+        return {"skipped_disabled": True}
+    stats: dict = {"notices": 0, "buyers": 0, "signals": 0, "no_buyer_skipped": 0}
+    keywords = ggzy_name_terms()
+    if not keywords:
+        logger.warning("sdgp：ggzy_name_terms 词表为空，本轮优雅跳过")
+        return stats
+    for col in (COL_TENDER, COL_RESULT):
+        sig_type = "tender" if col == COL_TENDER else "tender_win"
+        base_score = 30.0 if col == COL_TENDER else 60.0
+        for kw in keywords:
+            for raw in search_all(col, kw, max_pages=max_pages):
+                notice = normalize_notice(raw)
+                if notice is None:
+                    continue
+                stats["notices"] += 1
+                buyer = extract_enterprise_name(notice["title"], "")
+                if not buyer or len(buyer) < 4:
+                    # 抽不到采购人如实计数跳过，不发明归属（js/zj 同款）
+                    stats["no_buyer_skipped"] += 1
+                    continue
+                with SessionLocal() as s:
+                    ent, is_new = resolve_enterprise(s, buyer, source="sdgp_buyer")
+                    # SPEC-BP BP0 同款：通道→省份确定性映射，只补空不覆盖
+                    if not ent.province:
+                        ent.province = "山东省"
+                    if is_new:
+                        stats["buyers"] += 1
+                    # W40 同款：建档即分类（首轮漏接，AG 补齐）
+                    if ent.industry_key is None:
+                        apply_icp(ent)
+                    s.commit()  # 建档短事务先落：买手沉淀不因信号撞库丢失
+                    exists = (
+                        s.query(Signal)
+                        .filter(
+                            Signal.enterprise_id == ent.id,
+                            Signal.url == "",
+                            Signal.title == notice["title"],
+                            Signal.type == sig_type,
+                        )
+                        .first()
+                    )
+                    if exists is not None:
+                        continue
+                    evidence = (
+                        notice["title"]
+                        if col == COL_TENDER
+                        else f"{notice['title']}（结果公告）"
+                    )
+                    s.add(Signal(
+                        enterprise_id=ent.id,
+                        type=sig_type,
+                        title=notice["title"],
+                        url="",
+                        pub_date=notice["date"],
+                        matched_terms="[]",
+                        hit_part="title",
+                        raw_excerpt=(
+                            f"山东政采{'采购公告' if col == COL_TENDER else '结果公告'}"
+                            f"｜{notice['area_name'] or '山东省'}"
+                        ),
+                        evidence_claim=evidence,
+                        base_score=base_score,
+                    ))
+                    try:
+                        s.commit()
+                        stats["signals"] += 1
+                    except IntegrityError:
+                        s.rollback()
+                        logger.warning(
+                            "sdgp：信号「%s」撞 uq_signal_dedup，已跳过", notice["title"]
+                        )
+    return stats
+
+
+# ---------------------------------------------------------------------------
 # 回收站清空（SPEC-AM AM1）
 # ---------------------------------------------------------------------------
 def purge_deleted_sweep(retention_days: int = 30) -> dict:
@@ -617,6 +719,7 @@ def run_watermark_watchdog() -> dict:
         ("proposal_hb", lambda: run_proposal_hb_scan(max_pages=5)),
         ("proposal_js", lambda: run_proposal_js_scan(max_pages=1)),
         ("proposal_zj", lambda: run_proposal_zj_scan(max_pages=1)),
+        ("sdgp", lambda: run_sdgp_scan(max_pages=3)),
         ("health_refresh", lambda: _watchdog_health()),
         ("backup_sqlite", lambda: backup_sqlite("data/backups")),
     ]

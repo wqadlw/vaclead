@@ -382,6 +382,14 @@ async def lifespan(app: FastAPI):
         # SPEC-BS：浙江办理结果公示（JSON+事项维度；ggzy 宽词 12 请求/日；错峰 05:30）
         _register_cron("proposal_zj", _proposal_zj_sweep, 5, 30)
 
+        def _sdgp_sweep() -> dict:
+            from .jobs import run_sdgp_scan
+
+            return run_sdgp_scan(max_pages=3)
+
+        # SPEC-SDGP：山东政采分网直采（昊志本省+ccgp 冗余备份；05:40 错峰于四省后）
+        _register_cron("sdgp", _sdgp_sweep, 5, 40)
+
         def _contract_renewals_sweep() -> dict:
             from .api.contracts import check_contract_renewals
             from .db import SessionLocal as _SL
