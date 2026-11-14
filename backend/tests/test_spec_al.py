@@ -131,6 +131,30 @@ def test_recommend_shared_phone_demoted():
         assert rec_d["phone"] == "0512-88889999"
 
 
+def test_recommend_excludes_public_sector():
+    """2026-11-14："学校请出推荐"扩面——医疗卫生（医院）与检验检测事业单位
+    不进先打给谁；私营第三方检测公司（名称含"公司"）保留。"""
+    from app.recommend import score_candidates
+
+    with SessionLocal() as s:
+        h = _seed_ent(s, "苏州公共人民医院", industry="medical_health", intent=80)
+        _seed_phone(s, h.id, "0512-10101010")
+        pub_lab = _seed_ent(s, "铜陵市食品药品检验中心", industry="lab_instrument", intent=80)
+        _seed_phone(s, pub_lab.id, "0512-10101011")
+        priv = _seed_ent(s, "苏州天衡检测技术有限公司", industry="lab_instrument", intent=80)
+        _seed_phone(s, priv.id, "0512-10101012")
+        gov = _seed_ent(s, "宿迁市产品质量监督检验所", industry=None, intent=80)
+        _seed_phone(s, gov.id, "0512-10101013")
+        s.commit()
+
+        recs = score_candidates(s, limit=50)
+        ids = {r["ent_id"] for r in recs}
+        assert h.id not in ids, "医疗卫生（医院）应被排除"
+        assert pub_lab.id not in ids, "检验检测事业单位（名称不含公司）应被排除"
+        assert priv.id in ids, "私营第三方检测公司应保留"
+        assert gov.id not in ids, "未分类但名称为公共机构形态（检验所）应被兜底排除"
+
+
 def test_recommend_endpoint(client, admin_headers):
     d = client.get("/api/recommendations", params={"limit": 5}, headers=admin_headers).json()
     assert isinstance(d["items"], list)

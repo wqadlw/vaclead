@@ -711,9 +711,11 @@ def gongshang_lookup_export(
         if _lp(pj)
     }
     rows_out = []
+    from ..vertical import is_non_buyer
+
     for e in ents:
-        # 2026-11-08 用户拍板：学校非目标客户——配额不花在非客户身上
-        if e.industry_key == "research_edu":
+        # 2026-11-08 学校 + 2026-11-14 公共机构扩面用户拍板——配额不花在非客户身上
+        if is_non_buyer(e.industry_key, e.name):
             continue
         missing = []
         if not e.uscc:

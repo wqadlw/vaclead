@@ -69,6 +69,34 @@ def device_weak_terms() -> list[str]:
     return list(load()["device_terms"]["weak"])
 
 
+# ---- 公共机构排除（2026-11-14 用户拍板："学校请出推荐"先例扩面）----
+# 科研教育（2026-11-08 拍板）+ 医疗卫生（医院/诊所/体检=服务机构，非设备买方）
+# + 检验检测事业单位（"XX检验检测中心/计量所"形态，名称不含"公司"）。
+# 处置与学校同款：分类保留可查（企业列表/地图/标讯不受影响），
+# 仅从所有"先打给谁"类推荐面隐去（推荐/拨名单/补数清单/情报雷达）。
+NON_BUYER_INDUSTRIES = frozenset({"research_edu", "medical_health"})
+
+# 名称形态兜底词：行业字段未分类但名称是公共机构形态（不带"公司"才生效，
+# 民营企业名带"公司"一律保留）。词表校准闭环第五轮补充：检验所/质检所/
+# 计量所类 ccgp_buyer 建档时行业未打中（"检验所"不在 lab_instrument 词表）。
+PUB_INSTITUTION_NAME_WORDS = (
+    "检验所", "检测中心", "检验中心", "计量所", "监督检验",
+    "研究院", "研究所", "中学", "大学", "学院",
+)
+
+
+def is_non_buyer(industry_key: str | None, name: str | None = None) -> bool:
+    """行业级+名称级公共机构判定（推荐面排除用，非删除）。"""
+    if industry_key in NON_BUYER_INDUSTRIES:
+        return True
+    if name and "公司" not in name:
+        if industry_key == "lab_instrument":
+            return True
+        if any(w in name for w in PUB_INSTITUTION_NAME_WORDS):
+            return True
+    return False
+
+
 def downstream_industries() -> list[dict]:
     return load()["downstream_industries"]
 

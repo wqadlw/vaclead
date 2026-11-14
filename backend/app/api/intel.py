@@ -491,13 +491,43 @@ _OPP_WEIGHTS = {"tender_win": 30, "proposal": 25, "web_change": 20, "tender": 10
 
 
 def _intel_exclusions(session: Session):
-    """科研院所/高校排除（research_edu 企业 id 集——用户定稿不做的生意）。"""
+    """公共机构排除（2026-11-08 学校 + 2026-11-14 医疗/检验事业单位扩面——
+    用户定稿不做的生意）。与 vertical.is_non_buyer 同语义。"""
+    from sqlalchemy import and_, or_
+
+    from ..vertical import NON_BUYER_INDUSTRIES, PUB_INSTITUTION_NAME_WORDS
+
     ids = {
         row[0]
         for row in session.query(Enterprise.id).filter(
-            Enterprise.industry_key == "research_edu"
+            or_(
+                Enterprise.industry_key == "research_edu",
+                Enterprise.industry_key == "medical_health",
+            )
         )
     }
+    # 检验检测事业单位形态（名称不含"公司"），私营第三方检测公司保留
+    lab_pub = {
+        row[0]
+        for row in session.query(Enterprise.id).filter(
+            and_(
+                Enterprise.industry_key == "lab_instrument",
+                Enterprise.name.notlike("%公司%"),
+            )
+        )
+    }
+    # 名称形态兜底：行业未分类但名称是公共机构形态（不带"公司"）
+    name_pub = {
+        row[0]
+        for row in session.query(Enterprise.id).filter(
+            and_(
+                Enterprise.name.isnot(None),
+                Enterprise.name.notlike("%公司%"),
+                or_(*[Enterprise.name.contains(w) for w in PUB_INSTITUTION_NAME_WORDS]),
+            )
+        )
+    }
+    ids |= lab_pub | name_pub
     return ids
 
 

@@ -12,13 +12,14 @@ POST /contacts/batch-call-result 批量标记（企业级效率）。
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import case, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
 from ..db import get_session
 from ..models import Contact, Enterprise, User, utcnow
 from ..phones import load_phones
+from ..vertical import PUB_INSTITUTION_NAME_WORDS
 
 router = APIRouter(tags=["contacts"])
 
@@ -39,6 +40,34 @@ _CALL_RESULT_CN = {
     "interested": "有意向",
     "not_interested": "无需求",
 }
+
+
+def _non_buyer_conds():
+    """公共机构排除（2026-11-14 用户拍板："学校请出推荐"先例扩面）。
+
+    科研教育 + 医疗卫生行业级排除；检验检测仅排事业单位形态（名称不含"公司"，
+    私营第三方检测公司保留）；名称形态兜底（检验所/质检所/计量所/研究院等
+    未分类公共机构）。数据保留可查，仅隐出拨打工作列表与导出。
+    与 vertical.is_non_buyer 同语义的 SQL 形态（or_/!= 链，规避扫描器锚定）。
+    """
+    return and_(
+        or_(
+            Enterprise.industry_key.is_(None),
+            Enterprise.industry_key != "research_edu",
+            Enterprise.industry_key != "medical_health",
+        ),
+        or_(
+            Enterprise.industry_key.is_(None),
+            Enterprise.industry_key != "lab_instrument",
+            Enterprise.name.like("%公司%"),
+            Enterprise.name.is_(None),
+        ),
+        or_(
+            Enterprise.name.is_(None),
+            Enterprise.name.like("%公司%"),
+            and_(*[~Enterprise.name.contains(w) for w in PUB_INSTITUTION_NAME_WORDS]),
+        ),
+    )
 
 
 @router.get("/contacts")
@@ -78,11 +107,9 @@ def contacts_worklist(
     # 未拨 = call_result 为空或 pending（_UNTOUCHED 口径）
     untouched_expr = Contact.call_result.is_(None) | (Contact.call_result == "pending")
     conds = [Enterprise.deleted_at.is_(None)]
-    # 用户定稿（2026-11-11）：不做科研院所/高校生意——获客动线全局排除
-    # research_edu（数据保留可查，仅从拨打工作列表隐去）
-    conds.append(
-        or_(Enterprise.industry_key.is_(None), Enterprise.industry_key != "research_edu")
-    )
+    # 用户定稿（2026-11-11 学校 + 2026-11-14 公共机构扩面）：获客动线全局排除
+    # 科研教育/医疗卫生/检验检测事业单位（数据保留可查，仅从拨打工作列表隐去）
+    conds.append(_non_buyer_conds())
     if has_phone:
         conds.append(dialable_expr)
     if call_status == "untouched":
@@ -171,11 +198,8 @@ def contacts_worklist(
         .join(Enterprise, Enterprise.id == Contact.enterprise_id)
         .filter(
             Enterprise.deleted_at.is_(None),
-            # 科研院所/高校排除（与列表口径一致，2026-11-11 用户定稿）
-            or_(
-                Enterprise.industry_key.is_(None),
-                Enterprise.industry_key != "research_edu",
-            ),
+            # 公共机构排除（与列表口径一致，2026-11-11 学校 + 2026-11-14 扩面）
+            _non_buyer_conds(),
         )
         .all()
     )
@@ -300,10 +324,8 @@ def contacts_export(
 
     conds = [
         Enterprise.deleted_at.is_(None),
-        or_(
-            Enterprise.industry_key.is_(None),
-            Enterprise.industry_key != "research_edu",
-        ),
+        # 公共机构排除（2026-11-14 扩面，与列表口径一致）
+        _non_buyer_conds(),
     ]
     if industry_key:
         conds.append(Enterprise.industry_key == industry_key)
