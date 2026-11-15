@@ -385,7 +385,7 @@ export default function ProfilePage() {
                         开打
                       </Button>
                     )}
-                    <Button size="small" theme="outline" onClick={() => router.push(`/enterprises?segment=${code}`)}>
+                    <Button size="small" theme="outline" onClick={() => router.push(`/profile/${code}`)}>
                       名单
                     </Button>
                   </div>
