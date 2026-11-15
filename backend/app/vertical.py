@@ -30,6 +30,12 @@ def device_strong_terms() -> list[str]:
     return list(load()["device_terms"]["strong"])
 
 
+def brand_terms() -> list[str]:
+    """品牌词表（SPEC-BIM B1，照 device_strong_terms 模式）：真空泵/压缩机
+    品牌中英对照——brand_extract 装机抽取与跨品牌维修面的品牌锚定词库。"""
+    return list(load()["brand_terms"])
+
+
 # ggzy 名称检索宽词 v1 遗留常量（真空单垂直时代）；现以配置的 core/extended 为准
 GGZY_NAME_TERMS = [
     "真空", "真空设备", "真空泵", "真空技术", "真空科技", "真空工程",

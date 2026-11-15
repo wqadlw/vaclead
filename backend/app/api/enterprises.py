@@ -957,9 +957,27 @@ def enterprise_detail(
         .order_by(Signal.pub_date.desc(), Signal.id.desc())
         .all()
     )
-    from ..models import EnterpriseStat
+    from ..models import BrandInstall, EnterpriseStat
 
     stat = session.get(EnterpriseStat, eid)
+    # SPEC-BIM B5-3：装机品牌行（brand_install 按 enterprise_id 查，档案页
+    # "在用品牌/被竞对中标"）——含词表命中行与竞对→买家抢单链行（brand=竞对名）
+    install_sig_urls = {}
+    install_rows = (
+        session.query(BrandInstall)
+        .filter(BrandInstall.enterprise_id == eid)
+        .order_by(BrandInstall.last_seen.desc(), BrandInstall.id.desc())
+        .limit(50)
+        .all()
+    )
+    sig_ids = [r.signal_id for r in install_rows if r.signal_id]
+    if sig_ids:
+        install_sig_urls = {
+            row.id: (row.url or "")
+            for row in session.query(Signal.id, Signal.url)
+            .filter(Signal.id.in_(sig_ids))
+            .all()
+        }
     return {
         "id": e.id,
         "name": e.name,
@@ -1000,6 +1018,17 @@ def enterprise_detail(
         }
         if stat is not None
         else None,
+        # SPEC-BIM B5-3：在用品牌/被竞对中标（brand_install，last_seen 倒序）
+        "install_brands": [
+            {
+                "brand": r.brand,
+                "model": r.model,
+                "evidence": r.evidence,
+                "date": (r.last_seen or "")[:10],
+                "url": install_sig_urls.get(r.signal_id, "") if r.signal_id else "",
+            }
+            for r in install_rows
+        ],
         "signals": [
             {
                 "id": s.id,

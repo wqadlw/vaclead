@@ -124,12 +124,15 @@ def seed_script_cards(session: Session) -> int:
     return n
 
 
-def _card_dict(c: ScriptCard) -> dict:
-    return {
+def _card_dict(c: ScriptCard, context: dict | None = None) -> dict:
+    d = {
         "id": c.id, "title": c.title, "scene": c.scene,
         "role_hint": c.role_hint, "body_md": c.body_md, "sort": c.sort,
         "enabled": bool(c.enabled),
     }
+    if context is not None:
+        d["context"] = context  # SPEC-BIM B5-4：话术背景（可选键，competitor_replace 命中时附）
+    return d
 
 
 def _rank_cards(cards: list[ScriptCard], customer_role: str | None) -> list[ScriptCard]:
@@ -196,8 +199,33 @@ def pick_script_cards(
         )
         .first()
     )
+    comp_ctx: dict | None = None
     if comp_hit is not None:
         scenes.add("competitor_replace")
+        # SPEC-BIM B5-4：话术背景——与本企业买方信号同项目名的竞对中标证据
+        # （最近一条：pub_date 空回退 created_at，再按 id 定序），前端渲染
+        # "话术背景"行；仅 competitor_replace 命中时附 context（可选键）
+        comp_win = (
+            session.query(Signal, Enterprise.name)
+            .join(Enterprise, Enterprise.id == Signal.enterprise_id)
+            .filter(
+                Enterprise.is_competitor == 1,
+                Signal.type == "tender_win",
+                Signal.title == comp_hit.title,
+            )
+            .order_by(recency.desc(), Signal.id.desc())
+            .first()
+        )
+        if comp_win is not None:
+            comp_ctx = {
+                "comp_name": comp_win[1],
+                "evidence": (
+                    comp_win[0].evidence_claim
+                    or comp_win[0].raw_excerpt
+                    or comp_win[0].title
+                    or ""
+                )[:200],
+            }
     proposal_hit = (
         session.query(Signal)
         .filter(
@@ -232,7 +260,7 @@ def pick_script_cards(
         ranked = _rank_cards(generics, e.customer_role)
         if ranked:
             out.append(ranked[0])  # 另附 1 张 generic（SPEC：一个场景一张兜底）
-    return [_card_dict(c) for c in out]
+    return [_card_dict(c, context=comp_ctx) for c in out]
 
 
 # ---- API ----

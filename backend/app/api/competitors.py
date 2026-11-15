@@ -11,7 +11,7 @@ from collections import Counter
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from ..auth import admin_only, current_user
@@ -210,6 +210,90 @@ def competitor_list(
         })
     items.sort(key=lambda x: (-x["wins_30d"], -x["signal_count"]))
     return {"items": items[:limit], "total": len(items)}
+
+
+@router.get("/competitors/install-map")
+def competitors_install_map(
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """竞对抢单地图第四区块（SPEC-BIM B5-1）：品牌榜 + 抢单明细。
+
+    - rows（抢单明细 ×50）：复用 _comp_signals cap 1500 口径——竞对 tender_win
+      evidence_claim 抽采购人（_BUYER_RE 与 brand_extract 同源），采购人名称
+      形态过 is_non_buyer（研究院/大学等公共机构不进地图，同"非客户排除"），
+      买家==竞对自身跳过；amount 从 signal.amount_wan 或 _AMOUNT_RE 回抽；
+      按 date 降序截 50。
+    - brands（品牌榜）：brand_install 全量聚合（装机证据层不做客户排除——
+      政采买家数据是"卖给了谁"的证据主体，见 vertical.NON_CUSTOMER_SOURCES
+      注释）；buyers=去重企业数降序；amount=关联信号 amount_wan 求和；
+      latest=last_seen 最新。空态友好（无装机数据返回空数组）。
+    """
+    from ..models import BrandInstall
+    from ..vertical import is_non_buyer
+
+    ids = _competitor_ids(session)
+    signals = _comp_signals(session, ids)
+    comp_names = {
+        e.id: e.name
+        for e in session.query(Enterprise.id, Enterprise.name)
+        .filter(Enterprise.id.in_(ids))
+        .all()
+    } if ids else {}
+
+    rows: list[dict] = []
+    for s in signals:
+        if s.type != "tender_win":
+            continue
+        comp_name = comp_names.get(s.enterprise_id, "")
+        m = _BUYER_RE.search(s.evidence_claim or "")
+        if not m:
+            continue
+        buyer = m.group(1).strip()
+        if len(buyer) < 4 or buyer == comp_name:
+            continue  # 买家非竞对（与 brand_extract 链同语义）
+        if is_non_buyer(None, name=buyer):
+            continue  # 名称形态公共机构不进地图（B6 非客户排除）
+        rows.append({
+            "competitor": comp_name,
+            "buyer": buyer,
+            "brand": comp_name,  # 抢单链行：brand=竞对公司名（extract 同口径）
+            "model": "",
+            "amount_wan": round(
+                s.amount_wan if s.amount_wan else _amount(s.title + " " + (s.raw_excerpt or "")), 1
+            ),
+            "date": _sig_date(s),
+            "evidence": (s.evidence_claim or "")[:200],
+            "signal_id": s.id,
+        })
+    rows.sort(key=lambda r: r["date"], reverse=True)
+    rows = rows[:50]
+
+    # 品牌榜：brand_install 聚合（buyers 降序）
+    amount_sum = func.sum(Signal.amount_wan)
+    brand_rows = (
+        session.query(
+            BrandInstall.brand,
+            func.count(func.distinct(BrandInstall.enterprise_id)),
+            amount_sum,
+            func.max(BrandInstall.last_seen),
+        )
+        .outerjoin(Signal, Signal.id == BrandInstall.signal_id)
+        .group_by(BrandInstall.brand)
+        .order_by(func.count(func.distinct(BrandInstall.enterprise_id)).desc())
+        .limit(20)
+        .all()
+    )
+    brands = [
+        {
+            "brand": b,
+            "buyers": n,
+            "amount_wan": round(amt or 0.0, 1),
+            "latest": (last or "")[:10],
+        }
+        for b, n, amt, last in brand_rows
+    ]
+    return {"brands": brands, "rows": rows}
 
 
 @router.post("/competitors/{eid}/mark")

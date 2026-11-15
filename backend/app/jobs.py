@@ -1338,11 +1338,14 @@ def run_daily_incremental() -> dict:
 
     # 意图/画像/检索投影收尾
     from .api.imports import recompute_intent
+    from .brand_extract import extract_brand_for
 
     with SessionLocal() as s:
         ids = s.scalars(select(Enterprise.id)).all()
         for eid in ids:
             recompute_intent(s, int(eid))
+            # SPEC-BIM B4：品牌装机日批兜底（幂等 upsert，采集增量后自动增产）
+            extract_brand_for(s, int(eid))
         s.commit()
     with SessionLocal() as s:
         refresh_all_stats(s)

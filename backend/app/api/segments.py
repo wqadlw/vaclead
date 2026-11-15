@@ -25,6 +25,7 @@ from ..auth import admin_only, current_user
 from ..customer import non_buyer_conds, parse_json_list, segment_keys_of
 from ..db import get_session
 from ..models import (
+    BrandInstall,
     Contact,
     CustomerSegment,
     Enterprise,
@@ -287,11 +288,52 @@ def _chunked(ids: list[int], size: int = _CHUNK):
         yield ids[i : i + size]
 
 
-def _segment_ops_stats(session: Session, seg: CustomerSegment) -> dict:
+# SPEC-BIM B5-2：跨品牌维修群（code=cross_brand_service）名单来源特判——
+# 行业不圈名单（industry_keys=[]），改用 brand_install 去重企业（装机证据：
+# 厂里装着进口/竞对泵的工厂）join non_buyer_conds 同口径（政采买家/学校/
+# 检测实验室/OEM 不进拨打面，数据保留可查）。
+CROSS_BRAND_CODE = "cross_brand_service"
+
+
+def _cross_brand_ids(session: Session) -> list[int]:
+    """跨品牌群企业 id 集：brand_install 去重企业（存活 + 非客户排除同口径）。"""
+    nb = non_buyer_conds()
+    return [
+        rid
+        for (rid,) in (
+            session.query(BrandInstall.enterprise_id)
+            .join(Enterprise, Enterprise.id == BrandInstall.enterprise_id)
+            .filter(Enterprise.deleted_at.is_(None), nb)
+            .distinct()
+            .all()
+        )
+    ]
+
+
+def _dialable_count_of(session: Session, ent_ids: list[int]) -> int:
+    """企业 id 集的去重可拨联系人数（contacts 工作列表同款 phones_json 口径）。"""
+    dialable_expr = Contact.phones_json.is_not(None) & Contact.phones_json.notin_(("", "[]"))
+    n = 0
+    for ids in _chunked(ent_ids):
+        n += (
+            session.query(func.count(func.distinct(Contact.id)))
+            .filter(Contact.enterprise_id.in_(ids), dialable_expr)
+            .scalar()
+            or 0
+        )
+    return n
+
+
+def _segment_ops_stats(
+    session: Session, seg: CustomerSegment, ids_override: list[int] | None = None
+) -> dict:
     """附录 A1 作业六字段（"今天能打什么"）：口径与 enterprise_count/dialable_count
     同源——群内企业 id 集**先算一次**（industry_keys OR 括号分组 + 存活 +
     customer.non_buyer_conds 非客户排除），六项统计全部复用该 id 集分批聚合；
     群数仅 10、每群数条聚合 SQL，无逐群逐企业 N+1。
+
+    SPEC-BIM B5-2：ids_override 非 None 时跳过 industry_keys 查询，直接以该
+    id 集计算六字段（跨品牌群 brand_install 去重企业来源专用分支）。
 
     - dialable_untouched：可拨（有号码联系人）且无任一已触达联系人的企业数
       ——"今天能打的"（全 pending 才算没碰过）
@@ -312,26 +354,40 @@ def _segment_ops_stats(session: Session, seg: CustomerSegment) -> dict:
         "new_7d": 0,
         "last_signal": None,
     }
-    keys = segment_keys_of(seg)
-    if not keys:
-        return zero
     nb = non_buyer_conds()
-    rows = (
-        session.query(Enterprise.id, Enterprise.name)
-        .filter(
-            Enterprise.deleted_at.is_(None),
-            Enterprise.industry_key.is_not(None),
-            Enterprise.industry_key != "",
-            # OR 括号分组（与 enterprises.py segment 筛选同款，规避扫描器锚定）
-            or_(*[Enterprise.industry_key == k for k in keys]),
-            nb,
+    if ids_override is not None:
+        ent_ids = list(dict.fromkeys(ids_override))
+        if not ent_ids:
+            return zero
+        ent_names: dict[int, str] = {}
+        for ids in _chunked(ent_ids):
+            ent_names.update(
+                dict(
+                    session.query(Enterprise.id, Enterprise.name)
+                    .filter(Enterprise.deleted_at.is_(None), Enterprise.id.in_(ids))
+                    .all()
+                )
+            )
+    else:
+        keys = segment_keys_of(seg)
+        if not keys:
+            return zero
+        rows = (
+            session.query(Enterprise.id, Enterprise.name)
+            .filter(
+                Enterprise.deleted_at.is_(None),
+                Enterprise.industry_key.is_not(None),
+                Enterprise.industry_key != "",
+                # OR 括号分组（与 enterprises.py segment 筛选同款，规避扫描器锚定）
+                or_(*[Enterprise.industry_key == k for k in keys]),
+                nb,
+            )
+            .all()
         )
-        .all()
-    )
-    if not rows:
-        return zero
-    ent_ids = [rid for rid, _name in rows]
-    ent_names = dict(rows)
+        if not rows:
+            return zero
+        ent_ids = [rid for rid, _name in rows]
+        ent_names = dict(rows)
 
     # 触达企业级聚合：每企业一行（可拨联系人数, 已触达联系数）一趟 GROUP BY——
     # touched=有已触达联系人；untouched=零触达且有可拨联系人（互斥口径）
@@ -517,6 +573,8 @@ def list_segments(
     非客户排除）；dialable_count=该群企业去重可拨联系人；附录 A1 追加作业
     六字段（dialable_untouched/touched/intent_high/following/new_7d/
     last_signal）——"今天能打什么"，口径同源（同 id 集+非客户排除）。
+    特判：code=cross_brand_service（SPEC-BIM B5-2）名单来源改 brand_install
+    去重企业（装机证据），count/dialable/六字段全套同源换算。
     停用群（enabled=0）照常返回定义与统计，由前端置灰——停用只退出推荐/权重。
     """
     rows = (
@@ -528,10 +586,18 @@ def list_segments(
     items: list[dict] = []
     for seg in rows:
         d = _seg_dict(seg)
-        keys = segment_keys_of(seg)
-        d["enterprise_count"] = sum(ent_counts.get(k, 0) for k in keys)
-        d["dialable_count"] = sum(dial_counts.get(k, 0) for k in keys)
-        d.update(_segment_ops_stats(session, seg))  # 附录 A1：作业六字段
+        if seg.code == CROSS_BRAND_CODE:
+            # SPEC-BIM B5-2：跨品牌群名单来源=brand_install 去重企业（装机
+            # 证据），count/dialable/六字段全套换源（id 集一次算好复用）
+            cross_ids = _cross_brand_ids(session)
+            d["enterprise_count"] = len(cross_ids)
+            d["dialable_count"] = _dialable_count_of(session, cross_ids)
+            d.update(_segment_ops_stats(session, seg, ids_override=cross_ids))
+        else:
+            keys = segment_keys_of(seg)
+            d["enterprise_count"] = sum(ent_counts.get(k, 0) for k in keys)
+            d["dialable_count"] = sum(dial_counts.get(k, 0) for k in keys)
+            d.update(_segment_ops_stats(session, seg))  # 附录 A1：作业六字段
         items.append(d)
     return {"items": items}
 

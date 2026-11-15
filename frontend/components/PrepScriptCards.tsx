@@ -5,16 +5,26 @@
  * 直接对准通话中场景——卡片折叠列表 + 一键复制，零跳转。
  * 容错契约：后端并行上线中，prep 响应无 script_cards 键 / 空数组 /
  * 元素缺字段时一律静默不渲染或降级显示，绝不阻塞驾驶舱主体。
+ * SPEC-BIM B5：script_cards 元素可附 context {comp_name, evidence}——
+ * 卡头下方渲染「话术背景」一行（accent 左边条证据样式；无 context 不渲染）。
  */
 import { useState } from "react";
 import { ChevronDown, Copy } from "lucide-react";
 import { Tag, Toast } from "@douyinfe/semi-ui";
+
+/** SPEC-BIM B5：竞对替换卡的背景证据（后端并行上线中，可能缺省/半残） */
+export interface PrepScriptCardContext {
+  comp_name?: string;
+  evidence?: string;
+}
 
 export interface PrepScriptCard {
   title: string;
   scene: string;
   role_hint: string | null;
   body_md: string;
+  /** 最近一条竞对中标证据（仅 competitor_replace 命中时后端附加） */
+  context?: PrepScriptCardContext | null;
 }
 
 /** scene 枚举中文（后端 script_card.scene 受控五值；未知值原样透出） */
@@ -52,8 +62,19 @@ function normalize(cards: unknown): PrepScriptCard[] {
       scene: typeof c.scene === "string" ? c.scene : "generic",
       role_hint: typeof c.role_hint === "string" && c.role_hint ? c.role_hint : null,
       body_md: typeof c.body_md === "string" ? c.body_md : "",
+      context: parseContext(c.context),
     }))
     .filter((c) => c.title || c.body_md);
+}
+
+/** 容错解析 context：非对象 / 两字段全空 → null（无背景行） */
+function parseContext(v: unknown): PrepScriptCardContext | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const c = v as Record<string, unknown>;
+  const comp_name = typeof c.comp_name === "string" ? c.comp_name.trim() : "";
+  const evidence = typeof c.evidence === "string" ? c.evidence.trim() : "";
+  if (!comp_name && !evidence) return null;
+  return { comp_name: comp_name || undefined, evidence: evidence || undefined };
 }
 
 export default function PrepScriptCards({ cards }: { cards?: unknown }) {
@@ -96,6 +117,13 @@ export default function PrepScriptCards({ cards }: { cards?: unknown }) {
           const open = openIdx === i;
           const scene = SCRIPT_SCENE_CN[c.scene] ?? c.scene;
           const role = c.role_hint ? (SCRIPT_ROLE_CN[c.role_hint] ?? c.role_hint) : null;
+          // SPEC-BIM B5：话术背景行文案（comp_name 刚拿下 · 证据截 60；缺啥省啥）
+          const ctx = c.context;
+          const ctxBits: string[] = [];
+          if (ctx?.comp_name) ctxBits.push(`${ctx.comp_name} 刚拿下`);
+          if (ctx?.evidence) {
+            ctxBits.push(ctx.evidence.length > 60 ? `${ctx.evidence.slice(0, 60)}…` : ctx.evidence);
+          }
           return (
             <div
               key={`${c.title}-${i}`}
@@ -138,6 +166,16 @@ export default function PrepScriptCards({ cards }: { cards?: unknown }) {
                   </button>
                 </span>
               </div>
+              {ctx && ctxBits.length > 0 && (
+                <div className="px-3 pb-2">
+                  <div
+                    className="border-l-2 border-[var(--accent)] pl-2 text-[11.5px] leading-4 text-[var(--muted)]"
+                    title={ctx.evidence || undefined}
+                  >
+                    话术背景：{ctxBits.join(" · ")}
+                  </div>
+                </div>
+              )}
               {open && (
                 <div className="border-t border-[var(--rule)] px-3 py-2.5">
                   <pre className="whitespace-pre-wrap break-words border-0 bg-transparent p-0 font-[inherit] text-[12.5px] leading-5 text-[var(--ink)]">

@@ -1152,3 +1152,31 @@ class ScriptCard(Base):
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class BrandInstall(Base):
+    """品牌装机记录（SPEC-BIM B2）：竞对装机证据预备。
+
+    不复用 InstalledUnit（那是昊青自有台账：product_id+耗材时钟）；竞对装机
+    证据来自公告信号（signal_id 溯源），由 brand_extract 幂等抽取/竞对→买家
+    链落库，后续语料升级自动增产。upsert 唯一键 (enterprise_id, brand, model)。
+    """
+
+    __tablename__ = "brand_install"
+    __table_args__ = (
+        Index("ix_bi_enterprise", "enterprise_id"),
+        UniqueConstraint("enterprise_id", "brand", "model", name="uq_brand_install"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    enterprise_id: Mapped[int] = mapped_column(
+        ForeignKey("enterprise.id", ondelete="CASCADE"), nullable=False
+    )
+    brand: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    signal_id: Mapped[int | None] = mapped_column(Integer)  # 溯源（可空：手工导入）
+    evidence: Mapped[str] = mapped_column(Text, nullable=False, default="")  # 截 200
+    first_seen: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+    last_seen: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)

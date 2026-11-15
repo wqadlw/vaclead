@@ -3,14 +3,16 @@
 /**
  * 竞对雷达（SPEC-BN）：组合级竞对监测——谁家的蛋糕被竞对抢了。
  * 对标剑鱼"竞对监测"付费功能（PRODUCT_GAP §5.3 #3）：is_competitor 的
- * 信号早已在库，本页是专门视图：KPI 晨检卡 + 竞对动态流 + 竞对榜单 +
- * admin 手动标记（此前只有自动化 tag_competitor 入口）。
+ * 信号早已在库，本页是专门视图：KPI 晨检卡 + 竞对榜单 + 竞对动态流 +
+ * 抢单地图（SPEC-BIM B5 install-map：竞对→买家中标证据，品牌榜+明细表）+
+ * 官网监控雷达 + admin 手动标记（此前只有自动化 tag_competitor 入口）。
  * 金额/买家从公告文本回抽（与 intel/reports 同源正则），可溯源不发明。
  */
 import { useCallback, useEffect, useState } from "react";
 import { Button, Input, Modal, Select, Tag, Toast } from "@douyinfe/semi-ui";
 import { Crosshair, Search, UserX } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import { BarList } from "@/components/charts";
 import { api } from "@/lib/api";
 
 interface Overview {
@@ -68,6 +70,26 @@ interface WatchRow {
   error_last: string | null;
 }
 
+// SPEC-BIM B5：抢单地图（GET /api/competitors/install-map，竞对→买家中标证据；
+// brand=竞对公司名且 model="" 的行即"竞对抢走买家"关系，证据=原公告信号）
+interface InstallBrand {
+  brand: string;
+  buyers: number;
+  amount_wan: number;
+  latest: string;
+}
+
+interface InstallRow {
+  competitor: string;
+  buyer: string;
+  brand: string;
+  model: string;
+  amount_wan: number;
+  date: string;
+  evidence: string;
+  signal_id: number;
+}
+
 export default function CompetitorsPage() {
   const [ov, setOv] = useState<Overview | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
@@ -93,6 +115,10 @@ export default function CompetitorsPage() {
   const [hits, setHits] = useState<{ id: number; name: string; is_competitor: number }[]>([]);
   // SPEC-CF 细节审查：榜单默认只看有动态（零动态竞对折叠）
   const [onlyActive, setOnlyActive] = useState(true);
+  // SPEC-BIM B5：抢单地图（后端并行上线中——请求失败降级"暂不可用"，不白屏）
+  const [mapStatus, setMapStatus] = useState<"loading" | "ok" | "error">("loading");
+  const [mapBrands, setMapBrands] = useState<InstallBrand[]>([]);
+  const [mapRows, setMapRows] = useState<InstallRow[]>([]);
 
   useEffect(() => {
     setRole(localStorage.getItem("vaclead_role") || "sales");
@@ -109,6 +135,14 @@ export default function CompetitorsPage() {
     api.get<{ items: RankItem[] }>(`/api/competitors${listQ}`)
       .then((d) => setRanks(d.items))
       .catch(() => undefined);
+    // SPEC-BIM B5：install-map（数组字段容错——后端半程上线也不炸 UI）
+    api.get<{ brands: InstallBrand[]; rows: InstallRow[] }>("/api/competitors/install-map")
+      .then((d) => {
+        setMapBrands(Array.isArray(d?.brands) ? d.brands : []);
+        setMapRows(Array.isArray(d?.rows) ? d.rows : []);
+        setMapStatus("ok");
+      })
+      .catch(() => setMapStatus("error"));
     api.get<{ items: WatchRow[] }>("/api/watches")
       .then((d) => setWatches(d.items))
       .catch(() => undefined);
@@ -412,6 +446,119 @@ export default function CompetitorsPage() {
           </div>
         )}
       </div>
+
+      {/* SPEC-BIM B5：抢单地图——竞对→买家中标证据（上半品牌榜 BarList +
+          下半明细表；brand=竞对名的行即"谁家的买家被竞对拿走"） */}
+      <section className="mt-6 rounded-lg border border-[var(--border)] bg-white">
+        <div className="flex flex-wrap items-baseline gap-2 border-b border-[var(--rule)] px-4 py-3">
+          <span className="text-[13.5px] font-medium text-[var(--ink)]">抢单地图</span>
+          <span className="text-[12px] text-[var(--muted)]">竞对中标证据：谁家的买家正在被竞对拿走</span>
+          {mapStatus === "ok" && mapBrands.length > 0 && (
+            <span className="ml-auto text-[12px] tabular-nums text-[var(--muted)]">
+              {mapBrands.length} 家品牌 · 合计{" "}
+              {Math.round(mapBrands.reduce((s, b) => s + (b.amount_wan || 0), 0)).toLocaleString()} 万
+            </span>
+          )}
+        </div>
+        {mapStatus === "loading" ? (
+          <div className="px-4 py-10 text-center text-[13px] text-[var(--muted)]">加载抢单证据…</div>
+        ) : mapStatus === "error" ? (
+          <div className="px-4 py-10 text-center text-[13px] text-[var(--muted)]">
+            抢单地图暂不可用 —— 接口异常，稍后重试
+          </div>
+        ) : mapRows.length === 0 ? (
+          <div className="px-4 py-10 text-center text-[13px] text-[var(--muted)]">
+            暂无抢单证据——等公告采集累积
+          </div>
+        ) : (
+          <div className="px-4 py-3">
+            {/* 品牌榜：brand→buyers 买家家数（v1 不下钻，BarList 无 onPick） */}
+            {mapBrands.length > 0 && (
+              <div>
+                <div className="text-[12px] text-[var(--muted)]">竞对品牌 × 买家家数</div>
+                <div className="mt-2">
+                  <BarList
+                    items={mapBrands
+                      .slice(0, 8)
+                      .map((b) => ({ name: b.brand, value: b.buyers || 0 }))}
+                  />
+                </div>
+              </div>
+            )}
+            {/* 明细表（证据句截断，悬停 title 看全文） */}
+            <div className={`${mapBrands.length > 0 ? "mt-4" : ""} max-h-[440px] overflow-auto`}>
+              {/* 移动端卡片（<md）：明细表格挤窄屏 → 行变卡（与竞对榜单同惯例） */}
+              <div className="md:hidden">
+                {mapRows.map((r, i) => (
+                  <div key={`${r.signal_id}-${i}`} className="border-b border-[var(--rule)] px-4 py-3 first:pt-0 last:border-b-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-[13.5px] font-medium text-[var(--ink)]" title={r.competitor}>
+                        {r.competitor}
+                      </span>
+                      {r.amount_wan > 0 && (
+                        <span className="shrink-0 text-[13px] font-medium tabular-nums text-[#c2801b]">
+                          {Math.round(r.amount_wan).toLocaleString()} 万
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 text-[12.5px] text-[var(--muted)]">
+                      卖给 <span className="font-medium text-[var(--negative)]">{r.buyer}</span>
+                      <span className="ml-2 tabular-nums">{(r.date || "").slice(0, 10)}</span>
+                    </div>
+                    <div className="mt-0.5 truncate text-[12px] text-[var(--muted)]" title={r.model ? `${r.brand} ${r.model}` : r.brand}>
+                      型号：{r.model ? `${r.brand} ${r.model}` : r.brand || "—"}
+                    </div>
+                    {r.evidence && (
+                      <div className="mt-1 border-l-2 border-[var(--accent)] pl-2 text-[11.5px] leading-4 text-[var(--muted)]" title={r.evidence}>
+                        {r.evidence.length > 60 ? `${r.evidence.slice(0, 60)}…` : r.evidence}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {/* 桌面表格（md+） */}
+              <table className="hidden w-full text-[13px] md:table">
+                <thead className="sticky top-0 z-10 bg-white">
+                  <tr className="text-left text-[12.5px] font-normal text-[var(--muted)]">
+                    <th className="px-4 py-2.5 font-normal">竞对</th>
+                    <th className="px-4 py-2.5 font-normal">买家</th>
+                    <th className="px-4 py-2.5 font-normal">品牌型号</th>
+                    <th className="px-4 py-2.5 text-right font-normal">金额</th>
+                    <th className="px-4 py-2.5 font-normal">日期</th>
+                    <th className="px-4 py-2.5 font-normal">证据</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mapRows.map((r, i) => (
+                    <tr key={`${r.signal_id}-${i}`} className="border-t border-[var(--rule)] hover:bg-[var(--raised)]">
+                      <td className="max-w-[160px] truncate px-4 py-2.5 font-medium text-[var(--ink)]" title={r.competitor}>
+                        {r.competitor}
+                      </td>
+                      <td className="max-w-[180px] truncate px-4 py-2.5" title={r.buyer}>{r.buyer}</td>
+                      <td className="max-w-[140px] truncate px-4 py-2.5 text-[var(--muted)]" title={r.model ? `${r.brand} ${r.model}` : r.brand}>
+                        {r.model ? `${r.brand} ${r.model}` : r.brand || "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        {r.amount_wan > 0 ? (
+                          <span className="font-medium text-[#c2801b]">{Math.round(r.amount_wan).toLocaleString()} 万</span>
+                        ) : (
+                          <span className="text-[var(--muted)]">—</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-[var(--muted)]">
+                        {(r.date || "").slice(0, 10)}
+                      </td>
+                      <td className="max-w-[280px] truncate px-4 py-2.5 text-[12.5px] text-[var(--muted)]" title={r.evidence}>
+                        {r.evidence || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* SPEC-RADAR：官网变更监控（昊志获客前兆）——盯竞对/重点客户官网
           新闻/招聘页，工业词命中即推信号+群播报（借鉴 changedetection.io） */}

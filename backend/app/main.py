@@ -467,6 +467,17 @@ async def lifespan(app: FastAPI):
 
         _register_cron("segment_seed", _seed_segments, 6, 50)
 
+        # SPEC-BIM B4：品牌装机全量抽取（幂等无害；04:20 与采集日批错峰）。
+        # 看门狗纪律：非采集任务（无网络失败面），不进 watchdog_jobs。
+        def _brand_extract_sweep() -> dict:
+            from .brand_extract import extract_all
+            from .db import SessionLocal as _SL
+
+            with _SL() as s:
+                return extract_all(s)
+
+        _register_cron("brand_extract", _brand_extract_sweep, 4, 20)
+
         def _oem_touch_sweep() -> dict:
             from .jobs import oem_touch_sweep
 

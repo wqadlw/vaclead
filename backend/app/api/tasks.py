@@ -417,6 +417,7 @@ def start_ggzy_harvest(
         normalize_entity_record,
         search_all_entities,
     )
+    from ..brand_extract import extract_brand_for
     from ..models import Signal
     from ..normalize import resolve_enterprise
     from ..vertical import device_strong_terms, device_weak_terms, ggzy_name_terms, signal_weights
@@ -610,6 +611,8 @@ def start_ggzy_harvest(
                         if eid in competitor_ids:
                             e2.is_competitor = 1  # 中标事实优先于名称规则
                         recompute_intent(s, eid)
+                        # SPEC-BIM B4：品牌装机增量抽取（幂等 upsert，语料升级自动增产）
+                        extract_brand_for(s, eid)
                         s.commit()
             return totals  # 生命周期（cancelled/failed/done）由 task_runtime.lifecycle 接管
         except TaskCancelled:
@@ -1643,6 +1646,47 @@ def start_backfill_icp(
     from .task_runtime import spawn
 
     spawn(task_id, _worker, label="backfill-icp")
+    return {"task_id": task_id}
+
+
+@router.post("/tasks/brand-extract")
+def start_brand_extract(
+    body: dict | None = None,
+    session: Session = Depends(get_session),
+    user: User = Depends(admin_only),
+):
+    """品牌装机全量抽取（SPEC-BIM B4，照 backfill-icp 模板：uuid+worker+spawn
+    +checkpoint，SSE/取消免费复用 task_runtime）。幂等——unique(enterprise_id,
+    brand, model) upsert，全量重跑零新增（installs=0），每日 04:20 cron 兜底
+    与手动触发同语义。totals 走 SPEC-MULTI 契约：failures 键恒空数组（纯库内
+    抽取无网络失败面），installs=本轮新增行数。"""
+    from ..brand_extract import extract_all
+    from ..db import SessionLocal
+
+    task_id = uuid.uuid4().hex[:12]
+    try:
+        limit = max(0, min(int((body or {}).get("limit") or 0), 100000))
+    except (TypeError, ValueError):
+        limit = 0  # 坏参数按全量处理（抽取幂等无害）
+    session.add(TaskCheckpoint(
+        task_id=task_id, kind="brand_extract", status="running", progress=0,
+    ))
+    session.commit()
+
+    def _worker() -> dict:
+        with SessionLocal() as s:
+            totals = extract_all(s, limit=limit or None)
+        _checkpoint(
+            task_id, progress=95,
+            state_json=json.dumps(totals, ensure_ascii=False),
+        )
+        # SPEC-MULTI 契约键：抽取无网络失败面，failures 恒空；new 不适用
+        # （installs 即本轮新增装机行）。
+        return {**totals, "failures": []}
+
+    from .task_runtime import spawn
+
+    spawn(task_id, _worker, label="brand-extract")
     return {"task_id": task_id}
 
 
