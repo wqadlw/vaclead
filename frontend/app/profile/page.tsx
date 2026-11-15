@@ -321,12 +321,30 @@ export default function ProfilePage() {
                 ? [String(sig.date ?? "").slice(0, 10), String(sig.type ?? "")].filter(Boolean).join(" · ") +
                   (sig.title ? ` | ${String(sig.title).slice(0, 32)}` : "")
                 : "";
+              const total = typeof r.enterprise_count === "number" ? r.enterprise_count : 0;
+              const dialable = typeof r.dialable_count === "number" ? r.dialable_count : 0;
+              const touched = typeof r.touched === "number" ? r.touched : 0;
+              const dialRate = total > 0 ? Math.round((dialable / total) * 100) : null;
               const extras = [
+                dialRate != null ? `可拨率 ${dialRate}%` : null,
                 typeof r.intent_high === "number" && r.intent_high > 0 ? `高意图 ${r.intent_high}` : null,
                 typeof r.following === "number" && r.following > 0 ? `跟进 ${r.following}` : null,
                 typeof r.new_7d === "number" && r.new_7d > 0 ? `新面孔 ${r.new_7d}` : null,
-                typeof r.touched === "number" && r.touched > 0 ? `已触达 ${r.touched}` : null,
+                touched > 0 ? `已触达 ${touched}` : null,
               ].filter(Boolean) as string[];
+              /** 诊断与处方（用户"确保有用"）：每群自动给下一步动作——
+               *  名单空白→采集带词 / 电话覆盖不足→补联系方式 / 打完了→扩池 */
+              type Rx = { label: string; to: string; kind: "empty" | "phone" | "done" };
+              let rx: Rx | null = null;
+              if (total === 0) {
+                rx = { label: "名单空白 · 按群词采集一批", to: "/tasks", kind: "empty" };
+              } else if (dialRate != null && dialRate < 30 && total >= 20) {
+                rx = { label: `电话覆盖仅 ${dialRate}% · 先补联系方式`, to: "/tasks", kind: "phone" };
+              } else if (untouched === 0 && touched > 0) {
+                rx = { label: "本群已打完 · 采集扩池", to: "/tasks", kind: "done" };
+              } else if (untouched === 0 && dialable === 0) {
+                rx = { label: "无可拨电话 · 先补联系方式", to: "/tasks", kind: "phone" };
+              }
               const code = encodeURIComponent(r.code || "");
               return (
                 <div
@@ -394,6 +412,19 @@ export default function ProfilePage() {
                       <div className="mt-1 truncate text-[11.5px] text-[var(--muted)]" title={sigText}>
                         {sigText}
                       </div>
+                    )}
+                    {rx && (
+                      <button
+                        onClick={() => router.push(rx.to)}
+                        title="系统诊断的本群下一步动作——点击前往"
+                        className={`mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] ${
+                          rx.kind === "phone"
+                            ? "bg-[#fdf3e7] text-[#b9770e]"
+                            : "bg-[var(--raised)] text-[var(--muted)]"
+                        } hover:underline`}
+                      >
+                        下一步：{rx.label} →
+                      </button>
                     )}
                   </div>
                   {/* 动作 */}
