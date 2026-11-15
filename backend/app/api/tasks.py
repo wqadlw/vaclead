@@ -626,6 +626,63 @@ def start_ggzy_harvest(
     return {"task_id": task_id, "keywords": keywords}
 
 
+@router.get("/tasks/recent")
+def tasks_recent(
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+):
+    """最近采集历史（SPEC-COLLECT C1，信息采集门户）：checkpoint 倒序 cap 20。
+
+    summary=人话结果摘要（数值>0 的前三键中文映射 / 停用跳过 / 失败原因截 80）。
+    路由顺序：静态段 /tasks/recent 必须注册在 /tasks/{task_id} 之前（路由
+    顺序坑——静态段被路径参数吞掉会 404/422）。"""
+    import json as _json
+
+    rows = (
+        session.query(TaskCheckpoint)
+        .order_by(TaskCheckpoint.updated_at.desc())
+        .limit(20)
+        .all()
+    )
+    label_map = {
+        "entities": "主体", "new_entities": "新面孔", "bids": "中标",
+        "signals": "信号", "buyers": "买家", "announcements": "公告",
+        "notices": "公告", "inserted": "新增", "merged": "合并",
+        "pushed": "推送", "scanned": "扫描", "installs": "装机",
+        "classified": "分类",
+    }
+    tasks = []
+    for cp in rows:
+        state = {}
+        try:
+            state = _json.loads(cp.state_json or "{}")
+        except ValueError:
+            pass
+        if cp.status in ("error", "failed") and state.get("error"):
+            summary = f"失败：{str(state['error'])[:80]}"
+        elif state.get("skipped_disabled"):
+            summary = "来源已停用，跳过"
+        elif cp.status == "running":
+            summary = f"进行中 {cp.progress}%"
+        else:
+            parts = []
+            for k, v in state.items():
+                if isinstance(v, (int, float)) and v > 0 and k in label_map:
+                    parts.append(f"{label_map[k]} {int(v)}")
+                if len(parts) >= 3:
+                    break
+            summary = "、".join(parts) if parts else "完成"
+        tasks.append({
+            "task_id": cp.task_id,
+            "kind": cp.kind,
+            "status": cp.status,
+            "progress": cp.progress,
+            "updated_at": (cp.updated_at or "")[:19],
+            "summary": summary,
+        })
+    return {"tasks": tasks}
+
+
 @router.get("/tasks/{task_id}")
 def task_status(
     task_id: str,

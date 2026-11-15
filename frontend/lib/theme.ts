@@ -5,6 +5,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/enterprises": "企业列表",
   "/leads": "线索看板",
   "/tasks": "拓客任务",
+  "/collect": "信息采集",
   "/settings": "设置",
   "/products": "产品目录",
   "/quotes": "报价单",
