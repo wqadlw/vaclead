@@ -34,6 +34,9 @@ SDGP_URL = "https://www.ccgp-shandong.gov.cn:8087/api/website/site/getListByCode
 AREA_CODE = "370000"       # 山东全省
 COL_TENDER = "0301"        # 采购公告
 COL_RESULT = "0302"        # 结果公告
+COL_CONTRACT = "2502"      # 合同公示（2026-11-15 实测真空 21 条：采购人+供应商
+                           # +电话+金额+签订日期全在正文——成交确认最完整信号）
+COL_INTENT = "2500"        # 采购意向公开（全量 36,884 条池——比招标早 30 天）
 REQUEST_INTERVAL_S = 1.5   # 礼貌间隔（ggzy 同款）
 MAX_RETRIES = 2
 PAGE_SIZE = 20
@@ -241,7 +244,15 @@ def fetch_notice_detail(
         try:
             html = base64.b64decode(body_b64).decode("utf-8", "ignore")
         except (ValueError, UnicodeDecodeError):
-            html = ""
+            pass
+        else:
+            if len(html) < 50:
+                html = ""  # utf-8 解出过短=编码错位，回退 GBK
+        if not html:
+            try:
+                html = base64.b64decode(body_b64).decode("gbk", "ignore")  # 合同公示实测 GBK
+            except (ValueError, UnicodeDecodeError):
+                html = ""
         body_text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
         return {
             "title": (payload.get("title") or "").strip(),

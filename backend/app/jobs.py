@@ -566,6 +566,8 @@ def run_sdgp_scan(max_pages: int = 3) -> dict:
     """
     from .api.imports import apply_icp, extract_enterprise_name
     from .collectors.sdgp import (
+        COL_CONTRACT,
+        COL_INTENT,
         COL_RESULT,
         COL_TENDER,
         fetch_notice_detail,
@@ -584,9 +586,18 @@ def run_sdgp_scan(max_pages: int = 3) -> dict:
     if not keywords:
         logger.warning("sdgp：sdgp_terms 词表为空，本轮优雅跳过")
         return stats
-    for col in (COL_TENDER, COL_RESULT):
-        sig_type = "tender" if col == COL_TENDER else "tender_win"
-        base_score = 30.0 if col == COL_TENDER else 60.0
+    # 四栏目语义阶梯（2026-11-15 扩展：合同公示=成交确认最完整信号[采购人+
+    # 供应商+电话+金额全在正文]，意向公开=比招标早 30 天的最早期信号）：
+    # 0301 采购公告→tender(30) / 0302 结果公告→tender_win(60) /
+    # 2502 合同公示→contract(50，新类型) / 2500 意向公开→proposal(25，复用备案语义)
+    _COL_SEMANTICS = {
+        COL_TENDER: ("tender", 30.0),
+        COL_RESULT: ("tender_win", 60.0),
+        COL_CONTRACT: ("contract", 50.0),
+        COL_INTENT: ("proposal", 25.0),
+    }
+    for col in (COL_TENDER, COL_RESULT, COL_CONTRACT, COL_INTENT):
+        sig_type, base_score = _COL_SEMANTICS[col]
         for kw in keywords:
             for raw in search_all(col, kw, max_pages=max_pages):
                 notice = normalize_notice(raw)
@@ -666,11 +677,9 @@ def run_sdgp_scan(max_pages: int = 3) -> dict:
                                         stats["contacts_new"] = stats.get("contacts_new", 0) + 1
                     if exists is not None:
                         continue
-                    evidence = (
-                        notice["title"]
-                        if col == COL_TENDER
-                        else f"{notice['title']}（结果公告）"
-                    )
+                    _col_cn = {COL_TENDER: "", COL_RESULT: "（结果公告）",
+                               COL_CONTRACT: "（合同公示）", COL_INTENT: "（采购意向）"}
+                    evidence = notice["title"] + _col_cn.get(col, "")
                     s.add(Signal(
                         enterprise_id=ent.id,
                         type=sig_type,

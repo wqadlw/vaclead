@@ -33,6 +33,7 @@ interface SignalRow {
 
 const TYPE_TAG: Record<string, { label: string; color: "cyan" | "green" | "blue" | "amber" }> = {
   tender_win: { label: "中标", color: "cyan" },
+  contract: { label: "合同公示", color: "green" },
   tender_buy: { label: "公开采购", color: "green" },
   tender: { label: "政采公告", color: "blue" },
   proposal: { label: "项目备案", color: "amber" },

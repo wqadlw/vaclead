@@ -24,6 +24,7 @@ _TYPE_CN = {
     "tender_buy": "公开采购",
     "tender": "政采公告",
     "proposal": "项目备案",
+    "contract": "合同公示",
 }
 
 #: facet 计数的行数上限（超出则不返回 facet——列表本身也到不了这个量级）

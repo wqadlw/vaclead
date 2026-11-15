@@ -260,9 +260,9 @@ def test_sdgp_scan_semantics(monkeypatch, client, admin_headers):
     assert stats["no_buyer_skipped"] == 1  # 抽不到采购人如实跳过不发明
 
     # 词表使用：全部关键词 = sdgp_terms（品类宽词 ∪ 山东大本营行业细分，
-    # 2026-11-15 扩容），且两栏目都扫了
+    # 2026-11-15 扩容），且四栏目都扫了（2026-11-15 扩展：合同公示+意向公开）
     assert set(used_kws) == set(sdgp_terms())
-    assert set(used_cols) == {"0301", "0302"}
+    assert set(used_cols) == {"0301", "0302", "2502", "2500"}
 
     with SessionLocal() as s:
         ent = s.query(Enterprise).filter(
