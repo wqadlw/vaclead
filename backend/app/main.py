@@ -733,6 +733,14 @@ if _STATIC_DIR.is_dir():
     async def _spa_fallback(full_path: str):
         if full_path.startswith(("api/", "docs", "openapi.json")):
             raise HTTPException(404, "Not Found")
+        # SPEC-SEG2：/profile/{code}（客户群专属页漂亮 URL）→ 302 到查询参数页
+        # （静态导出无动态路由；view 为真实页排除；带点路径是静态资源/文件，排除）
+        if full_path.startswith("profile/"):
+            seg_code = full_path[len("profile/"):]
+            if seg_code and seg_code != "view" and "/" not in seg_code and "." not in seg_code:
+                from fastapi.responses import RedirectResponse
+
+                return RedirectResponse(f"/profile/view?code={seg_code}", status_code=302)
         candidate = _STATIC_DIR / f"{full_path}.html"
         if candidate.is_file():
             return FileResponse(candidate)
