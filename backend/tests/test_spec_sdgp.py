@@ -241,7 +241,7 @@ def test_sdgp_scan_semantics(monkeypatch, client, admin_headers):
     """0301→tender+buyer(sdgp_buyer, 山东省)；0302→tender_win（结果公告视角）；
     无买方不发明；二跑幂等；词表宽词使用（BS 轮教训）。"""
     from app import jobs as jobs_mod
-    from app.vertical import ggzy_name_terms
+    from app.vertical import sdgp_terms
 
     used_cols: list[str] = []
     used_kws: list[str] = []
@@ -259,8 +259,9 @@ def test_sdgp_scan_semantics(monkeypatch, client, admin_headers):
     assert stats["signals"] == 2
     assert stats["no_buyer_skipped"] == 1  # 抽不到采购人如实跳过不发明
 
-    # 词表宽词使用：全部关键词 ⊆ ggzy_name_terms，且两栏目都扫了
-    assert set(used_kws) == set(ggzy_name_terms())
+    # 词表使用：全部关键词 = sdgp_terms（品类宽词 ∪ 山东大本营行业细分，
+    # 2026-11-15 扩容），且两栏目都扫了
+    assert set(used_kws) == set(sdgp_terms())
     assert set(used_cols) == {"0301", "0302"}
 
     with SessionLocal() as s:
@@ -314,7 +315,7 @@ def test_sdgp_scan_empty_terms_skips(monkeypatch):
         called["n"] += 1
         yield from ()
 
-    monkeypatch.setattr(vertical_mod, "ggzy_name_terms", lambda: [])
+    monkeypatch.setattr(vertical_mod, "sdgp_terms", lambda: [])
     monkeypatch.setattr("app.collectors.sdgp.search_all", fake)
     stats = jobs_mod.run_sdgp_scan(max_pages=3)
     assert stats == {"notices": 0, "buyers": 0, "signals": 0, "no_buyer_skipped": 0}

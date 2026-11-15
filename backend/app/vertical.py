@@ -61,6 +61,28 @@ def ggzy_extended_terms() -> list[str]:
     return list(load().get("ggzy_name_terms_extended", []))
 
 
+#: sdgp 专属扩展词（SPEC-SDGP 词表扩容 2026-11-15，山东大本营全行业截获）：
+#: 真空品类词之外，按 SEGMENTATION 买家侧细分补齐——山东双时段 cron 每词×
+#: 两栏目×2 页，40 词≈160 请求/轮（1.5s 间隔 ≈4 分钟），配额可承受。
+SDGP_EXTRA_TERMS = [
+    "冻干", "脱水蔬菜", "真空包装", "镀铝膜", "吸塑", "厚片",
+    "热处理", "真空淬火", "晶圆", "封装测试", "光伏", "动力电池",
+    "药业", "生物科技", "精细化工", "石墨碳素", "分析测试", "表面处理",
+]
+
+
+def sdgp_terms() -> list[str]:
+    """山东政采标题检索词表 = ggzy 品类宽词 ∪ 山东大本营行业细分（去重保序）。
+
+    标题检索与浙江同款（BS 轮教训：项目名/标题库用品类宽词）——但山东是
+    大本营，扩 SEGMENTATION 买家侧细分全行业截获，边际成本仅请求量。"""
+    out: list[str] = []
+    for t in [*ggzy_name_terms(), *SDGP_EXTRA_TERMS]:
+        if t and t not in out:
+            out.append(t)
+    return out
+
+
 def icp_segments() -> dict:
     """ICP 分段权重（SPEC-F F2，opengtm 四段模式：size/industry/digital/pain）。"""
     return load().get("icp_segments", {})

@@ -568,14 +568,14 @@ def run_sdgp_scan(max_pages: int = 3) -> dict:
     from .db import SessionLocal
     from .normalize import resolve_enterprise
     from .sources import any_source_disabled
-    from .vertical import ggzy_name_terms
+    from .vertical import sdgp_terms
 
     if any_source_disabled("sdgp"):
         return {"skipped_disabled": True}
     stats: dict = {"notices": 0, "buyers": 0, "signals": 0, "no_buyer_skipped": 0}
-    keywords = ggzy_name_terms()
+    keywords = sdgp_terms()  # 2026-11-15 词表扩容：品类宽词 ∪ 山东大本营行业细分
     if not keywords:
-        logger.warning("sdgp：ggzy_name_terms 词表为空，本轮优雅跳过")
+        logger.warning("sdgp：sdgp_terms 词表为空，本轮优雅跳过")
         return stats
     for col in (COL_TENDER, COL_RESULT):
         sig_type = "tender" if col == COL_TENDER else "tender_win"
