@@ -11,7 +11,7 @@
  */
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button, Select, Spin, Tag, Toast } from "@douyinfe/semi-ui";
+import { Button, Input, Select, Spin, Tag, Toast } from "@douyinfe/semi-ui";
 import { ArrowLeft, ExternalLink, Phone, RefreshCw } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { api } from "@/lib/api";
@@ -141,6 +141,11 @@ function SegmentWorkInner() {
   const [contactsTotal, setContactsTotal] = useState<number | null>(null);
   const [contactsLoading, setContactsLoading] = useState(false);
   const PAGE_SIZE = 20; // 用户拍板：一页 20 条
+  // 分类筛选（用户："太多了不好找"）：省份 facet + 企业名搜索
+  const [province, setProvince] = useState("");
+  const [q, setQ] = useState("");
+  const [qs, setQs] = useState(""); // 防抖后的 q
+  const [provinces, setProvinces] = useState<Record<string, number>>({});
   const [isAdmin, setIsAdmin] = useState(false);
   const [signals, setSignals] = useState<
     { id: number; type_cn: string; title: string; date: string; ent_name: string; url: string }[]
@@ -165,26 +170,39 @@ function SegmentWorkInner() {
   const industryKeys = useMemo(() => strList(def?.industry_keys), [def]);
   const keywords = useMemo(() => strList(def?.keywords), [def]);
 
-  /** 工作表：按页签拉该群联系人（分页 20/页） */
+  /** 工作表：按页签拉该群联系人（分页 20/页 + 省份/搜索筛选） */
   const loadContacts = useCallback(() => {
     setContactsLoading(true);
     const p = new URLSearchParams({ segment: code, page: String(page), page_size: String(PAGE_SIZE) });
     if (tab === "untouched") p.set("call_status", "untouched");
     if (tab === "touched") p.set("call_status", "touched");
     if (tab === "intent") p.set("intent_min", "60");
+    if (province) p.set("province", province);
+    if (qs.trim()) p.set("q", qs.trim());
     api
-      .get<{ items?: ContactRow[]; total?: number }>(`/api/contacts?${p}`)
+      .get<{ items?: ContactRow[]; total?: number; provinces?: Record<string, number> }>(`/api/contacts?${p}`)
       .then((d) => {
         setContacts(Array.isArray(d?.items) ? d.items : []);
         setContactsTotal(typeof d?.total === "number" ? d.total : null);
+        if (d?.provinces && typeof d.provinces === "object") setProvinces(d.provinces);
       })
       .catch(() => {
         setContacts([]);
         setContactsTotal(null);
       })
       .finally(() => setContactsLoading(false));
-  }, [code, tab, page]);
+  }, [code, tab, page, province, qs]);
   useEffect(() => loadContacts(), [loadContacts]);
+
+  /** 搜索防抖 400ms */
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQs(q);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [q]);
+  useEffect(() => setPage(1), [province]);
 
   /** 切页签回到第一页 */
   const switchTab = (k: TabKey) => {
@@ -328,6 +346,41 @@ function SegmentWorkInner() {
               {TABS.find((t) => t.key === tab)?.desc}
               {contactsTotal != null ? ` · 共 ${contactsTotal.toLocaleString("zh-CN")} 条` : ""}
             </span>
+          </div>
+          {/* 分类筛选（用户："太多了不好找"）：省份 facet + 企业名搜索 */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--rule)] px-3 py-2">
+            <Input
+              value={q}
+              placeholder="搜企业名/联系人"
+              showClear
+              className="!w-52"
+              onChange={(v) => setQ(v ?? "")}
+            />
+            <Select
+              value={province || undefined}
+              placeholder="全部省份"
+              showClear
+              filter
+              className="!w-36"
+              optionList={Object.entries(provinces)
+                .sort((a, b) => b[1] - a[1])
+                .map(([p, n]) => ({ value: p, label: `${p} (${n})` }))}
+              onChange={(v) => {
+                setProvince(String(v ?? ""));
+                setPage(1);
+              }}
+            />
+            {(province || qs.trim()) && (
+              <button
+                className="text-[12px] text-[var(--muted)] hover:text-[var(--ink)]"
+                onClick={() => {
+                  setQ("");
+                  setProvince("");
+                }}
+              >
+                清除筛选
+              </button>
+            )}
           </div>
           <div className="p-3">
             {contactsLoading ? (
