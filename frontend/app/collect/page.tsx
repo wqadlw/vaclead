@@ -33,6 +33,12 @@ interface RecentTask {
   summary: string;
 }
 
+/** SPEC-GUARD：调度器健康（recent 响应附带；undefined=旧后端容错不显示） */
+interface RecentResp {
+  tasks?: RecentTask[];
+  scheduler_alive?: boolean;
+}
+
 const CATEGORY_TAG: Record<string, "blue" | "cyan" | "green" | "orange" | "grey"> = {
   tender: "blue", proposal: "cyan", poi: "green", enrich: "orange", import: "grey",
 };
@@ -64,6 +70,7 @@ export default function CollectPage() {
   const router = useRouter();
   const [sources, setSources] = useState<SourceRow[] | null>(null);
   const [recent, setRecent] = useState<RecentTask[] | null>(null);
+  const [schedAlive, setSchedAlive] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [brandBusy, setBrandBusy] = useState(false);
 
@@ -74,8 +81,11 @@ export default function CollectPage() {
       .then((d) => setSources(listOf<SourceRow>(d)))
       .catch(() => setSources(null));
     api
-      .get<{ tasks?: RecentTask[] }>("/api/tasks/recent")
-      .then((d) => setRecent(Array.isArray(d?.tasks) ? d.tasks : []))
+      .get<RecentResp>("/api/tasks/recent")
+      .then((d) => {
+        setRecent(Array.isArray(d?.tasks) ? d.tasks : []);
+        setSchedAlive(typeof d?.scheduler_alive === "boolean" ? d.scheduler_alive : null);
+      })
       .catch(() => setRecent(null))
       .finally(() => setLoading(false));
   }, []);
@@ -133,9 +143,18 @@ export default function CollectPage() {
           </div>
         </div>
         <div className="bg-white px-4 py-3">
-          <div className="text-[12px] text-[var(--muted)]">定时巡采</div>
+          <div className="flex items-center justify-between">
+            <div className="text-[12px] text-[var(--muted)]">定时巡采</div>
+            {typeof schedAlive === "boolean" && (
+              <Tag color={schedAlive ? "green" : "red"} type="light" size="small">
+                {schedAlive ? "运行中" : "已停摆"}
+              </Tag>
+            )}
+          </div>
           <div className="mt-1 text-[12px] leading-5 text-[var(--muted)]">
-            白天每 2 小时标讯 / 每日 03:30 增量 / 四省+山东 05 点档——自动化运行中
+            {schedAlive === false
+              ? "⚠ 调度器已停摆——采集不会自动跑，请联系管理员重启服务"
+              : "白天每 2 小时标讯 / 每日 03:30 增量 / 四省+山东 05 点档"}
           </div>
         </div>
       </div>

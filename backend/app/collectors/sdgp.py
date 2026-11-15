@@ -156,12 +156,22 @@ def fetch_notices(
         "title": keyword,
     }
     data = _post(body, client)
-    result = data.get("result") or {}
-    inner = result.get("data")
+    # 响应包裹形态三兼容（2026-11-15 生产首采 0 产出定位：实站=data.data，
+    # Mock/测试=result.data，ggzy 惯例=result 直挂——三层全接防再断）。
+    inner = data.get("data")
     if isinstance(inner, dict):
-        return inner
-    if isinstance(result, dict) and "records" in result:
-        return result
+        payload = inner.get("data")
+        if isinstance(payload, dict) and "records" in payload:
+            return payload
+        if "records" in inner:
+            return inner
+    result = data.get("result") or {}
+    if isinstance(result, dict):
+        if "records" in result:
+            return result
+        inner2 = result.get("data")
+        if isinstance(inner2, dict) and "records" in inner2:
+            return inner2
     return _empty()
 
 

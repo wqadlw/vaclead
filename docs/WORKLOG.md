@@ -4,6 +4,47 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-15 · ★生产事故复盘：调度器停摆 5 天（一颗参数雷炸掉全部 cron）+ SPEC-GUARD 根治
+
+**事故**：用户"继续优化信息源"触发水位盘查——**11-10 18:41 起全部 30+ cron
+静默停摆 5 天**（hourly_tender 5 天/四省备案 6 天/webhook/竞对雷达/看门狗
+全死），HTTP 正常无报警——watchdog 本身也是 cron 同死，完美静默。期间仅
+daily_incremental "活着"（实为每次重启的 G4 补跑假象）。
+
+**根因链（探针三步定位：水位盘查→TestClient 复现 jobs=0→basicConfig 抓
+traceback）**：`_register_cron("watch_radar", _watch_sweep, "*/30", "*")`
+把 30 分钟步长写进 **hour 字段**（范围 0-23 装不下步长 30）→ APScheduler
+3.11.3 `ValueError: step value (30) is higher than total range (23)` →
+异常从注册循环冒泡 → **外层 except 捕获 → scheduler.start() 从未执行 →
+全部 job 不存在**。watch_radar 是 11-10 SPEC-RADAR 引入——时间线精确吻合。
+旧版 APScheduler 容忍 hour="*/30"（空转语义）掩埋了这颗雷，升级/环境变化
+后变硬错误。**前 5 天日志里其实一直有 warning 但 uvicorn 的 logging 配置
+吞掉了 vaclead.jobs 的输出**。
+
+**修复（三层）**：
+1. **参数修正**：watch_radar 改 `hour="*", minute="*/30"`（每 30 分钟正
+   确语义）——审计全部 26 个 cron 参数，其余合法
+2. **防呆加固**：_register_cron 的 add_job 包 try/critical——**单 job 参
+   数毒雷不再炸掉整个调度器注册**（一颗老鼠屎不坏一锅粥）
+3. **SPEC-GUARD 心跳自愈**：哨兵 job 每分钟 beat（app/sched_state.py 共享
+   状态，main 写/api 读避免循环 import）+ 守护线程每 120s 检查——静默
+   >180s 尝试 scheduler.start() 自愈+critical 日志+degraded 水位告警；
+   /api/tasks/recent 暴露 scheduler_alive → /collect"定时巡采"格红绿标签
+   （已停摆时人话提示）
+
+**实弹**：探针修复前 jobs=0/心跳死 → 修复后 **36 jobs 全注册/心跳 75s
+起跳/生产 alive: True**。手动补跑四省欠账（gd 50 条 0 新/hb **44 条 +29
+企业+44 信号**/js 90 条/zj 90 条 +8 企业+14 信号）+ 山东解封实弹确认
+（total=32，cron 双时段接管）。ccgp 仍拦截。
+
+**教训（金子级）**：①**"看不见的失败"最危险**——warning 被日志配置吞掉、
+except 吞掉、watchdog 同死三重静默；②探针方法论：水位盘查→TestClient
+复现→basicConfig 抓 traceback，三步定位；③单点失败必须隔离（try per
+job）；④心跳自愈=调度类系统的生命线（这个坑 crontab/systemd 时代用
+"进程死了"解决，常驻进程时代必须应用层自己心跳）。
+
+**门禁**：全量 **483** ✓ + build ✓ + 探针实弹（36 jobs/alive True）。
+
 ## 2026-11-15 · SPEC-COLLECT 信息采集中心（用户在晨报页："专门出一个信息采集的功能"）
 
 **诊断**：采集入口全藏在"工具→拓客任务"，情报视角没有"去采更多"的动线；

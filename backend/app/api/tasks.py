@@ -680,7 +680,10 @@ def tasks_recent(
             "updated_at": (cp.updated_at or "")[:19],
             "summary": summary,
         })
-    return {"tasks": tasks}
+    # SPEC-GUARD：调度器存活状态（前端"定时巡采"格显示 运行中/已停摆）
+    from .. import sched_state
+
+    return {"tasks": tasks, "scheduler_alive": sched_state.alive()}
 
 
 @router.get("/tasks/{task_id}")

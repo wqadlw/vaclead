@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -11,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api import brief, enterprises, imports, leads, misc, tasks
 from .db import SessionLocal, init_db
-from .models import Enterprise, Lead, TaskCheckpoint, utcnow
+from .models import Enterprise, Lead, SyncWatermark, TaskCheckpoint, utcnow
 
 
 def _recycle_leads() -> None:
@@ -273,12 +274,21 @@ async def lifespan(app: FastAPI):
                 )
                 return
             extra = {"day_of_week": day_of_week} if day_of_week else {}
-            scheduler.add_job(
-                _run_job_with_watermark, "cron", hour=hour, minute=minute,
-                args=[job_name, fn, job_kwargs],
-                misfire_grace_time=3600, coalesce=True, max_instances=1,
-                **extra,
-            )
+            try:
+                scheduler.add_job(
+                    _run_job_with_watermark, "cron", hour=hour, minute=minute,
+                    args=[job_name, fn, job_kwargs],
+                    misfire_grace_time=3600, coalesce=True, max_instances=1,
+                    **extra,
+                )
+            except Exception:  # noqa: BLE001 — SPEC-GUARD 教训：单 job 参数毒雷
+                # （如 hour="*/30" 超 0-23 范围）不得炸掉整个调度器注册——
+                # 2026-11-15 watch_radar 一颗雷停摆全部 30+ cron 5 天。响亮告警
+                # 并继续注册其余任务。
+                logging.getLogger("vaclead.jobs").critical(
+                    "定时任务 %s 注册失败（hour=%r minute=%r）——已跳过，其余任务照常",
+                    job_name, hour, minute, exc_info=True,
+                )
 
         # SPEC-B §6：全部定时任务统一走水位包装（公海回收 → 增量采集 → 画像 → 备份串行错峰）
         _register_cron("recycle_leads", _recycle_leads, 2, 0)
@@ -590,8 +600,72 @@ async def lifespan(app: FastAPI):
 
             return watch_sweep()
 
-        _register_cron("watch_radar", _watch_sweep, "*/30", "*")
+        # SPEC-RADAR：官网监控每 30 分钟——2026-11-15 生产事故根因修复：原参数
+        # (hour="*/30", minute="*") 把 30 分钟步长写进小时字段（范围 0-23 装不下），
+        # APScheduler 3.11 硬拒绝 → 注册中断 → scheduler.start() 从未执行 →
+        # 全部 30+ cron 自 11-10 起停摆 5 天（watchdog 本身也是 cron 同死）。
+        # 正确语义：hour="*", minute="*/30"。
+        _register_cron("watch_radar", _watch_sweep, "*", "*/30")
         scheduler.start()
+        app.state.scheduler = scheduler  # SPEC-GUARD：探针/诊断可查 job 触发时刻
+
+        # ---- SPEC-GUARD：调度器心跳自愈（2026-11-15 生产事故根治）----
+        # 事故：11-10 18:41 起 APScheduler 调度线程静默死亡（进程存活 HTTP
+        # 正常，watchdog 也是 cron 所以同样死），全部定时任务停摆 5-6 天无人
+        # 报警（hourly_tender 5 天/四省 6 天欠账）。根治=双层：
+        # ①哨兵 job 每分钟更新共享心跳（sched_state）；②守护线程每 120s 检查
+        # ——心跳超 180s 视为调度器死亡，尝试 start() 自愈并落 critical 日志
+        # +水位告警；③/api/tasks/recent 暴露 scheduler_alive 给前端。
+        from . import sched_state as _sched_state
+
+        def _scheduler_heartbeat() -> None:
+            _sched_state.beat()
+            logging.getLogger("vaclead.jobs").info("调度器心跳 tick（%s）", _sched_state.LAST_BEAT)
+
+        try:
+            if not _jobs_disabled:
+                scheduler.add_job(
+                    _scheduler_heartbeat, "interval", minutes=1,
+                    misfire_grace_time=300, coalesce=True, max_instances=1,
+                )
+        except Exception:  # noqa: BLE001
+            logging.getLogger("vaclead.jobs").warning("心跳哨兵注册失败", exc_info=True)
+
+        def _scheduler_guard() -> None:
+            import logging as _lg
+            import time as _t
+
+            while True:
+                _t.sleep(120)
+                _silent = _t.time() - _sched_state.LAST_BEAT
+                if _silent <= _sched_state.STALE_AFTER_S:
+                    continue
+                _lg.getLogger("vaclead.jobs").critical(
+                    "调度器心跳静默 %.0fs（>%ds）——APScheduler 线程疑似死亡，尝试自愈",
+                    _silent, _sched_state.STALE_AFTER_S,
+                )
+                try:
+                    if not scheduler.running:
+                        scheduler.start()
+                        _sched_state.beat()
+                        _lg.getLogger("vaclead.jobs").critical("调度器已重新 start()——自愈完成")
+                    else:
+                        # running 但心跳停：调度线程卡死，重启进程才能彻底恢复——落水位告警
+                        with SessionLocal() as _gs:
+                            _row = _gs.get(SyncWatermark, "scheduler_guard")
+                            if _row is None:
+                                _row = SyncWatermark(job_name="scheduler_guard")
+                                _gs.add(_row)
+                            _row.last_run_at = utcnow()
+                            _row.last_status = "degraded"
+                            _row.stats_json = '{"silent_seconds": %d}' % int(_silent)
+                            _gs.commit()
+                except Exception:  # noqa: BLE001
+                    _lg.getLogger("vaclead.jobs").critical("调度器自愈失败", exc_info=True)
+
+        import threading as _guard_th
+
+        _guard_th.Thread(target=_scheduler_guard, daemon=True).start()
     except Exception:  # noqa: BLE001 — APScheduler 不可用时跳过定时任务（不影响主功能）
         import logging
 
