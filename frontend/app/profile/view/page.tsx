@@ -136,9 +136,11 @@ function SegmentWorkInner() {
   const [def, setDef] = useState<SegmentDef | null>(null);
   const [defLoading, setDefLoading] = useState(true);
   const [tab, setTab] = useState<TabKey>("untouched");
+  const [page, setPage] = useState(1);
   const [contacts, setContacts] = useState<ContactRow[] | null>(null);
   const [contactsTotal, setContactsTotal] = useState<number | null>(null);
   const [contactsLoading, setContactsLoading] = useState(false);
+  const PAGE_SIZE = 20; // 用户拍板：一页 20 条
   const [isAdmin, setIsAdmin] = useState(false);
   const [signals, setSignals] = useState<
     { id: number; type_cn: string; title: string; date: string; ent_name: string; url: string }[]
@@ -163,10 +165,10 @@ function SegmentWorkInner() {
   const industryKeys = useMemo(() => strList(def?.industry_keys), [def]);
   const keywords = useMemo(() => strList(def?.keywords), [def]);
 
-  /** 工作表：按页签拉该群联系人 */
+  /** 工作表：按页签拉该群联系人（分页 20/页） */
   const loadContacts = useCallback(() => {
     setContactsLoading(true);
-    const p = new URLSearchParams({ segment: code, page_size: "50" });
+    const p = new URLSearchParams({ segment: code, page: String(page), page_size: String(PAGE_SIZE) });
     if (tab === "untouched") p.set("call_status", "untouched");
     if (tab === "touched") p.set("call_status", "touched");
     if (tab === "intent") p.set("intent_min", "60");
@@ -181,8 +183,14 @@ function SegmentWorkInner() {
         setContactsTotal(null);
       })
       .finally(() => setContactsLoading(false));
-  }, [code, tab]);
+  }, [code, tab, page]);
   useEffect(() => loadContacts(), [loadContacts]);
+
+  /** 切页签回到第一页 */
+  const switchTab = (k: TabKey) => {
+    setTab(k);
+    setPage(1);
+  };
 
   /** 群信号：按群行业逐个拉近 90 天，合并去重按日期倒序取前 6 */
   useEffect(() => {
@@ -305,7 +313,7 @@ function SegmentWorkInner() {
             {TABS.map((t) => (
               <button
                 key={t.key}
-                onClick={() => setTab(t.key)}
+                onClick={() => switchTab(t.key)}
                 title={t.desc}
                 className={`rounded-t-md px-3 py-2 text-[13px] ${
                   tab === t.key
@@ -367,6 +375,38 @@ function SegmentWorkInner() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {/* 分页（用户拍板：一页 20 条） */}
+            {contactsTotal != null && contactsTotal > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--rule)] px-1 pt-2.5">
+                <span className="text-[12px] text-[var(--muted)]">
+                  共 {contactsTotal.toLocaleString("zh-CN")} 条 · 第 {page}/{Math.max(1, Math.ceil(contactsTotal / PAGE_SIZE))} 页（每页 {PAGE_SIZE} 条）
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    size="small"
+                    disabled={page <= 1}
+                    loading={contactsLoading}
+                    onClick={() => setPage((v) => Math.max(1, v - 1))}
+                  >
+                    上一页
+                  </Button>
+                  <Button
+                    size="small"
+                    disabled={page >= Math.ceil(contactsTotal / PAGE_SIZE)}
+                    loading={contactsLoading}
+                    onClick={() => setPage((v) => v + 1)}
+                  >
+                    下一页
+                  </Button>
+                  <button
+                    className="text-[12px] text-[var(--accent)] hover:underline"
+                    onClick={() => router.push(`/contacts?segment=${encodeURIComponent(code)}`)}
+                  >
+                    联系人中心继续 →
+                  </button>
+                </div>
               </div>
             )}
           </div>
