@@ -85,6 +85,8 @@ interface Filters {
   source?: string;
   has_contact?: number;
   customer_role?: string;
+  /** SPEC-SEG2：客户群过滤（value=segment code，后端按该群 industry_keys 集合过滤） */
+  segment?: string;
   /** SPEC-SEG 下钻 v2：意图分层区间 + 触达状态（reports 五卡下钻 URL 参数） */
   intent_min?: number | null;
   intent_max?: number | null;
@@ -92,6 +94,14 @@ interface Filters {
   /** SPEC-ORDER 表头服务端真排序：order=icp|intent|capital|created，dir=asc|desc（空=默认 icp desc） */
   order?: string;
   dir?: string;
+}
+
+/** SPEC-SEG2：/api/segments 行结构（仅取筛选下拉所需字段，容错：兼容 {items} 与裸数组） */
+interface SegmentItem {
+  name?: string;
+  code?: string;
+  enabled?: number | boolean;
+  enterprise_count?: number | null;
 }
 
 const ESTABLISHED_OPTIONS = [
@@ -143,6 +153,9 @@ export default function EnterprisesPage() {
     if (hc) f.has_contact = Number(hc);
     const cr = sp.get("customer_role");
     if (cr) f.customer_role = cr;
+    // SPEC-SEG2：客户画像页「看名单」直达 /enterprises?segment=<code>
+    const sg = sp.get("segment");
+    if (sg) f.segment = sg;
     // SPEC-SEG 下钻 v2：意图区间/触达状态从 URL 恢复（reports 五卡下钻落地）
     const imn = sp.get("intent_min");
     if (imn) f.intent_min = Number(imn);
@@ -256,6 +269,8 @@ export default function EnterprisesPage() {
     filters.intent_min, filters.intent_max, filters.call_status,
     filters.is_competitor !== undefined && filters.is_competitor !== -1 ? 1 : null,
     filters.source,
+    // SPEC-SEG2：客户群计入更多筛选激活数
+    filters.segment,
   ].filter((v) => v !== null && v !== undefined && v !== "").length;
   // SPEC-CI：默认销售视角——地址/注册资本默认收进列显隐
   const [hiddenCols, setHiddenCols] = useState<string[]>(["address"]);
@@ -437,6 +452,8 @@ export default function EnterprisesPage() {
       // SPEC-SEG 下钻 v2：has_contact 透传原值（=1 有号码 / =2 无号码）
       if (f.has_contact) params.set("has_contact", String(f.has_contact));
       if (f.customer_role) params.set("customer_role", f.customer_role);
+      // SPEC-SEG2：客户群过滤透传（后端并行实施中——未就绪时按未知参数忽略/空返回容错）
+      if (f.segment) params.set("segment", f.segment);
       if (typeof f.intent_min === "number") params.set("intent_min", String(f.intent_min));
       if (typeof f.intent_max === "number") params.set("intent_max", String(f.intent_max));
       if (f.call_status) params.set("call_status", f.call_status);
@@ -463,6 +480,31 @@ export default function EnterprisesPage() {
   useEffect(() => {
     api.get<{ items: { tag: string; count: number }[] }>("/api/tags")
       .then((d) => setTagOptions(d.items))
+      .catch(() => undefined);
+  }, []);
+
+  // SPEC-SEG2：客户群筛选下拉（GET /api/segments 驱动）。请求失败静默 → 下拉空态，不白屏。
+  const [segmentOptions, setSegmentOptions] = useState<{ value: string; label: string }[]>([]);
+  useEffect(() => {
+    api
+      .get<unknown>("/api/segments")
+      .then((d) => {
+        const raw: SegmentItem[] = Array.isArray(d)
+          ? (d as SegmentItem[])
+          : Array.isArray((d as { items?: unknown }).items)
+            ? ((d as { items: SegmentItem[] }).items)
+            : [];
+        // 停用群也保留（标「停用」后缀）——历史名单仍可查，推荐/采集侧才真正排除停用群
+        const items = raw
+          .filter((s) => s && typeof s.code === "string")
+          .map((s) => ({
+            value: s.code as string,
+            label: `${s.name ?? s.code}${
+              typeof s.enterprise_count === "number" ? `（${s.enterprise_count} 家）` : ""
+            }${s.enabled ? "" : " · 停用"}`,
+          }));
+        setSegmentOptions(items);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -1112,6 +1154,16 @@ export default function EnterprisesPage() {
 
       {moreOpen && (
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border)] bg-white px-3 py-2.5">
+          {/* SPEC-SEG2：客户群过滤——客户画像页「看名单」直达此处（?segment=code） */}
+          <Select
+            style={{ width: 180 }}
+            optionList={segmentOptions}
+            placeholder="客户群不限"
+            showClear
+            filter
+            value={filters.segment}
+            onChange={(v) => set({ segment: (v as string) || undefined })}
+          />
           <Input style={{ width: 104 }} placeholder="城市" value={filters.city} onChange={(v) => set({ city: v })} />
           <Input style={{ width: 104 }} placeholder="区县" value={filters.district} onChange={(v) => set({ district: v })} />
           <div className="flex items-center gap-1">

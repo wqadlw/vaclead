@@ -4,6 +4,39 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-15 · SPEC-SEG2 客户画像数据化（客户群成为系统一级实体，全国范围）
+
+**用户指令**："做全国的；画像表放进项目里可编辑；融入整个流程"——客户群
+从静态文档（CUSTOMER_PROFILE.md）升级为**数据库实体+可编辑界面+全流程
+消费**。注意与旧 SPEC-SEG（已交付的报表中心客户分层看板，聚合视图）互
+补不冲突——本 SPEC 是客户群实体化。
+
+**落地（双子 Agent）**：
+- 新表 customer_segment（name/code unique/keywords JSON/industry_keys
+  JSON/business_lines JSON/priority/enabled/notes/sort）+ **种子十群**
+  （全国版：镀膜/半导体/热处理/食品冻干/光伏锂电 P0、化工/吸塑/包装/
+  中央系统改造 P1、制药 enabled=0 待词表确认；幂等双保险+06:50 cron+
+  lifespan 启动即种）
+- **公共口径层 app/customer.py**：non_buyer_conds() 自 contacts 抽取
+  （contacts 改 import，SQL 逐字节同形行为不变）——segments 统计与工作
+  列表口径永不漂移
+- **API**：GET /api/segments（全员，每群实时统计 enterprise_count/
+  dialable_count，全部非客户排除叠加）+ admin CRUD（code 唯一/priority
+  白名单）+ GET /api/enterprises?segment=<code>（强制 SQLite，非客户
+  条件叠加，未知 code→空列表）
+- **流程四出**：/profile 客户画像页（十群总表+admin 编辑 Modal+看名单
+  跳转）｜企业列表"客户群"筛选｜POI 通道"按客户群带词"｜推荐 segment
+  权重（P0+5/P1+2，**质量阈值之后叠加**——实测发现放阈值前会把共享号
+  降权候选捞回榜：阈值=质量线，客户群=够格候选间的优先级线）+ 补数清单
+  按群优先级排序
+
+**实弹**：十群种子就位（镀膜 482/半导体 1,257/热处理 703/食品冻干 33/
+制药 0+disabled 全部与统计吻合）、segment 筛选 482 家全镀膜、profile 页
+200。**468 全绿**（461+7）+ build ✓。
+
+**文档**：CUSTOMER_PROFILE.md 补采计划改全国版；画像表从文档迁移进系统
+（文档留拍板沿革）。
+
 ## 2026-11-15 · 客户范围三连拍板收敛（检测实验室/OEM/液环出局）
 
 **用户三连拍板**：①"分析/实验室不需要"——检测/实验室**含民营第三方**

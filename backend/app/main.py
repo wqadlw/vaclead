@@ -172,6 +172,17 @@ async def lifespan(app: FastAPI):
         import logging
 
         logging.getLogger("vaclead.jobs").warning("话术卡种子失败", exc_info=True)
+    # SPEC-SEG2：客户群种子随启动即种（幂等 DB 标记防重，免等 06:50 cron；
+    # 失败不阻断启动，cron 次日兜底）
+    try:
+        from .api.segments import seed_customer_segments
+
+        with SessionLocal() as _seed_s:
+            seed_customer_segments(_seed_s)
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger("vaclead.jobs").warning("客户群种子失败", exc_info=True)
     _inject_tools()
     _recover_interrupted_tasks()
     # 日志按天滚动（I6 P2）：data/logs/vaclead.log，保留 14 天
@@ -446,6 +457,16 @@ async def lifespan(app: FastAPI):
 
         _register_cron("script_card_seed", _seed_script_cards, 6, 19)
 
+        # SPEC-SEG2：客户群种子（幂等 DB 标记防重，错峰 06:50）
+        def _seed_segments() -> dict:
+            from .api.segments import seed_customer_segments
+            from .db import SessionLocal as _SL
+
+            with _SL() as s:
+                return {"seeded": seed_customer_segments(s)}
+
+        _register_cron("segment_seed", _seed_segments, 6, 50)
+
         def _oem_touch_sweep() -> dict:
             from .jobs import oem_touch_sweep
 
@@ -689,6 +710,9 @@ app.include_router(proposal.router, prefix="/api")
 from .api import script_cards  # noqa: E402
 
 app.include_router(script_cards.router, prefix="/api")
+from .api import segments  # noqa: E402
+
+app.include_router(segments.router, prefix="/api")  # SPEC-SEG2 客户群画像
 
 
 # ---- 单进程部署：托管前端静态导出（frontend/out），SPA 回退 ----

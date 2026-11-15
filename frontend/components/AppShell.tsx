@@ -26,6 +26,7 @@ import {
   Settings,
   Sprout,
   UserRound,
+  Users,
   X,
   Bell,
   Moon,
@@ -59,6 +60,7 @@ const RADAR_NAV = [
   { href: "/intel/market", label: "区域市场", icon: Map },
   { href: "/competitors", label: "竞对雷达", icon: Crosshair },
   { href: "/proposals", label: "拟建雷达", icon: Sprout },
+  { href: "/profile", label: "客户画像", icon: Users },  // SPEC-SEG2：客户群实体化（信息中心组）
   { href: "/data", label: "信息中心", icon: Layers },  // SPEC-INFO：数据资产
 ];
 const TOOL_NAV = [
@@ -312,6 +314,7 @@ function CommandPalette() {
     { label: "序列触达", path: "/outreach" },
     { label: "收件箱", path: "/outreach/inbox" },
     { label: "拓客任务", path: "/tasks" },
+    { label: "客户画像", path: "/profile" },  // SPEC-SEG2：客户群定义入口
     { label: "设置", path: "/settings" },
     // SPEC-SALE S3：老板大屏入口（不进侧栏导航，命令面板直达）
     { label: "数据大屏", path: "/screen" },

@@ -112,6 +112,32 @@ interface GongshangBackfillResp {
   total_rows?: number;
 }
 
+/** SPEC-SEG2 §4.3：客户群行结构（仅取「按客户群带词」所需字段；keywords 兼容数组与 JSON 字符串） */
+interface SegmentLite {
+  id?: number;
+  name?: string;
+  code?: string;
+  keywords?: string[] | string | null;
+  enabled?: number | boolean;
+}
+
+/** 客户群 keywords 防御解析：数组直接用，JSON 字符串解包，其余空 */
+function segKeywords(s?: SegmentLite | null): string[] {
+  const v = s?.keywords;
+  if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string" && !!x.trim());
+  if (typeof v === "string" && v.trim()) {
+    try {
+      const arr = JSON.parse(v);
+      return Array.isArray(arr)
+        ? arr.filter((x): x is string => typeof x === "string" && !!x.trim())
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 function formatDone(summary: Record<string, unknown> | undefined): string {
   if (!summary || typeof summary !== "object") return "任务完成";
   const parts = Object.entries(summary)
@@ -130,6 +156,9 @@ export default function TasksPage() {
   const [terms, setTerms] = useState<string[]>(["真空"]);
   const [ggzyOptions, setGgzyOptions] = useState<{ value: string; label: string }[]>([]);
   const [ccgpOptions, setCcgpOptions] = useState<{ value: string; label: string }[]>([]);
+  // SPEC-SEG2 §4.3：按客户群带词——选中客户群后把该群采集词填入关键词框（前端拼接，后端零改动）
+  const [segList, setSegList] = useState<SegmentLite[]>([]);
+  const [segCode, setSegCode] = useState<string | undefined>(undefined);
   const [scanDays, setScanDays] = useState<number>(365);
   const [maxPages, setMaxPages] = useState<number>(2);
   // SPEC-DEEPLINK：官网直查深链（采集受限时的替代动线）
@@ -203,6 +232,22 @@ export default function TasksPage() {
         setCcgpOptions(m.strong_terms.map((t) => ({ value: t, label: t })));
       })
       .catch(() => setGgzyOptions([{ value: "真空", label: "真空" }]));
+  }, []);
+
+  // SPEC-SEG2 §4.3：客户群列表（仅 enabled）——「按客户群带词」下拉数据源。
+  // 后端并行上线中：GET /api/segments 失败静默 → 下拉空态，不白屏不报错。
+  useEffect(() => {
+    api
+      .get<unknown>("/api/segments")
+      .then((d) => {
+        const raw: SegmentLite[] = Array.isArray(d)
+          ? (d as SegmentLite[])
+          : Array.isArray((d as { items?: unknown }).items)
+            ? (d as { items: SegmentLite[] }).items
+            : [];
+        setSegList(raw.filter((s) => s && !!s.code && !!s.enabled));
+      })
+      .catch(() => undefined);
   }, []);
 
   // SPEC-CUX5：刷新/离开页面后找回运行中任务（读 sessionStorage + 状态端点，
@@ -718,16 +763,42 @@ export default function TasksPage() {
                   使用内置品类宽词表，自动检索山东全省采购公告与结果公告（昊志本省直采）
                 </div>
               ) : (
-                <Select
-                  style={{ flex: 1, minWidth: 220 }}
-                  placeholder="设备关键词（可多选）"
-                  multiple
-                  filter
-                  maxTagCount={3}
-                  optionList={termOptions}
-                  value={terms}
-                  onChange={(v) => setTerms(v as string[])}
-                />
+                <>
+                  <Select
+                    style={{ flex: 1, minWidth: 220 }}
+                    placeholder="设备关键词（可多选）"
+                    multiple
+                    filter
+                    maxTagCount={3}
+                    optionList={termOptions}
+                    value={terms}
+                    onChange={(v) => setTerms(v as string[])}
+                  />
+                  {/* SPEC-SEG2 §4.3：按客户群带词——选中后该群 keywords 填入左侧关键词框（前端拼接，后端零改动） */}
+                  <Select
+                    style={{ width: 170 }}
+                    placeholder="按客户群带词"
+                    optionList={segList.map((s) => ({
+                      value: s.code as string,
+                      label: s.name || (s.code as string),
+                    }))}
+                    value={segCode}
+                    showClear
+                    onChange={(v) => {
+                      const code = typeof v === "string" && v ? v : undefined;
+                      setSegCode(code);
+                      if (!code) return;
+                      const seg = segList.find((s) => s.code === code);
+                      const kws = segKeywords(seg);
+                      if (kws.length === 0) {
+                        Toast.warning(`「${seg?.name || code}」词表为空——先到「客户画像」页补 POI 采集词`);
+                        return;
+                      }
+                      setTerms(kws);
+                      Toast.success(`已按「${seg?.name || code}」填入 ${kws.length} 个采集词`);
+                    }}
+                  />
+                </>
               )}
             </div>
             <div className="flex gap-3 items-center mt-3">

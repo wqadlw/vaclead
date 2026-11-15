@@ -12,14 +12,14 @@ POST /contacts/batch-call-result 批量标记（企业级效率）。
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import and_, case, func, or_
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
+from ..customer import non_buyer_conds as _non_buyer_conds  # SPEC-SEG2：公共口径
 from ..db import get_session
 from ..models import Contact, Enterprise, User, utcnow
 from ..phones import load_phones
-from ..vertical import PUB_INSTITUTION_NAME_WORDS
 
 router = APIRouter(tags=["contacts"])
 
@@ -42,37 +42,9 @@ _CALL_RESULT_CN = {
 }
 
 
-def _non_buyer_conds():
-    """非客户排除（多轮用户拍板沿革：学校→公共机构→政采买家→检测实验室
-    整体→OEM 设备商）。
-
-    行业级：research_edu / medical_health / lab_instrument（2026-11-15 整体
-    出局，不再区分民营）；来源级：*_buyer 政采买家建档源；角色级：oem；
-    名称形态兜底（检验所/质检所/计量所/研究院等未分类公共机构，不带"公司"
-    才生效）。数据保留可查，仅隐出拨打工作列表与导出。
-    与 vertical.is_non_buyer 同语义的 SQL 形态（or_/!= 链，规避扫描器锚定）。
-    """
-    return and_(
-        or_(
-            Enterprise.source.is_(None),
-            ~Enterprise.source.contains("_buyer"),
-        ),
-        or_(
-            Enterprise.industry_key.is_(None),
-            Enterprise.industry_key != "research_edu",
-            Enterprise.industry_key != "medical_health",
-            Enterprise.industry_key != "lab_instrument",
-        ),
-        or_(
-            Enterprise.customer_role.is_(None),
-            Enterprise.customer_role != "oem",
-        ),
-        or_(
-            Enterprise.name.is_(None),
-            Enterprise.name.like("%公司%"),
-            and_(*[~Enterprise.name.contains(w) for w in PUB_INSTITUTION_NAME_WORDS]),
-        ),
-    )
+# SPEC-SEG2：非客户排除条件抽取为 app/customer.non_buyer_conds 公共函数——
+# 本模块（拨打工作列表/统计/导出）与客户群统计/名单两处共用同一形态，
+# 防口径漂移；语义与多轮拍板沿革见 customer.non_buyer_conds docstring。
 
 
 @router.get("/contacts")

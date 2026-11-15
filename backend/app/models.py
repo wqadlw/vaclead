@@ -1097,6 +1097,38 @@ class PaymentMilestone(Base):
     created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
 
 
+class CustomerSegment(Base):
+    """客户群（SPEC-SEG2）：客户画像数据化——群成为系统一级实体。
+
+    name=销售语言群名（如"镀膜加工厂"）；code=唯一英文标识（前端筛选参数）。
+    keywords/industry_keys/business_lines 均为 TEXT JSON 数组（旧库兼容不设
+    JSON 列类型，解析统一走 customer.parse_json_list 损坏容错）。
+    industry_keys=名单归属依据（映射 vertical downstream_industries 的 key）；
+    priority=P0/P1/P2（推荐加权 P0+5/P1+2/P2 0、补数清单排序）；enabled=0
+    停用（退出推荐/权重，群定义与统计保留可查）。
+    """
+
+    __tablename__ = "customer_segment"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_customer_segment_code"),
+        Index("ix_customer_segment_sort", "enabled", "sort"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    code: Mapped[str] = mapped_column(Text, nullable=False)
+    keywords: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # POI 采集词 JSON
+    industry_keys: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # 行业类目 JSON
+    business_lines: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # 买什么 JSON
+    priority: Mapped[str] = mapped_column(Text, nullable=False, default="P2")  # P0 | P1 | P2
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")  # 典型客户描述（销售语言）
+    sort: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+    updated_at: Mapped[str] = mapped_column(Text, nullable=False, default=utcnow)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
 class ScriptCard(Base):
     """话术卡（SPEC-SALE S1）：SALES_PLAYBOOK → 系统，通话驾驶舱按场景取卡。
 

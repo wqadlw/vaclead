@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from .customer import PRIORITY_WEIGHT, industry_segment_map
 from .models import Contact, Enterprise, Lead, Signal
 from .vertical import is_non_buyer
 
@@ -157,6 +158,10 @@ def score_candidates(session: Session, limit: int = 50, product: str | None = No
     out: list[dict] = []
     seen_ent: set[int] = set()
     primary_contact: dict[int, int] = {}  # SPEC-AW AW1：主联系人（首个带电话的）
+    # SPEC-SEG2 四出4：客户群画像驱动的优先级权重——industry_key 命中 enabled
+    # 群即加权（P0 +5 / P1 +2 / P2 0，多群命中取最高 priority），在 ICP/tier
+    # 分之上叠加；理由链显示"客户群：{name}（{priority}）"
+    seg_map = industry_segment_map(session)
     for ent, cid, cresult in ent_rows:
         if cid is not None and ent.id not in primary_contact:
             primary_contact[ent.id] = cid
@@ -235,6 +240,17 @@ def score_candidates(session: Session, limit: int = 50, product: str | None = No
 
         if score < 45:
             continue
+
+        # SPEC-SEG2 四出4：客户群权重（画像表驱动，P0 +5 / P1 +2 / P2 0）——
+        # 在质量阈值**之后**叠加：只给够格候选排优先级，不把被共享号降权等
+        # 质量信号压线的候选捞回榜（阈值=质量线，客户群=优先级线）。停用群
+        # 已被 industry_segment_map 过滤（enabled=0 退出推荐）。
+        seg_hit = seg_map.get(ent.industry_key or "")
+        if seg_hit is not None:
+            weight = PRIORITY_WEIGHT.get(seg_hit[1], 0)
+            if weight:
+                score += weight
+            reasons.append(f"客户群：{seg_hit[0]}（{seg_hit[1]}）")
 
         out.append({
             "ent_id": ent.id,

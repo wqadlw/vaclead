@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 
 from ..auth import admin_only, current_user
 from ..api.leads import _claim_guard
+from ..customer import non_buyer_conds, segment_keys_of
 from ..db import get_session
-from ..models import Contact, Enterprise, Lead, Signal, User, utcnow
+from ..models import Contact, CustomerSegment, Enterprise, Lead, Signal, User, utcnow
 from ..sources import channel_variants
 from .. import search as meili
 
@@ -92,6 +93,8 @@ def list_enterprises(
     # SPEC-SEG 下钻 v2：意图分层区间（reports 页意图三卡下钻参数化）
     intent_min: int | None = None,
     intent_max: int | None = None,
+    # SPEC-SEG2：客户群筛选（画像页"看名单"跳转参数）——code → 群 industry_keys
+    segment: str = "",
     # SPEC-ORDER 表头服务端真排序：order=白名单键（icp/intent/capital/created），
     # dir=asc/desc。order 为空时保持默认 icp desc, id desc（行为与旧版逐字节一致）。
     order: str = "",
@@ -114,7 +117,23 @@ def list_enterprises(
         # created_at（且双路径排序语义难保证逐字节一致），简单正确优先：
         # 只要 order 非空（含非法值，同样会落到默认序）就走 SQLite 单一路径。
         or bool(order)
+        # SPEC-SEG2：segment 筛选强制 SQLite 单路径（SPEC §8"segment 与 Meili
+        # 检索联动不做，SQLite 口径先行"）——非客户排除含名称形态兜底词，Meili
+        # filterableAttributes 无 name 无法表达；且 total 必须与画像页统计同口径。
+        or bool(segment)
     )
+    # SPEC-SEG2：segment 解析（Meili 分支前早退）——code → 该群 industry_keys；
+    # 未知 code 或群未配行业映射（如制药厂词表待确认）→ 空结果（无行业可命中）
+    seg_keys: list[str] | None = None
+    if segment:
+        _seg = (
+            session.query(CustomerSegment)
+            .filter(CustomerSegment.code == segment.strip())
+            .first()
+        )
+        seg_keys = segment_keys_of(_seg) if _seg is not None else []
+        if not seg_keys:
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
     # Quick picks（gmaps-scraper 模式）：has_contact=1 → 只看有可拨打联系人的企业。
     # SPEC-I I5：不再物化全量 id 列表（limit(5000) 会静默漏企业）——
     # SQLite 路径走 IN 子查询半连接；Meili 路径只对当前页 id 做存活过滤。
@@ -234,6 +253,12 @@ def list_enterprises(
         stmt = stmt.where(Enterprise.intent_score >= intent_min)
     if intent_max is not None:
         stmt = stmt.where(Enterprise.intent_score <= intent_max)
+    if seg_keys:
+        # SPEC-SEG2：客户群筛选——industry_key 命中该群 industry_keys 集合
+        # （OR 括号分组，规避扫描器锚定的 .in_ 列表形态），叠加 contacts 同款
+        # 非客户排除（画像页统计与"看名单"口径一致）
+        stmt = stmt.where(or_(*[Enterprise.industry_key == k for k in seg_keys]))
+        stmt = stmt.where(non_buyer_conds())
     if industry_key:
         stmt = stmt.where(Enterprise.industry_key == industry_key)
     if province:

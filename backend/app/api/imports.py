@@ -711,8 +711,12 @@ def gongshang_lookup_export(
         if _lp(pj)
     }
     rows_out = []
+    from ..customer import PRIORITY_ORDER, industry_segment_map
     from ..vertical import is_non_buyer
 
+    # SPEC-SEG2 四出4：补数清单按客户群优先级排序（P0 在前）——配额先花在
+    # 画像拍板的 P0 群上；同优先级内仍按意图分降序；未归群企业垫底
+    seg_map = industry_segment_map(session)
     for e in ents:
         # 2026-11-08 学校 + 2026-11-14 公共机构扩面 + 2026-11-14 政采买家出局
         # 用户拍板——配额不花在非客户身上
@@ -731,6 +735,7 @@ def gongshang_lookup_export(
             missing.append("联系电话")
         if not missing:
             continue
+        seg_hit = seg_map.get(e.industry_key or "")
         rows_out.append({
             "name": e.name,
             "eid": e.id,
@@ -738,13 +743,14 @@ def gongshang_lookup_export(
             "industry": e.industry_name or "",
             "intent": e.intent_score,
             "missing": "、".join(missing),
+            "seg_rank": PRIORITY_ORDER.get(seg_hit[1], 3) if seg_hit else 3,
         })
         if len(rows_out) >= limit:
             break
     buf = _io.StringIO()
     w = _csv.writer(buf)
     w.writerow(["企业名称", "地区", "行业", "意图分", "缺失项", "风鸟直搜链接"])
-    for r in sorted(rows_out, key=lambda x: -(x["intent"] or 0)):
+    for r in sorted(rows_out, key=lambda x: (x["seg_rank"], -(x["intent"] or 0))):
         # SPEC-CK 补强：每行带风鸟搜索直链——清单里点一下就到查询页，零复制粘贴
         url = "https://www.riskbird.com/ent/" + quote(r["name"]) + "?eid=" + str(r["eid"])
         w.writerow([r["name"], r["region"], r["industry"], r["intent"], r["missing"], url])
