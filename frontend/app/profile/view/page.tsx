@@ -290,6 +290,22 @@ function SegmentWorkInner() {
           </Tag>
         )}
         <div className="ml-auto flex items-center gap-2">
+          <Button
+            size="small"
+            icon={<ExternalLink size={13} />}
+            onClick={() => {
+              // 导出=所见即所得：当前页签口径 + 省份/搜索筛选一并带上
+              const p = new URLSearchParams({ segment: code });
+              if (tab === "untouched") p.set("call_status", "untouched");
+              if (tab === "touched") p.set("call_status", "touched");
+              if (tab === "intent") p.set("intent_min", "60");
+              if (province) p.set("province", province);
+              if (qs.trim()) p.set("q", qs.trim());
+              window.open(`/api/contacts/export?${p}`, "_blank");
+            }}
+          >
+            导出名单
+          </Button>
           {isAdmin && (
             <Button size="small" theme="borderless" onClick={() => router.push("/profile")}>
               编辑定义

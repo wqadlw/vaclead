@@ -318,13 +318,15 @@ def contacts_export(
     industry_key: str = "",
     intent_min: int | None = None,
     q: str = "",
+    segment: str = "",
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ):
     """拨打名单 CSV（SPEC-CE）：当前筛选全量（上限 5000）——外勤场景导出。
 
     SPEC-CUX3：industry_key/intent_min 与列表筛选口径一致（导出=所见即所得）；
-    科研院所/高校排除同步（2026-11-11 用户定稿）。
+    科研院所/高校排除同步（2026-11-11 用户定稿）；SPEC-SEG2 附录 A2：segment
+    客户群筛选与工作列表同口径（专属页导出按钮）。
     号码明文仅限内部自用（W52 定调）；同步流式响应无超时。
     """
     import csv as _csv
@@ -341,6 +343,15 @@ def contacts_export(
         conds.append(Enterprise.industry_key == industry_key)
     if intent_min is not None:
         conds.append(Enterprise.intent_score >= intent_min)
+    if segment:
+        seg = session.query(CustomerSegment).filter(
+            CustomerSegment.code == segment, CustomerSegment.enabled == 1
+        ).first()
+        keys = segment_keys_of(seg) if seg is not None else []
+        if keys:
+            conds.append(or_(*[Enterprise.industry_key == k for k in keys]))
+        else:
+            conds.append(Enterprise.id == -1)  # 无行业映射群（跨品牌等）：导出空集
     rows = (
         session.query(Contact, Enterprise)
         .join(Enterprise, Enterprise.id == Contact.enterprise_id)
