@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .models import (  # SPEC-AMT：金额抽取唯一实现在 models，此处 re-export
+    Contact,
     Enterprise,
     EnterpriseStat,
     Signal,
@@ -564,7 +565,13 @@ def run_sdgp_scan(max_pages: int = 3) -> dict:
     兜底，幂等可重扫。单记录短事务（SQLite 单写者——写事务绝不跨 HTTP）。
     """
     from .api.imports import apply_icp, extract_enterprise_name
-    from .collectors.sdgp import COL_RESULT, COL_TENDER, normalize_notice, search_all
+    from .collectors.sdgp import (
+        COL_RESULT,
+        COL_TENDER,
+        fetch_notice_detail,
+        normalize_notice,
+        search_all,
+    )
     from .db import SessionLocal
     from .normalize import resolve_enterprise
     from .sources import any_source_disabled
@@ -612,6 +619,51 @@ def run_sdgp_scan(max_pages: int = 3) -> dict:
                         )
                         .first()
                     )
+                    # SPEC-SDGP 详情扩池（2026-11-15 getDetail 破译）：该买家
+                    # 尚无公告电话时拉详情抽号码——自收敛（补齐即不再拉）；
+                    # 重复公告也补历史（cap 60/轮）。详情失败不阻断主采集。
+                    _needs_phone = (
+                        notice.get("notice_id")
+                        and stats.get("details", 0) < 60
+                        and s.query(Contact.id).filter(
+                            Contact.enterprise_id == ent.id,
+                            Contact.role == "notice_contact",
+                        ).first() is None
+                    )
+                    if _needs_phone:
+                        try:
+                            d = fetch_notice_detail(col, notice["notice_id"])
+                        except Exception:  # noqa: BLE001
+                            d = None
+                        if d and d.get("body_text"):
+                            stats["details"] = stats.get("details", 0) + 1
+                            from .phones import dump_phones as _dump, extract_phones, load_phones
+                            with SessionLocal() as ds:
+                                phones = extract_phones(d["body_text"])
+                                if phones:
+                                    exists_c = (
+                                        ds.query(Contact)
+                                        .filter(
+                                            Contact.enterprise_id == ent.id,
+                                            Contact.role == "notice_contact",
+                                        )
+                                        .first()
+                                    )
+                                    if exists_c is not None:
+                                        merged = sorted(
+                                            set(load_phones(exists_c.phones_json)) | set(phones)
+                                        )
+                                        exists_c.phones_json = _dump(merged)
+                                        ds.commit()
+                                        stats["contacts_updated"] = stats.get("contacts_updated", 0) + 1
+                                    else:
+                                        ds.add(Contact(
+                                            enterprise_id=ent.id, name="公告法定公开电话",
+                                            role="notice_contact", phones_json=_dump(phones),
+                                            source="sdgp",
+                                        ))
+                                        ds.commit()
+                                        stats["contacts_new"] = stats.get("contacts_new", 0) + 1
                     if exists is not None:
                         continue
                     evidence = (

@@ -20,7 +20,9 @@
 """
 from __future__ import annotations
 
+import base64
 import logging
+import re
 import time
 from collections.abc import Iterator
 
@@ -198,13 +200,68 @@ def search_all(
 
 
 # ---------------------------------------------------------------------------
+# 详情正文（2026-11-15 破译：GET /website/site/getDetail?id=&colCode=）
+# 浏览器捕获实锤；body 为 base64 HTML。同 session 新鲜 id 秒调成功——
+# 旧 id 过期即 999（列表页拿 id 后必须立刻调）。
+# ---------------------------------------------------------------------------
+DETAIL_URL = "https://www.ccgp-shandong.gov.cn:8087/api/website/site/getDetail"
+
+
+def fetch_notice_detail(
+    col_code: str,
+    notice_id: str,
+    client: httpx.Client | None = None,
+) -> dict | None:
+    """拉公告详情正文：{title, user_name(代理机构), date, body_text}。
+
+    body 为 base64 HTML——解码后剥标签压空白；失败/过期(999)/冷却一律 None。
+    必须用同 session 新鲜 id（过期 id 实测 999）——调用方从 fetch_notices
+    拿到 id 后立即调，且传同一 client 保 cookie 连续。"""
+    from .resilience import get_health
+
+    health = get_health("sdgp")
+    if health.is_blocked():
+        return None
+    try:
+        headers = {"User-Agent": _UA, "Accept": "application/json, text/plain, */*"}
+        params = {"id": notice_id, "colCode": col_code}
+        if client is not None:
+            resp = client.get(DETAIL_URL, params=params, headers=headers)
+        else:
+            with httpx.Client(timeout=httpx.Timeout(20.0), trust_env=False) as own:
+                resp = own.get(DETAIL_URL, params=params, headers=headers)
+        _last_request_at = time.monotonic()
+        if resp.status_code != 200:
+            return None
+        inner = (resp.json().get("data") or {})
+        if inner.get("code") != 100:
+            return None
+        payload = inner.get("data") or {}
+        body_b64 = payload.get("body") or ""
+        try:
+            html = base64.b64decode(body_b64).decode("utf-8", "ignore")
+        except (ValueError, UnicodeDecodeError):
+            html = ""
+        body_text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
+        return {
+            "title": (payload.get("title") or "").strip(),
+            "user_name": (payload.get("userName") or "").strip() or None,
+            "date": (payload.get("date") or "").strip()[:10] or None,
+            "body_text": body_text,
+        }
+    except (httpx.HTTPError, ValueError):
+        health.mark_bad()
+        return None
+
+
+# ---------------------------------------------------------------------------
 # 字段归一
 # ---------------------------------------------------------------------------
 def normalize_notice(raw: dict) -> dict | None:
     """栏目记录 → {title, date, area_name, notice_id}；无标题丢弃。
 
     date 实测 "2026-11-05 20:22:08"，截到日期（Signal.pub_date 口径）。
-    本源无中标方名称——不发明（详情接口 getNoticeBody 未破解，v1 不做详情）。
+    详情正文经 fetch_notice_detail 另取（2026-11-15 破译 getDetail）。
     """
     title = (raw.get("title") or "").strip()
     if not title:
