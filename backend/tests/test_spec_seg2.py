@@ -1,4 +1,6 @@
-"""SPEC-SEG2 回归：客户画像数据化——segment 表/种子十群/CRUD/统计口径/名单筛选/推荐权重。"""
+"""SPEC-SEG2 回归：客户画像数据化——segment 表/种子十群/CRUD/统计口径/名单筛选/推荐权重。
+附录 A 作业化改造：GET /api/segments 作业六字段（untouched/touched/intent_high/
+following/new_7d/last_signal）+ contacts?segment= 客户群筛选。"""
 from __future__ import annotations
 
 import os
@@ -21,11 +23,12 @@ from app.models import (  # noqa: E402
     CustomerSegment,
     Enterprise,
     Lead,
+    Signal,
 )
 
 init_db(seed=False)
 
-_ISOLATED_MODELS = [Enterprise, Contact, CustomerSegment, Lead]
+_ISOLATED_MODELS = [Signal, Enterprise, Contact, CustomerSegment, Lead]
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -295,3 +298,145 @@ def test_gongshang_export_sorted_by_segment_priority(client, admin_headers):
     i_p0 = text.index("SEG2补数P0公司")
     i_none = text.index("SEG2补数无群公司")
     assert i_p0 < i_none, "P0 群须排在无群企业之前（旧口径纯意图分会排反）"
+
+
+# ---- 附录 A1：作业化统计六字段（对照组沙粒） ----
+
+
+def test_segment_ops_stats_control_groups(client, admin_headers):
+    """新六字段对照组：untouched/touched 互斥计数、intent_high 边界（59/60）、
+    new_7d（7 天前入库不计）、following（pool/lost 不计）、无信号群 last_signal=null。"""
+    from datetime import datetime, timedelta, timezone
+
+    old_created = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat(
+        timespec="seconds"
+    )
+    with SessionLocal() as s:
+        s.add(CustomerSegment(
+            name="SEG2作业统计群", code="seg2_ops", keywords="[]",
+            industry_keys='["seg2_ops_ind"]', business_lines="[]",
+            priority="P1", enabled=1, notes="", sort=240))
+        # A：可拨未触达（contact 默认 pending）——dialable_untouched +1
+        a = _seed_ent(s, "SEG2作业未触达公司", industry="seg2_ops_ind")
+        _seed_phone(s, a.id, "0512-66200001")
+        # B：可拨但已触达（connected）——touched +1
+        b = _seed_ent(s, "SEG2作业已触达公司", industry="seg2_ops_ind")
+        _seed_phone(s, b.id, "0512-66200002")
+        row = s.query(Contact).filter(Contact.enterprise_id == b.id).first()
+        row.call_result = "connected"
+        s.commit()
+        # C/D：intent_high 边界——59 不计 / 60 计（均无联系人，不碰触达计数）
+        _seed_ent(s, "SEG2作业意图59公司", industry="seg2_ops_ind", intent=59)
+        _seed_ent(s, "SEG2作业意图60公司", industry="seg2_ops_ind", intent=60)
+        # E：8 天前入库——new_7d 不计
+        e_old = _seed_ent(s, "SEG2作业旧入库公司", industry="seg2_ops_ind")
+        e_old.created_at = old_created
+        s.commit()
+        # F：刚入库（默认 created_at=utcnow）——new_7d 计
+        _seed_ent(s, "SEG2作业新入库公司", industry="seg2_ops_ind")
+        # G/H/I：following 对照——following 计，pool/lost 不计
+        g = _seed_ent(s, "SEG2作业跟进中公司", industry="seg2_ops_ind")
+        h = _seed_ent(s, "SEG2作业公海公司", industry="seg2_ops_ind")
+        i_ = _seed_ent(s, "SEG2作业流失公司", industry="seg2_ops_ind")
+        s.add(Lead(enterprise_id=g.id, status="following"))
+        s.add(Lead(enterprise_id=h.id, status="pool"))
+        s.add(Lead(enterprise_id=i_.id, status="lost"))
+        # J：混合触达——一条 pending 可拨 + 一条已触达 → touched 计、
+        # untouched 不计（互斥口径："有触达即不在'今天能打的'里"）
+        j = _seed_ent(s, "SEG2作业混合触达公司", industry="seg2_ops_ind")
+        _seed_phone(s, j.id, "0512-66200003")
+        s.add(Contact(enterprise_id=j.id, name="采购王经理",
+                      role="buyer_contact", phones_json='["0512-66200004"]',
+                      call_result="no_answer", source="amap"))
+        # K：无号码但已触达（留言/空号标记）——按口径（call_result != pending）计 touched
+        k = _seed_ent(s, "SEG2作业无号已触达公司", industry="seg2_ops_ind")
+        s.add(Contact(enterprise_id=k.id, name="留言记录", role="poi",
+                      phones_json="[]", call_result="interested", source="amap"))
+        s.commit()
+    item = _seg_by_code(client, admin_headers, "seg2_ops")
+    assert item["enterprise_count"] == 11, "口径锚：11 家沙粒全计（非客户排除不误伤）"
+    assert item["dialable_untouched"] == 1, "仅 A 计未触达（J 混合触达排除）"
+    assert item["touched"] == 3, "B/J/K 计已触达（与 untouched 互斥）"
+    assert item["intent_high"] == 1, "意图分 60 计、59 不计"
+    assert item["following"] == 1, "following 计，pool/lost 不计"
+    assert item["new_7d"] == 10, "近 7 天入库 10 家计，8 天前不计"
+    assert item["last_signal"] is None, "群内无信号回 null"
+
+
+def test_segment_last_signal_latest_and_isolated(client, admin_headers):
+    """last_signal：群内两条信号取最新（无 pub_date 回退 created_at 排序）、
+    他群更晚信号不串台、标题截 40、date 取 pub_date 或 created_at 前 10 位。"""
+    from app.models import utcnow
+
+    long_title = "SEG2群内最新招聘公告标题超长" * 4  # 56 字 > 40
+    with SessionLocal() as s:
+        s.add(CustomerSegment(
+            name="SEG2信号群", code="seg2_sig", keywords="[]",
+            industry_keys='["seg2_sig_ind"]', business_lines="[]",
+            priority="P1", enabled=1, notes="", sort=260))
+        m1 = _seed_ent(s, "SEG2信号甲公司", industry="seg2_sig_ind")
+        m2 = _seed_ent(s, "SEG2信号乙公司", industry="seg2_sig_ind")
+        # 群内信号一：旧（pub_date 2026-01-01）
+        s.add(Signal(enterprise_id=m1.id, type="tender",
+                     title="SEG2群内旧公告标题",
+                     url="https://example.com/seg2-sig-old",
+                     pub_date="2026-01-01"))
+        # 群内信号二：无 pub_date（created_at=utcnow 兜底排序）——应胜出
+        s.add(Signal(enterprise_id=m2.id, type="recruit",
+                     title=long_title, url="https://example.com/seg2-sig-new",
+                     pub_date=None))
+        # 他群（他行业键）更晚信号：pub_date 2099 也不得串进 seg2_sig
+        other = _seed_ent(s, "SEG2信号他群公司", industry="seg2_sig_other_ind")
+        s.add(Signal(enterprise_id=other.id, type="tender",
+                     title="SEG2他群超新公告",
+                     url="https://example.com/seg2-sig-other",
+                     pub_date="2099-12-31"))
+        s.commit()
+    sig = _seg_by_code(client, admin_headers, "seg2_sig")["last_signal"]
+    assert sig is not None, "群内有信号应回最新一条"
+    assert sig["type"] == "recruit", "取 pub_date/created_at 最新的群内信号"
+    assert sig["ent_name"] == "SEG2信号乙公司", "他群更晚信号不串台"
+    assert sig["date"] == utcnow()[:10], "无 pub_date 回退 created_at 前 10 位"
+    assert sig["title"] == long_title[:40], "标题截 40"
+
+
+# ---- 附录 A2：contacts?segment= 客户群筛选 ----
+
+
+def test_contacts_segment_filter_and_untouched_combo(client, admin_headers):
+    """contacts?segment= 只回该群联系人；与 call_status=untouched 组合可用
+    （untouched 口径不动，只叠企业范围）；未知 code/无行业映射群 → 空结果。"""
+    with SessionLocal() as s:
+        s.add(CustomerSegment(
+            name="SEG2联系人群", code="seg2_ct", keywords="[]",
+            industry_keys='["seg2_ct_ind"]', business_lines="[]",
+            priority="P1", enabled=1, notes="", sort=250))
+        in1 = _seed_ent(s, "SEG2联系人群内公司", industry="seg2_ct_ind")
+        _seed_phone(s, in1.id, "0512-66300001")
+        in2 = _seed_ent(s, "SEG2联系人群内二公司", industry="seg2_ct_ind")
+        _seed_phone(s, in2.id, "0512-66300002")
+        row = s.query(Contact).filter(Contact.enterprise_id == in2.id).first()
+        row.call_result = "connected"
+        s.commit()
+        out = _seed_ent(s, "SEG2联系人群外公司", industry="seg2_out_ind")
+        _seed_phone(s, out.id, "0512-66300003")
+    r = client.get("/api/contacts?segment=seg2_ct", headers=admin_headers)
+    assert r.status_code == 200
+    ents = {i["enterprise"]["name"] for i in r.json()["items"]}
+    assert "SEG2联系人群内公司" in ents and "SEG2联系人群内二公司" in ents
+    assert "SEG2联系人群外公司" not in ents, "他群联系人不得混入"
+    assert r.json()["total"] == 2
+    # 组合：segment + call_status=untouched → 仅未拨（群内二公司已 connected 排除）
+    r2 = client.get(
+        "/api/contacts?segment=seg2_ct&call_status=untouched", headers=admin_headers
+    )
+    assert r2.status_code == 200
+    ents2 = {i["enterprise"]["name"] for i in r2.json()["items"]}
+    assert ents2 == {"SEG2联系人群内公司"}, "untouched 口径不动，叠加群企业范围"
+    assert r2.json()["total"] == 1
+    # 未知 code → 空结果（与 enterprises?segment= 语义一致）
+    r3 = client.get("/api/contacts?segment=no_such_seg", headers=admin_headers)
+    assert r3.status_code == 200 and r3.json()["items"] == [] and r3.json()["total"] == 0
+    # 无行业映射的群（制药厂词表待确认）→ 空结果
+    r4 = client.get("/api/contacts?segment=pharma_factory", headers=admin_headers)
+    assert r4.status_code == 200 and r4.json()["items"] == [] and r4.json()["total"] == 0

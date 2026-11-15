@@ -97,10 +97,23 @@ export default function ContactsPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [batchResult, setBatchResult] = useState("");
   const [batchBusy, setBatchBusy] = useState(false);
-  const [callStatus, setCallStatus] = useState("untouched");
+  // SPEC-SEG2 A3：call_status 从 URL 挂载恢复（客户画像作战卡「开打未触达」直达
+  // ?call_status=untouched；白名单校验，非法回退页面默认「未触达」）
+  const [callStatus, setCallStatus] = useState(() => {
+    if (typeof window === "undefined") return "untouched";
+    const v = new URLSearchParams(window.location.search).get("call_status") ?? "";
+    return ["untouched", "touched", "interested", "connected", "no_answer", "invalid"].includes(v)
+      ? v
+      : "untouched";
+  });
   const [decisionRole, setDecisionRole] = useState("");
   const [province, setProvince] = useState("");
   const [industry, setIndustry] = useState("");
+  // SPEC-SEG2 A2/A3：客户群筛选（客户画像作战卡「开打未触达/看已触达」直达 ?segment=<code>）
+  const [segment, setSegment] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("segment") ?? "";
+  });
   const [intentMin, setIntentMin] = useState<number | null>(null);
   const [q, setQ] = useState("");
   const [marking, setMarking] = useState<number | null>(null);
@@ -184,12 +197,13 @@ export default function ContactsPage() {
       if (decisionRole) p.set("decision_role", decisionRole);
       if (province) p.set("province", province);
       if (industry) p.set("industry_key", industry);
+      if (segment) p.set("segment", segment);
       if (intentMin != null) p.set("intent_min", String(intentMin));
       if (q.trim()) p.set("q", q.trim());
       if (order) p.set("order", order);
       return p;
     },
-    [callStatus, decisionRole, province, industry, intentMin, q, order],
+    [callStatus, decisionRole, province, industry, segment, intentMin, q, order],
   );
 
   const load = useCallback(() => {
@@ -243,17 +257,43 @@ export default function ContactsPage() {
   const rangeTo = meta ? Math.min(page * PAGE_SIZE, meta.total) : 0;
 
   // SPEC-CUX CUX2：order 轻量同步 URL（replaceState 静默写，参照 enterprises 页惯例；
-  // 保留 search 里既有的其它参数，分享/刷新/返回排序不丢）
+  // 保留 search 里既有的其它参数，分享/刷新/返回排序不丢）。
+  // SPEC-SEG2 A2/A3：segment/call_status 一并同步——从画像作战卡跳入后刷新/分享不丢筛选。
   useEffect(() => {
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
     if (order) sp.set("order", order);
     else sp.delete("order");
+    if (segment) sp.set("segment", segment);
+    else sp.delete("segment");
+    if (callStatus) sp.set("call_status", callStatus);
+    else sp.delete("call_status");
     const qs = sp.toString();
     if (window.location.search !== (qs ? `?${qs}` : "")) {
       window.history.replaceState(null, "", qs ? `/contacts?${qs}` : "/contacts");
     }
-  }, [order]);
+  }, [order, segment, callStatus]);
+
+  // SPEC-SEG2 A2：客户群筛选下拉（GET /api/segments 驱动，仅 enabled 群——停用群退出作业口径）。
+  // 请求失败静默 → 下拉空态，不白屏（照 enterprises 页 segmentOptions 同款容错）。
+  const [segOptions, setSegOptions] = useState<{ value: string; label: string }[]>([]);
+  useEffect(() => {
+    api
+      .get<unknown>("/api/segments")
+      .then((d) => {
+        const raw: unknown[] = Array.isArray(d)
+          ? d
+          : Array.isArray((d as { items?: unknown }).items)
+            ? (d as { items: unknown[] }).items
+            : [];
+        const opts = raw
+          .map((s) => s as { code?: unknown; name?: unknown; enabled?: unknown })
+          .filter((s) => typeof s.code === "string" && (s.code as string).length > 0 && !!s.enabled)
+          .map((s) => ({ value: s.code as string, label: (s.name as string) || (s.code as string) }));
+        setSegOptions(opts);
+      })
+      .catch(() => undefined);
+  }, []);
 
   const mark = async (cid: number, result: string) => {
     setMarking(cid);
@@ -397,6 +437,12 @@ export default function ContactsPage() {
               <Select.Option key={o.key} value={o.key}>{o.name}</Select.Option>
             ))}
           </Select>
+          {/* SPEC-SEG2 A2/A3：客户群筛选——客户画像作战卡「开打未触达」直达此处（?segment=code&call_status=untouched） */}
+          <Select value={segment || undefined} placeholder="全部客户群" showClear filter onChange={(v) => setSegment(String(v ?? ""))} className="!w-36 shrink-0">
+            {segOptions.map((o) => (
+              <Select.Option key={o.value} value={o.value}>{o.label}</Select.Option>
+            ))}
+          </Select>
           <Select value={intentMin ?? undefined} placeholder="全部意图" showClear onChange={(v) => setIntentMin(v == null ? null : Number(v))} className="!w-32 shrink-0">
             <Select.Option value={60}>高意图 ≥60</Select.Option>
             <Select.Option value={30}>中意图 ≥30</Select.Option>
@@ -425,6 +471,7 @@ export default function ContactsPage() {
               if (decisionRole) p.set("decision_role", decisionRole);
               if (province) p.set("province", province);
               if (industry) p.set("industry_key", industry);
+              if (segment) p.set("segment", segment);
               if (intentMin != null) p.set("intent_min", String(intentMin));
               if (q.trim()) p.set("q", q.trim());
               window.open(`/api/contacts/export?${p}`, "_blank");
@@ -458,6 +505,10 @@ export default function ContactsPage() {
             label: `行业：${INDUSTRY_OPTIONS.find((o) => o.key === industry)?.name ?? industry}`,
             clear: () => setIndustry(""),
           },
+          segment && {
+            label: `客户群：${segOptions.find((o) => o.value === segment)?.label ?? segment}`,
+            clear: () => setSegment(""),
+          },
           intentMin != null && { label: `意图 ≥${intentMin}`, clear: () => setIntentMin(null) },
           q.trim() && { label: `搜索：${q.trim()}`, clear: () => setQ("") },
         ].filter(Boolean) as { label: string; clear: () => void }[];
@@ -483,7 +534,7 @@ export default function ContactsPage() {
             <button
               onClick={() => {
                 setCallStatus(""); setDecisionRole(""); setProvince("");
-                setIndustry(""); setIntentMin(null); setQ("");
+                setIndustry(""); setSegment(""); setIntentMin(null); setQ("");
               }}
               className="cursor-pointer rounded-full border-0 bg-transparent px-2 py-1 text-[12px] text-[var(--negative)] hover:bg-[var(--raised)]"
             >

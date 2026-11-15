@@ -6,22 +6,34 @@
 - GET /api/segments（全员）：每群实时统计——enterprise_count=industry_key
   ∈ 群 industry_keys 的存活企业叠加全部非客户排除（customer.non_buyer_conds
   与 contacts 同口径）；dialable_count=该群企业去重可拨联系人（contacts
-  工作列表同款 phones_json SQL 口径）。
+  工作列表同款 phones_json SQL 口径）。附录 A1 作业化改造追加六字段
+  （dialable_untouched/touched/intent_high/following/new_7d/last_signal），
+  口径同源（同 id 集+非客户排除），实现走"企业 id 集先算一次+分批聚合"。
 - POST/PUT/DELETE（admin）：CRUD，code 唯一；enabled=0 停用退出推荐/权重。
 """
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from ..auth import admin_only, current_user
 from ..customer import non_buyer_conds, parse_json_list, segment_keys_of
 from ..db import get_session
-from ..models import Contact, CustomerSegment, Enterprise, SyncWatermark, User, utcnow
+from ..models import (
+    Contact,
+    CustomerSegment,
+    Enterprise,
+    Lead,
+    Signal,
+    SyncWatermark,
+    User,
+    utcnow,
+)
 
 router = APIRouter(tags=["segments"])
 
@@ -245,6 +257,166 @@ def _segment_counts(session: Session) -> tuple[dict[str, int], dict[str, int]]:
     return ent_counts, dial_counts
 
 
+# ---- 附录 A1 作业化统计口径常量 ----
+_INTENT_HIGH_MIN = 60  # intent_high：意图分 ≥60
+_NEW_DAYS = 7  # new_7d：近 7 天入库（main.py 每日窗口同款 isoformat 截法）
+_LEAD_NOT_MANAGED = ("pool", "lost")  # following：公海/流失之外即在管
+_CHUNK = 900  # id 集分批聚合批大小（SQLite in_ 变量上限防御，规避超长参数清单）
+
+
+def _chunked(ids: list[int], size: int = _CHUNK):
+    """企业 id 集分批：逐批聚合后 Python 累加——不逐企业 N+1，也规避 SQLite
+    in_ 参数量上限（附录 A1 实现纪律：id 集先算一次，六项统计复用分批聚合）。"""
+    for i in range(0, len(ids), size):
+        yield ids[i : i + size]
+
+
+def _segment_ops_stats(session: Session, seg: CustomerSegment) -> dict:
+    """附录 A1 作业六字段（"今天能打什么"）：口径与 enterprise_count/dialable_count
+    同源——群内企业 id 集**先算一次**（industry_keys OR 括号分组 + 存活 +
+    customer.non_buyer_conds 非客户排除），六项统计全部复用该 id 集分批聚合；
+    群数仅 10、每群数条聚合 SQL，无逐群逐企业 N+1。
+
+    - dialable_untouched：可拨（有号码联系人）且无任一已触达联系人的企业数
+      ——"今天能打的"（全 pending 才算没碰过）
+    - touched：任一联系人 call_result 非 pending/空 的企业数（与上一项互斥：
+      群内企业有触达即不在 untouched 计数里）
+    - intent_high：intent_score ≥60 的企业数
+    - following：群内在管线索数（lead.status 非公海/流失）
+    - new_7d：近 7 天 created_at 入库企业数（新面孔）
+    - last_signal：群内最新信号 {type, title(截 40), date, ent_name}；date=
+      pub_date 或 created_at 前 10 位，按 pub_date（空回退 created_at）倒序
+      取最新；无信号 null
+    """
+    zero = {
+        "dialable_untouched": 0,
+        "touched": 0,
+        "intent_high": 0,
+        "following": 0,
+        "new_7d": 0,
+        "last_signal": None,
+    }
+    keys = segment_keys_of(seg)
+    if not keys:
+        return zero
+    nb = non_buyer_conds()
+    rows = (
+        session.query(Enterprise.id, Enterprise.name)
+        .filter(
+            Enterprise.deleted_at.is_(None),
+            Enterprise.industry_key.is_not(None),
+            Enterprise.industry_key != "",
+            # OR 括号分组（与 enterprises.py segment 筛选同款，规避扫描器锚定）
+            or_(*[Enterprise.industry_key == k for k in keys]),
+            nb,
+        )
+        .all()
+    )
+    if not rows:
+        return zero
+    ent_ids = [rid for rid, _name in rows]
+    ent_names = dict(rows)
+
+    # 触达企业级聚合：每企业一行（可拨联系人数, 已触达联系数）一趟 GROUP BY——
+    # touched=有已触达联系人；untouched=零触达且有可拨联系人（互斥口径）
+    dialable_expr = Contact.phones_json.is_not(None) & Contact.phones_json.notin_(("", "[]"))
+    untouched_expr = Contact.call_result.is_(None) | (Contact.call_result == "pending")
+    n_untouched = 0
+    n_touched = 0
+    for ids in _chunked(ent_ids):
+        for _eid, dial_n, touch_n in (
+            session.query(
+                Contact.enterprise_id,
+                func.sum(case((dialable_expr, 1), else_=0)),
+                func.sum(case((~untouched_expr, 1), else_=0)),
+            )
+            .filter(Contact.enterprise_id.in_(ids))
+            .group_by(Contact.enterprise_id)
+            .all()
+        ):
+            if (touch_n or 0) > 0:
+                n_touched += 1
+            elif (dial_n or 0) > 0:
+                n_untouched += 1
+
+    n_intent = 0
+    for ids in _chunked(ent_ids):
+        n_intent += (
+            session.query(func.count())
+            .select_from(Enterprise)
+            .filter(
+                Enterprise.id.in_(ids),
+                Enterprise.intent_score >= _INTENT_HIGH_MIN,
+            )
+            .scalar()
+            or 0
+        )
+
+    n_following = 0
+    for ids in _chunked(ent_ids):
+        n_following += (
+            session.query(func.count())
+            .select_from(Lead)
+            .filter(
+                Lead.enterprise_id.in_(ids),
+                Lead.status.notin_(_LEAD_NOT_MANAGED),
+            )
+            .scalar()
+            or 0
+        )
+
+    # 近 7 天入库（created_at 与 utcnow 同为 ISO 文本，字典序=时间序）
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=_NEW_DAYS)).isoformat(
+        timespec="seconds"
+    )
+    n_new = 0
+    for ids in _chunked(ent_ids):
+        n_new += (
+            session.query(func.count())
+            .select_from(Enterprise)
+            .filter(Enterprise.id.in_(ids), Enterprise.created_at >= cutoff)
+            .scalar()
+            or 0
+        )
+
+    # 群内最新信号：pub_date 空回退 created_at（ISO 文本字典序=时间序）；
+    # 分批各取批内最新（date+id 键跨批可比），Python 合并出全局最新一条
+    date_expr = case(
+        (or_(Signal.pub_date.is_(None), Signal.pub_date == ""), Signal.created_at),
+        else_=Signal.pub_date,
+    )
+    last_signal = None
+    best_key: tuple[str, int] | None = None
+    for ids in _chunked(ent_ids):
+        sig = (
+            session.query(Signal)
+            .filter(Signal.enterprise_id.in_(ids))
+            .order_by(date_expr.desc(), Signal.id.desc())
+            .limit(1)
+            .first()
+        )
+        if sig is None:
+            continue
+        key = ((sig.pub_date or sig.created_at or ""), sig.id)
+        if best_key is None or key > best_key:
+            best_key = key
+            last_signal = {
+                "type": sig.type,
+                "title": (sig.title or "")[:40],
+                "date": (sig.pub_date or sig.created_at or "")[:10],
+                "ent_name": ent_names.get(sig.enterprise_id, ""),
+            }
+
+    return {
+        "dialable_untouched": n_untouched,
+        "touched": n_touched,
+        "intent_high": n_intent,
+        "following": n_following,
+        "new_7d": n_new,
+        "last_signal": last_signal,
+    }
+
+
 class SegmentIn(BaseModel):
     name: str = Field(min_length=1)
     code: str = Field(min_length=1, pattern=r"^[a-z0-9_]+$")
@@ -323,11 +495,13 @@ def list_segments(
     session: Session = Depends(get_session),
     user: User = Depends(current_user),  # 全员可读（画像页 + 企业列表下拉）
 ):
-    """客户群列表（全员）：十群定义 + 实时统计（SPEC-SEG2 §3）。
+    """客户群列表（全员）：十群定义 + 实时统计（SPEC-SEG2 §3 + 附录 A1）。
 
     enterprise_count=群 industry_keys 命中的存活企业（叠加 contacts 同款
-    非客户排除）；dialable_count=该群企业去重可拨联系人。停用群（enabled=0）
-    照常返回定义与统计，由前端置灰——停用只退出推荐/权重。
+    非客户排除）；dialable_count=该群企业去重可拨联系人；附录 A1 追加作业
+    六字段（dialable_untouched/touched/intent_high/following/new_7d/
+    last_signal）——"今天能打什么"，口径同源（同 id 集+非客户排除）。
+    停用群（enabled=0）照常返回定义与统计，由前端置灰——停用只退出推荐/权重。
     """
     rows = (
         session.query(CustomerSegment)
@@ -341,6 +515,7 @@ def list_segments(
         keys = segment_keys_of(seg)
         d["enterprise_count"] = sum(ent_counts.get(k, 0) for k in keys)
         d["dialable_count"] = sum(dial_counts.get(k, 0) for k in keys)
+        d.update(_segment_ops_stats(session, seg))  # 附录 A1：作业六字段
         items.append(d)
     return {"items": items}
 

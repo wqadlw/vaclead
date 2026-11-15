@@ -12,13 +12,14 @@ POST /contacts/batch-call-result 批量标记（企业级效率）。
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from ..auth import current_user
 from ..customer import non_buyer_conds as _non_buyer_conds  # SPEC-SEG2：公共口径
+from ..customer import segment_keys_of  # SPEC-SEG2 附录 A2：客户群筛选解析
 from ..db import get_session
-from ..models import Contact, Enterprise, User, utcnow
+from ..models import Contact, CustomerSegment, Enterprise, User, utcnow
 from ..phones import load_phones
 
 router = APIRouter(tags=["contacts"])
@@ -59,6 +60,10 @@ def contacts_worklist(
     # SPEC-CUX3 筛选升级（打电话工作台语义：按"今天想打哪类客户群"组织）：
     industry_key: str = "",  # 昊志产品线客户群（半导体/医药/食品…）
     intent_min: int | None = None,  # 意图分下限（高意图先打）
+    # SPEC-SEG2 附录 A2：客户群筛选（画像页"开打未触达"跳转
+    # /contacts?segment=xx&call_status=untouched 的承接端）——code → 群
+    # industry_keys，企业范围再叠一层；untouched 口径不动
+    segment: str = "",
     limit: int = 100,
     offset: int = 0,
     session: Session = Depends(get_session),
@@ -72,6 +77,8 @@ def contacts_worklist(
     回访视角）。SPEC-CUX2：过滤/排序/分页全部下沉 SQL，COUNT(*) 真分页 +
     offset/limit 进查询，2000 采样上限删除——全量数据任意页可达。
     SPEC-CUX3：页大小 100（一上午一页打完）+ 行业/意图筛选。
+    SPEC-SEG2 附录 A2：segment 参数（code → 群 industry_keys）叠加企业范围
+    筛选；Meili 无此概念——contacts 本就是 SQLite 路径，零冲突。
     """
     limit = max(1, min(limit, 300))
     offset = max(0, offset)
@@ -87,6 +94,32 @@ def contacts_worklist(
     # 用户定稿（2026-11-11 学校 + 2026-11-14 公共机构扩面）：获客动线全局排除
     # 科研教育/医疗卫生/检验检测事业单位（数据保留可查，仅从拨打工作列表隐去）
     conds.append(_non_buyer_conds())
+    # SPEC-SEG2 附录 A2：客户群筛选——解析 code → 群 industry_keys →
+    # Enterprise.industry_key OR 括号分组叠加现有筛选（与非客户排除天然兼容）。
+    # 与 call_status=untouched 组合可用（untouched 口径不动，只是又叠一层企业
+    # 范围）。未知 code 或群无行业映射（如制药厂词表待确认）→ 空结果，
+    # 与 enterprises?segment= 语义一致。
+    if segment.strip():
+        _seg = (
+            session.query(CustomerSegment)
+            .filter(CustomerSegment.code == segment.strip())
+            .first()
+        )
+        seg_keys = segment_keys_of(_seg) if _seg is not None else []
+        if not seg_keys:
+            return {
+                "stats": {
+                    "with_phone": 0,
+                    "untouched": 0,
+                    "touched": 0,
+                    "interested": 0,
+                },
+                "provinces": {},
+                "items": [],
+                "total": 0,
+            }
+        # OR 括号分组（与 enterprises.py segment 筛选同款，规避扫描器锚定）
+        conds.append(or_(*[Enterprise.industry_key == k for k in seg_keys]))
     if has_phone:
         conds.append(dialable_expr)
     if call_status == "untouched":

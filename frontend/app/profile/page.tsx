@@ -1,14 +1,18 @@
 "use client";
 
 /**
- * 客户画像（SPEC-SEG2 §4.1）：customer_segment 实体化主表页。
- * 契约（与后端对齐；后端并行上线中——所有请求失败静默降级，不白屏）：
- * - GET  /api/segments            → { items: [...] } 或裸数组（全员可看；每群实时统计）
+ * 客户画像（SPEC-SEG2 §4.1 + 附录 A3）：销售作业面——上「客户群作战卡」下「管理定义」。
+ * 契约（与后端对齐；后端并行上线中——A1 新字段全部容错降级，不白屏）：
+ * - GET  /api/segments            → { items: [...] } 或裸数组（全员可看；每群实时统计+作业指标）
  * - POST /api/segments            → 新建（admin；code 唯一）
  * - PUT  /api/segments/{id}       → 更新（admin；部分字段可省）
  * - 无 DELETE：下线一律用「停用」（enabled=0 即退出推荐/统计/筛选选项）
+ * A3 布局（2026-11-15 用户："给销售的不要高大上要务实；确保有用不只是看看"）：
+ * - 作战卡主数字 = 能打未触达（有电话、还没人打过——今天就能打）；为 0 就明说没得打
+ *   （降饱和 + 按钮换「看已触达」），统计未就绪（旧后端缺字段）显示 "—" 不误判为 0
+ * - 管理定义区（十群定义表+编辑 Modal 原样迁入）收进页底可折叠 details——位置降级功能不删
  * 页面全员可见，编辑/新建/启停仅 admin（role 判定照话术库面板：localStorage vaclead_role）。
- * 行内「看名单」跳 /enterprises?segment=<code>（企业列表按该群 industry_keys 过滤）。
+ * 「看名单」跳 /enterprises?segment=<code>；「开打未触达」跳 /contacts?segment=<code>&call_status=untouched。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -30,6 +34,19 @@ export interface SegmentRow {
   notes?: string | null;
   enterprise_count?: number | null;
   dialable_count?: number | null;
+  /** 附录 A1 作业指标（后端并行上线中——undefined 一律容错降级，不当 0 用） */
+  dialable_untouched?: number | null;
+  touched?: number | null;
+  intent_high?: number | null;
+  following?: number | null;
+  new_7d?: number | null;
+  /** 群内最新信号 {type, title(截40), date, ent_name}——"这个群最近在发生什么" */
+  last_signal?: {
+    type?: string | null;
+    title?: string | null;
+    date?: string | null;
+    ent_name?: string | null;
+  } | null;
   sort?: number | null;
 }
 
@@ -94,6 +111,127 @@ function strList(v: unknown): string[] {
   return [];
 }
 
+/** 数字容错：number 原样，undefined/null → "—"（A1 新字段旧后端可能不给，不误当 0） */
+function numOrDash(v: number | null | undefined): string {
+  return typeof v === "number" ? String(v) : "—";
+}
+
+/**
+ * A3 客户群作战卡：主数字=能打未触达（28px+ accent 色）。
+ * - 0 → 明说没得打：卡片降饱和、主数字灰、按钮换「看已触达」（务实，不装积极）
+ * - 字段缺失（旧后端）→ 主数字 "—"，按钮保留「开打未触达」（链接本身不受影响）
+ */
+function SegmentBattleCard({ r }: { r: SegmentRow }) {
+  const router = useRouter();
+  const code = encodeURIComponent(r.code || "");
+  const untouched = typeof r.dialable_untouched === "number" ? r.dialable_untouched : null;
+  const zero = untouched === 0;
+  const sig = r.last_signal && typeof r.last_signal === "object" ? r.last_signal : null;
+  const sigDate = sig?.date ? String(sig.date).slice(0, 10) : "";
+  const sigType = sig?.type ? String(sig.type) : "";
+  const sigTitle = sig?.title ? String(sig.title).slice(0, 40) : "";
+  const sigEnt = sig?.ent_name ? String(sig.ent_name) : "";
+
+  const metrics: { k: string; v: number | null | undefined }[] = [
+    { k: "已触达", v: r.touched },
+    { k: "高意图", v: r.intent_high },
+    { k: "跟进中", v: r.following },
+    { k: "近7天新面孔", v: r.new_7d },
+  ];
+
+  return (
+    <div
+      className={`flex flex-col rounded-lg border border-[var(--border)] bg-white p-4 ${
+        zero ? "opacity-70" : ""
+      }`}
+    >
+      {/* 卡头：群名 + 优先级 tag + 右上「看名单」；企业/可拨总数作小字上下文 */}
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="truncate text-[15px] font-medium text-[var(--ink)]" title={r.notes ?? r.name}>
+          {r.name || r.code}
+        </span>
+        <Tag color={PRIORITY_TAG[r.priority ?? ""] ?? "grey"} type="light" size="small" className="shrink-0">
+          {r.priority || "P2"}
+        </Tag>
+        <span className="ml-auto shrink-0 text-[11.5px] tabular-nums text-[var(--muted)]">
+          共 {numOrDash(r.enterprise_count)} 家 · 可拨 {numOrDash(r.dialable_count)}
+        </span>
+        <a
+          href={`/enterprises?segment=${code}`}
+          className="shrink-0 text-[12.5px] text-[var(--accent)] hover:underline"
+        >
+          看名单
+        </a>
+      </div>
+
+      {/* 主数字：能打未触达 N 家 */}
+      <div className="mt-3">
+        <div className="text-[11.5px] text-[var(--muted)]">能打未触达</div>
+        <div className="mt-0.5 flex items-baseline gap-1.5">
+          <span
+            className={`text-[30px] font-semibold leading-9 tabular-nums ${
+              zero ? "text-[var(--muted)]" : "text-[var(--accent)]"
+            }`}
+          >
+            {untouched === null ? "—" : untouched}
+          </span>
+          <span className="text-[13px] text-[var(--muted)]">家</span>
+        </div>
+        <div className="mt-0.5 text-[12px] text-[var(--muted)]">
+          {zero ? "没得打——本群可拨号码都已被打过" : "有电话、还没人打过——今天就能打"}
+        </div>
+      </div>
+
+      {/* 副指标行（四格小字）：已触达 | 高意图 | 跟进中 | 近7天新面孔 */}
+      <div className="mt-3 grid grid-cols-4 gap-px overflow-hidden rounded-lg bg-[var(--rule)]">
+        {metrics.map((m) => (
+          <div key={m.k} className="bg-white px-2 py-1.5">
+            <div className="truncate text-[11px] text-[var(--muted)]">{m.k}</div>
+            <div className="mt-0.5 text-[15px] font-medium tabular-nums text-[var(--ink)]">{numOrDash(m.v)}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 群内最新信号一行（A1 last_signal）——证据感："这个群最近在发生什么" */}
+      <div
+        className={`mt-2.5 truncate border-l-2 pl-2 text-[12px] leading-4 ${
+          sig ? "border-[var(--accent)] text-[var(--ink)]" : "border-[var(--rule)] text-[var(--muted)]"
+        }`}
+        title={sig ? [sigDate, sigType, sigTitle, sigEnt].filter(Boolean).join(" · ") : undefined}
+      >
+        {sig
+          ? [sigDate, sigType].filter(Boolean).join(" · ") +
+            (sigTitle ? ` | ${sigTitle}` : "") +
+            (sigEnt ? `（${sigEnt}）` : "")
+          : "本群暂无新信号"}
+      </div>
+
+      {/* 按钮组：主按钮=开打未触达；0 时换「看已触达」；次按钮=看名单 */}
+      <div className="mt-3 flex items-center gap-2 border-t border-[var(--rule)] pt-3">
+        {zero ? (
+          <Button size="small" onClick={() => router.push(`/contacts?segment=${code}&call_status=touched`)}>
+            看已触达
+          </Button>
+        ) : (
+          <Button
+            size="small"
+            theme="solid"
+            onClick={() => router.push(`/contacts?segment=${code}&call_status=untouched`)}
+          >
+            开打未触达
+          </Button>
+        )}
+        <Button size="small" theme="outline" onClick={() => router.push(`/enterprises?segment=${code}`)}>
+          看名单
+        </Button>
+        {untouched === null && (
+          <span className="text-[11.5px] text-[var(--muted)]">作业统计就绪后显示主数字</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   const router = useRouter();
   // rows === null 表示 /api/segments 请求失败 → 整卡「暂不可用」态（照 SourcesPanel/话术库模式）
@@ -114,14 +252,17 @@ export default function ProfilePage() {
       .get<unknown>("/api/segments")
       .then((d) => {
         const items = listOf<SegmentRow>(d);
-        // 展示顺序：enabled 在前，再按 priority P0>P1>P2（后端给了 sort 则尊重）
+        // 展示顺序：enabled 在前 → priority P0>P1>P2（A3：P2 群排后）→ 后端 sort
         const priRank: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
         items.sort((a, b) => {
           if (!!a.enabled !== !!b.enabled) return a.enabled ? -1 : 1;
+          const pa = priRank[a.priority ?? ""] ?? 9;
+          const pb = priRank[b.priority ?? ""] ?? 9;
+          if (pa !== pb) return pa - pb;
           const sa = typeof a.sort === "number" ? a.sort : 99;
           const sb = typeof b.sort === "number" ? b.sort : 99;
           if (sa !== sb) return sa - sb;
-          return (priRank[a.priority ?? ""] ?? 9) - (priRank[b.priority ?? ""] ?? 9);
+          return (a.name ?? "").localeCompare(b.name ?? "");
         });
         setRows(items);
       })
@@ -238,8 +379,8 @@ export default function ProfilePage() {
     return [...base, ...extra];
   }, [rows]);
 
-  const numOrDash = (v: number | null | undefined) =>
-    typeof v === "number" ? v.toLocaleString("zh-CN") : "—";
+  // A3：作战卡只渲染 enabled 群（disabled 只在管理区出现）；rows 已按 P0>P1>P2 排好
+  const enabledRows = useMemo(() => (rows ?? []).filter((r) => !!r.enabled), [rows]);
 
   return (
     <AppShell>
@@ -247,19 +388,12 @@ export default function ProfilePage() {
         <div>
           <h1 className="text-[20px] font-semibold text-[var(--ink)]">客户画像</h1>
           <p className="mt-0.5 text-[12.5px] text-[var(--muted)]">
-            客户群定义驱动推荐/名单/采集——改这里，全系统跟着变
+            每个客户群今天能打什么——先打没被碰过的；群定义管理收在页底「管理定义」
           </p>
         </div>
-        <div className="flex gap-2">
-          {isAdmin && (
-            <Button theme="solid" size="small" onClick={openNew}>
-              + 新建客户群
-            </Button>
-          )}
-          <Button size="small" icon={<RefreshCw size={13} />} loading={loading} onClick={load}>
-            刷新
-          </Button>
-        </div>
+        <Button size="small" icon={<RefreshCw size={13} />} loading={loading} onClick={load}>
+          刷新
+        </Button>
       </div>
 
       {rows === null ? (
@@ -267,167 +401,208 @@ export default function ProfilePage() {
           暂不可用 —— 客户画像服务未就绪（后端并行上线中），稍后点「刷新」重试
         </div>
       ) : (
-        <div className="mt-4">
-          <Table<SegmentRow>
-            rowKey="id"
-            size="small"
-            loading={loading}
-            dataSource={rows}
-            empty="暂无客户群 —— 等后端种子任务自动建十群，或管理员点「+ 新建客户群」"
-            pagination={{ pageSize: 10 }}
-            columns={[
-              {
-                title: "客户群",
-                dataIndex: "name",
-                width: 200,
-                render: (v: string, r: SegmentRow) => (
-                  <div className="max-w-[190px]">
-                    <div className="truncate text-[13px] font-medium text-[var(--ink)]" title={v}>
-                      {v || "—"}
-                    </div>
-                    <div className="truncate font-mono text-[11px] text-[var(--muted)]" title={r.notes ?? ""}>
-                      {r.code}
-                      {r.notes ? ` · ${r.notes}` : ""}
-                    </div>
-                  </div>
-                ),
-              },
-              {
-                title: "关键词（POI 采集词）",
-                dataIndex: "keywords",
-                width: 240,
-                render: (_: unknown, r: SegmentRow) => {
-                  const kws = strList(r.keywords);
-                  if (kws.length === 0) return <span className="text-[12px] text-[var(--muted)]">词表待补</span>;
-                  const shown = kws.slice(0, 4);
-                  return (
-                    <div className="flex flex-wrap gap-1">
-                      {shown.map((k) => (
-                        <Tag key={k} color="cyan" type="light" size="small">
-                          {k}
-                        </Tag>
-                      ))}
-                      {kws.length > shown.length && (
-                        <span title={kws.join(" / ")}>
-                          <Tag color="grey" type="light" size="small">
-                            +{kws.length - shown.length}
-                          </Tag>
-                        </span>
-                      )}
-                    </div>
-                  );
-                },
-              },
-              {
-                title: "业务线",
-                dataIndex: "business_lines",
-                width: 160,
-                render: (_: unknown, r: SegmentRow) => {
-                  const lines = strList(r.business_lines);
-                  if (lines.length === 0) return <span className="text-[12px] text-[var(--muted)]">—</span>;
-                  return (
-                    <div className="flex flex-wrap gap-1">
-                      {lines.slice(0, 5).map((l) => (
-                        <Tag key={l} color="white" type="light" size="small">
-                          {l}
-                        </Tag>
-                      ))}
-                    </div>
-                  );
-                },
-              },
-              {
-                title: "优先级",
-                dataIndex: "priority",
-                width: 90,
-                render: (v: string | null) => (
-                  <Tag color={PRIORITY_TAG[v ?? ""] ?? "grey"} type="light" size="small">
-                    {v || "P2"}
-                  </Tag>
-                ),
-              },
-              {
-                title: "企业数",
-                dataIndex: "enterprise_count",
-                width: 90,
-                align: "right" as const,
-                render: (v: number | null | undefined) => (
-                  <span className="tabular-nums text-[12.5px] text-[var(--ink)]" title="行业归属且非竞对/非买家的存活企业">
-                    {numOrDash(v)}
-                  </span>
-                ),
-              },
-              {
-                title: "可拨数",
-                dataIndex: "dialable_count",
-                width: 90,
-                align: "right" as const,
-                render: (v: number | null | undefined) => (
-                  <span
-                    className={`tabular-nums text-[12.5px] ${
-                      typeof v === "number" && v > 0 ? "font-medium text-[var(--positive)]" : "text-[var(--muted)]"
-                    }`}
-                    title="该群企业去重可拨联系人"
-                  >
-                    {numOrDash(v)}
-                  </span>
-                ),
-              },
-              {
-                title: "状态",
-                dataIndex: "enabled",
-                width: 72,
-                render: (_: unknown, r: SegmentRow) =>
-                  isAdmin ? (
-                    <Switch
-                      size="small"
-                      checked={!!r.enabled}
-                      loading={actingId === r.id}
-                      onChange={(checked: boolean) => void toggleEnabled(r, checked)}
-                    />
-                  ) : (
-                    <Tag color={r.enabled ? "green" : "grey"} type="light" size="small">
-                      {r.enabled ? "启用" : "停用"}
-                    </Tag>
-                  ),
-              },
-              {
-                title: "操作",
-                width: 170,
-                render: (_: unknown, r: SegmentRow) => (
-                  <div className="flex gap-1.5">
-                    {isAdmin && (
-                      <Button size="small" theme="borderless" onClick={() => openEdit(r)}>
-                        编辑
-                      </Button>
-                    )}
-                    <Button
-                      size="small"
-                      theme="borderless"
-                      onClick={() => router.push(`/enterprises?segment=${encodeURIComponent(r.code)}`)}
-                    >
-                      看名单
+        <>
+          {/* ===== A3 上半：客户群作战卡（仅 enabled 群，P2 排后，双列 grid） ===== */}
+          <div className="mt-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-[15px] font-medium text-[var(--ink)]">客户群作战板</h2>
+              <span className="text-[11.5px] text-[var(--muted)]">
+                主数字=能打未触达（有电话还没人打过）——点「开打未触达」直接进拨打名单
+              </span>
+            </div>
+            {enabledRows.length === 0 ? (
+              <div className="mt-3 rounded-lg border border-[var(--border)] bg-white py-8 text-center text-[13px] text-[var(--muted)]">
+                暂无启用的客户群——管理员在下方「管理定义」启用或新建
+              </div>
+            ) : (
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                {enabledRows.map((r) => (
+                  <SegmentBattleCard key={r.id} r={r} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ===== A3 下半：管理定义（页底降级，可折叠 details）——十群定义表+编辑 Modal 原样迁入 ===== */}
+          <div className="mt-6">
+            <details className="rounded-lg border border-[var(--border)] bg-white">
+              <summary className="flex cursor-pointer select-none flex-wrap items-center gap-2 px-4 py-3">
+                <span className="text-[14px] font-medium text-[var(--ink)]">管理定义（admin）</span>
+                <span className="text-[12px] font-normal text-[var(--muted)]">
+                  十群定义驱动推荐/名单/采集——改这里，全系统跟着变；编辑/新建/启停仅 admin
+                </span>
+              </summary>
+              <div className="border-t border-[var(--rule)] px-4 py-3">
+                {isAdmin && (
+                  <div className="mb-2 flex justify-end">
+                    <Button size="small" theme="solid" onClick={openNew}>
+                      + 新建客户群
                     </Button>
-                    {isAdmin && (
-                      <Button
-                        size="small"
-                        theme="borderless"
-                        type={r.enabled ? "danger" : "tertiary"}
-                        loading={actingId === r.id}
-                        onClick={() => void toggleEnabled(r, !r.enabled)}
-                      >
-                        {r.enabled ? "停用" : "启用"}
-                      </Button>
-                    )}
                   </div>
-                ),
-              },
-            ]}
-          />
-          <p className="mt-2 text-[11.5px] text-[var(--muted)]">
-            统计口径：企业行业归属 ∈ 该群 industry_keys 且非竞对/非政采买家/非科研医疗等客户排除条件；可拨 = 该群企业去重可拨联系人。「看名单」在企业列表按客户群过滤（?segment=code）。
-          </p>
-        </div>
+                )}
+                <Table<SegmentRow>
+                  rowKey="id"
+                  size="small"
+                  loading={loading}
+                  dataSource={rows}
+                  empty="暂无客户群 —— 等后端种子任务自动建十群，或管理员点「+ 新建客户群」"
+                  pagination={{ pageSize: 10 }}
+                  columns={[
+                    {
+                      title: "客户群",
+                      dataIndex: "name",
+                      width: 200,
+                      render: (v: string, r: SegmentRow) => (
+                        <div className="max-w-[190px]">
+                          <div className="truncate text-[13px] font-medium text-[var(--ink)]" title={v}>
+                            {v || "—"}
+                          </div>
+                          <div className="truncate font-mono text-[11px] text-[var(--muted)]" title={r.notes ?? ""}>
+                            {r.code}
+                            {r.notes ? ` · ${r.notes}` : ""}
+                          </div>
+                        </div>
+                      ),
+                    },
+                    {
+                      title: "关键词（POI 采集词）",
+                      dataIndex: "keywords",
+                      width: 240,
+                      render: (_: unknown, r: SegmentRow) => {
+                        const kws = strList(r.keywords);
+                        if (kws.length === 0) return <span className="text-[12px] text-[var(--muted)]">词表待补</span>;
+                        const shown = kws.slice(0, 4);
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {shown.map((k) => (
+                              <Tag key={k} color="cyan" type="light" size="small">
+                                {k}
+                              </Tag>
+                            ))}
+                            {kws.length > shown.length && (
+                              <span title={kws.join(" / ")}>
+                                <Tag color="grey" type="light" size="small">
+                                  +{kws.length - shown.length}
+                                </Tag>
+                              </span>
+                            )}
+                          </div>
+                        );
+                      },
+                    },
+                    {
+                      title: "业务线",
+                      dataIndex: "business_lines",
+                      width: 160,
+                      render: (_: unknown, r: SegmentRow) => {
+                        const lines = strList(r.business_lines);
+                        if (lines.length === 0) return <span className="text-[12px] text-[var(--muted)]">—</span>;
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {lines.slice(0, 5).map((l) => (
+                              <Tag key={l} color="white" type="light" size="small">
+                                {l}
+                              </Tag>
+                            ))}
+                          </div>
+                        );
+                      },
+                    },
+                    {
+                      title: "优先级",
+                      dataIndex: "priority",
+                      width: 90,
+                      render: (v: string | null) => (
+                        <Tag color={PRIORITY_TAG[v ?? ""] ?? "grey"} type="light" size="small">
+                          {v || "P2"}
+                        </Tag>
+                      ),
+                    },
+                    {
+                      title: "企业数",
+                      dataIndex: "enterprise_count",
+                      width: 90,
+                      align: "right" as const,
+                      render: (v: number | null | undefined) => (
+                        <span className="tabular-nums text-[12.5px] text-[var(--ink)]" title="行业归属且非竞对/非买家的存活企业">
+                          {numOrDash(v)}
+                        </span>
+                      ),
+                    },
+                    {
+                      title: "可拨数",
+                      dataIndex: "dialable_count",
+                      width: 90,
+                      align: "right" as const,
+                      render: (v: number | null | undefined) => (
+                        <span
+                          className={`tabular-nums text-[12.5px] ${
+                            typeof v === "number" && v > 0 ? "font-medium text-[var(--positive)]" : "text-[var(--muted)]"
+                          }`}
+                          title="该群企业去重可拨联系人"
+                        >
+                          {numOrDash(v)}
+                        </span>
+                      ),
+                    },
+                    {
+                      title: "状态",
+                      dataIndex: "enabled",
+                      width: 72,
+                      render: (_: unknown, r: SegmentRow) =>
+                        isAdmin ? (
+                          <Switch
+                            size="small"
+                            checked={!!r.enabled}
+                            loading={actingId === r.id}
+                            onChange={(checked: boolean) => void toggleEnabled(r, checked)}
+                          />
+                        ) : (
+                          <Tag color={r.enabled ? "green" : "grey"} type="light" size="small">
+                            {r.enabled ? "启用" : "停用"}
+                          </Tag>
+                        ),
+                    },
+                    {
+                      title: "操作",
+                      width: 170,
+                      render: (_: unknown, r: SegmentRow) => (
+                        <div className="flex gap-1.5">
+                          {isAdmin && (
+                            <Button size="small" theme="borderless" onClick={() => openEdit(r)}>
+                              编辑
+                            </Button>
+                          )}
+                          <Button
+                            size="small"
+                            theme="borderless"
+                            onClick={() => router.push(`/enterprises?segment=${encodeURIComponent(r.code)}`)}
+                          >
+                            看名单
+                          </Button>
+                          {isAdmin && (
+                            <Button
+                              size="small"
+                              theme="borderless"
+                              type={r.enabled ? "danger" : "tertiary"}
+                              loading={actingId === r.id}
+                              onClick={() => void toggleEnabled(r, !r.enabled)}
+                            >
+                              {r.enabled ? "停用" : "启用"}
+                            </Button>
+                          )}
+                        </div>
+                      ),
+                    },
+                  ]}
+                />
+                <p className="mt-2 text-[11.5px] text-[var(--muted)]">
+                  统计口径：企业行业归属 ∈ 该群 industry_keys 且非竞对/非政采买家/非科研医疗等客户排除条件；可拨 = 该群企业去重可拨联系人。「看名单」在企业列表按客户群过滤（?segment=code）。
+                </p>
+              </div>
+            </details>
+          </div>
+        </>
       )}
 
       {/* 新建 / 编辑 Modal（admin）：name/code/keywords 多选/industry_keys 多选/业务线多选/优先级/notes/enabled */}
