@@ -74,13 +74,20 @@ def device_weak_terms() -> list[str]:
 # + 检验检测事业单位（"XX检验检测中心/计量所"形态，名称不含"公司"）。
 # 处置与学校同款：分类保留可查（企业列表/地图/标讯不受影响），
 # 仅从所有"先打给谁"类推荐面隐去（推荐/拨名单/补数清单/情报雷达）。
-NON_BUYER_INDUSTRIES = frozenset({"research_edu", "medical_health"})
+NON_BUYER_INDUSTRIES = frozenset({"research_edu", "medical_health", "lab_instrument"})
+# 2026-11-15 用户拍板："分析/实验室不需要"——检测/实验室（含民营第三方）
+# 整体出局；"造泵装机器不需要"——OEM 设备商出局（NON_CUSTOMER_ROLES）；
+# "液环泵不需要"——电力/造纸/烟草行业随之出局（SEGMENTATION.md v3.1）。
 
 # 政采买家源（2026-11-14 用户拍板："我们不做政采买家"）——采购人建档
 # （ggzy_buyer/ccgp_buyer/sdgp_buyer）=机关/事业单位/学校/医院主体，整体
 # 出局。处置与学校同款：数据保留（竞对雷达"卖给了谁"的证据主体+装机地图
 # 素材），退出全部客户工作面（推荐/拨名单/补数清单/联系人中心/情报雷达）。
 NON_CUSTOMER_SOURCES = frozenset({"ggzy_buyer", "ccgp_buyer", "sdgp_buyer"})
+
+# OEM 设备商（买泵装进自家设备的制造商）出局——2026-11-15 用户拍板
+# "造泵装机器不需要"。reseller/integrator（渠道合作面）暂不动。
+NON_CUSTOMER_ROLES = frozenset({"oem"})
 
 # 名称形态兜底词：行业字段未分类但名称是公共机构形态（不带"公司"才生效，
 # 民营企业名带"公司"一律保留）。词表校准闭环第五轮补充：检验所/质检所/
@@ -92,19 +99,22 @@ PUB_INSTITUTION_NAME_WORDS = (
 
 
 def is_non_buyer(
-    industry_key: str | None, name: str | None = None, source: str | None = None
+    industry_key: str | None,
+    name: str | None = None,
+    source: str | None = None,
+    customer_role: str | None = None,
 ) -> bool:
-    """行业级+名称级+来源级非客户判定（推荐面排除用，非删除）。
+    """行业级+名称级+来源级+角色级非客户判定（推荐面排除用，非删除）。
 
-    source 判定（2026-11-14）：政采买家建档源整体出局——CUSTOMER_PROFILE.md
-    第一节拍板。"""
+    source（2026-11-14）：政采买家建档源出局；customer_role（2026-11-15）：
+    OEM 设备商出局——CUSTOMER_PROFILE.md 拍板沿革。"""
     if source and source in NON_CUSTOMER_SOURCES:
+        return True
+    if customer_role and customer_role in NON_CUSTOMER_ROLES:
         return True
     if industry_key in NON_BUYER_INDUSTRIES:
         return True
     if name and "公司" not in name:
-        if industry_key == "lab_instrument":
-            return True
         if any(w in name for w in PUB_INSTITUTION_NAME_WORDS):
             return True
     return False

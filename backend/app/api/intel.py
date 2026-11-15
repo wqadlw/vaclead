@@ -509,6 +509,9 @@ def _intel_exclusions(session: Session):
                 Enterprise.industry_key == "medical_health",
                 # 2026-11-14 政采买家出局（用户拍板）——*_buyer 建档源
                 Enterprise.source.in_(NON_CUSTOMER_SOURCES),
+                # 2026-11-15 检测/实验室整体出局 + OEM 设备商出局（用户拍板）
+                Enterprise.industry_key == "lab_instrument",
+                Enterprise.customer_role == "oem",
             )
         )
     }

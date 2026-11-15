@@ -716,7 +716,7 @@ def gongshang_lookup_export(
     for e in ents:
         # 2026-11-08 学校 + 2026-11-14 公共机构扩面 + 2026-11-14 政采买家出局
         # 用户拍板——配额不花在非客户身上
-        if is_non_buyer(e.industry_key, e.name, e.source):
+        if is_non_buyer(e.industry_key, e.name, e.source, e.customer_role):
             continue
         missing = []
         if not e.uscc:

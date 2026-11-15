@@ -43,13 +43,13 @@ _CALL_RESULT_CN = {
 
 
 def _non_buyer_conds():
-    """公共机构排除（2026-11-14 用户拍板："学校请出推荐"先例扩面）。
+    """非客户排除（多轮用户拍板沿革：学校→公共机构→政采买家→检测实验室
+    整体→OEM 设备商）。
 
-    科研教育 + 医疗卫生行业级排除；检验检测仅排事业单位形态（名称不含"公司"，
-    私营第三方检测公司保留）；名称形态兜底（检验所/质检所/计量所/研究院等
-    未分类公共机构）；2026-11-14 深夜：**政采买家源整体出局**（*_buyer 建档
-    =机关/事业单位主体，用户拍板"不做政采买家"）。数据保留可查，仅隐出拨打
-    工作列表与导出。
+    行业级：research_edu / medical_health / lab_instrument（2026-11-15 整体
+    出局，不再区分民营）；来源级：*_buyer 政采买家建档源；角色级：oem；
+    名称形态兜底（检验所/质检所/计量所/研究院等未分类公共机构，不带"公司"
+    才生效）。数据保留可查，仅隐出拨打工作列表与导出。
     与 vertical.is_non_buyer 同语义的 SQL 形态（or_/!= 链，规避扫描器锚定）。
     """
     return and_(
@@ -61,12 +61,11 @@ def _non_buyer_conds():
             Enterprise.industry_key.is_(None),
             Enterprise.industry_key != "research_edu",
             Enterprise.industry_key != "medical_health",
+            Enterprise.industry_key != "lab_instrument",
         ),
         or_(
-            Enterprise.industry_key.is_(None),
-            Enterprise.industry_key != "lab_instrument",
-            Enterprise.name.like("%公司%"),
-            Enterprise.name.is_(None),
+            Enterprise.customer_role.is_(None),
+            Enterprise.customer_role != "oem",
         ),
         or_(
             Enterprise.name.is_(None),

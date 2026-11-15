@@ -132,8 +132,9 @@ def test_recommend_shared_phone_demoted():
 
 
 def test_recommend_excludes_public_sector():
-    """2026-11-14："学校请出推荐"扩面——医疗卫生（医院）与检验检测事业单位
-    不进先打给谁；私营第三方检测公司（名称含"公司"）保留。"""
+    """2026-11-14："学校请出推荐"扩面——医疗卫生（医院）不进先打给谁。
+    2026-11-15 用户拍板："分析/实验室不需要"——检测/实验室**整体出局**
+    （含民营第三方公司，不再区分名称形态）。"""
     from app.recommend import score_candidates
 
     with SessionLocal() as s:
@@ -150,9 +151,28 @@ def test_recommend_excludes_public_sector():
         recs = score_candidates(s, limit=50)
         ids = {r["ent_id"] for r in recs}
         assert h.id not in ids, "医疗卫生（医院）应被排除"
-        assert pub_lab.id not in ids, "检验检测事业单位（名称不含公司）应被排除"
-        assert priv.id in ids, "私营第三方检测公司应保留"
+        assert pub_lab.id not in ids, "检验检测事业单位应被排除"
+        assert priv.id not in ids, "2026-11-15 拍板：民营检测公司也整体出局"
         assert gov.id not in ids, "未分类但名称为公共机构形态（检验所）应被兜底排除"
+
+
+def test_recommend_excludes_oem_role():
+    """2026-11-15 用户拍板："造泵装机器不需要"——OEM 设备商（买泵装进自家
+    设备）出局；end_user（无角色标注）保留。"""
+    from app.recommend import score_candidates
+
+    with SessionLocal() as s:
+        oem = _seed_ent(s, "苏州华腾镀膜设备有限公司", industry="coating", intent=90)
+        oem.customer_role = "oem"
+        _seed_phone(s, oem.id, "0512-30303030")
+        end_user = _seed_ent(s, "苏州晶瑞真空科技有限公司", industry="coating", intent=90)
+        _seed_phone(s, end_user.id, "0512-30303031")
+        s.commit()
+
+        recs = score_candidates(s, limit=50)
+        ids = {r["ent_id"] for r in recs}
+        assert oem.id not in ids, "OEM 设备商（customer_role=oem）应被排除"
+        assert end_user.id in ids, "终端用户应保留"
 
 
 def test_recommend_excludes_procurement_buyers():
