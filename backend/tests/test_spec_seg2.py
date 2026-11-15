@@ -89,10 +89,10 @@ def _seed_phone(s, eid: int, phone: str) -> None:
 
 
 def test_segment_seed_idempotent(client):
-    """种子幂等：重复跑零写入、数量不变（SPEC-SEG2 §6）。"""
+    """种子幂等：重复跑零写入、数量不变（SPEC-SEG2 §6；2026-11-15 补建跨品牌群后 11 群）。"""
     with SessionLocal() as s:
         before = s.query(CustomerSegment).count()
-        assert before == 10, f"应已随 lifespan 种入十群，实际 {before}"
+        assert before == 11, f"应已随 lifespan 种入十一群，实际 {before}"
         n1 = seed_customer_segments(s)
         n2 = seed_customer_segments(s)
         assert n1 == 0 and n2 == 0, "标记命中即整段跳过，重跑零写入"
@@ -100,14 +100,15 @@ def test_segment_seed_idempotent(client):
 
 
 def test_segment_seed_ten_groups(client):
-    """十群内容断言：code/priority/industry_keys/business_lines 与 SPEC §2 表格一致。"""
+    """种子内容断言：code/priority/industry_keys/business_lines 与 SPEC §2 表格
+    + 2026-11-15 跨品牌维修群（记忆业务线④）一致。"""
     with SessionLocal() as s:
         rows = {seg.code: seg for seg in s.query(CustomerSegment).all()}
         assert set(rows) == {
             "coating_factory", "semiconductor_factory", "heat_treatment_factory",
             "food_freeze_dry", "pharma_factory", "pv_battery_factory",
             "chemical_factory", "plastics_factory", "packaging_factory",
-            "central_retrofit",
+            "central_retrofit", "cross_brand_service",
         }
         assert rows["coating_factory"].priority == "P0"
         assert rows["coating_factory"].industry_keys == '["coating"]'
@@ -127,9 +128,15 @@ def test_segment_seed_ten_groups(client):
         assert rows["chemical_factory"].industry_keys == '["chemical_new_material"]'
         assert rows["plastics_factory"].industry_keys == '["plastic_rubber"]'
         assert rows["packaging_factory"].industry_keys == '["packaging_printing"]'
-        # 优先级分布：6×P0（含停用制药厂）+ 4×P1
+        # 跨品牌维修群（2026-11-15 补建，记忆业务线④）：维修/配件/泵油，行业不圈名单
+        cb = rows["cross_brand_service"]
+        assert cb.priority == "P0" and cb.enabled == 1
+        assert cb.industry_keys == "[]"
+        assert cb.business_lines == '["维修","配件","泵油"]'
+        assert "莱宝" in cb.notes and "装机台账" in cb.notes
+        # 优先级分布：7×P0（含停用制药厂）+ 4×P1
         prios = sorted(seg.priority for seg in rows.values())
-        assert prios == ["P0"] * 6 + ["P1"] * 4
+        assert prios == ["P0"] * 7 + ["P1"] * 4
 
 
 # ---- §6 CRUD 权限往返 ----

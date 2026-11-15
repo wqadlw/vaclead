@@ -262,6 +262,22 @@ export default function ProfilePage() {
         </div>
       ) : (
         <>
+          {/* ===== 昊志四条生意线（用户拍板"结合记忆说清客户是谁"）——看名单前先有框架 ===== */}
+          <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg bg-[var(--border)] lg:grid-cols-4">
+            {[
+              { t: "卖新泵", d: "新产线/扩产/设备更新——整机与整线", n: "看下面各群的「买什么」标签" },
+              { t: "改系统", d: "分散小泵改中央真空系统——应用点 ≥8 的工厂", n: "客户群：中央系统改造厂" },
+              { t: "修旧泵", d: "莱宝/普旭/阿特拉斯等进口泵跨品牌维修", n: "客户群：跨品牌维修客户" },
+              { t: "供耗材", d: "泵油/密封/滤芯——每台装机=定时订单", n: "基础：装机台账（等录入）" },
+            ].map((x) => (
+              <div key={x.t} className="bg-white px-4 py-2.5">
+                <div className="text-[13.5px] font-medium text-[var(--ink)]">{x.t}</div>
+                <div className="mt-0.5 text-[11.5px] leading-4 text-[var(--muted)]">{x.d}</div>
+                <div className="mt-0.5 text-[11.5px] text-[var(--accent)]">{x.n}</div>
+              </div>
+            ))}
+          </div>
+
           {/* ===== 总览条：一瞥全局 ===== */}
           <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-lg bg-[var(--border)] md:grid-cols-4">
             <div className="bg-white px-4 py-3">
@@ -331,17 +347,27 @@ export default function ProfilePage() {
                       {i + 1}
                     </span>
                   </div>
-                  <div className="min-w-0 shrink-0 basis-40">
+                  <div className="min-w-0 shrink-0 basis-64">
                     <div className="flex items-center gap-1.5">
                       <span className="truncate text-[14px] font-medium text-[var(--ink)]">{r.name}</span>
                       <Tag color={PRIORITY_TAG[r.priority ?? ""] ?? "grey"} type="light" size="small">
                         {r.priority || "P2"}
                       </Tag>
                     </div>
-                    <div className="truncate text-[11.5px] text-[var(--muted)]">
-                      共 {numOrDash(r.enterprise_count)} 家
-                      {extras.length > 0 ? ` · ${extras.join(" · ")}` : ""}
+                    {/* 买昊志什么（业务线 chips）——每个群赚哪份钱一眼可见 */}
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                      {strList(r.business_lines).slice(0, 4).map((l) => (
+                        <span key={l} className="rounded bg-[var(--raised)] px-1.5 py-0.5 text-[11px] text-[var(--ink)]">
+                          {l}
+                        </span>
+                      ))}
                     </div>
+                    <div className="mt-0.5 truncate text-[11px] text-[var(--muted)]" title={r.notes ?? ""}>
+                      {r.notes || `共 ${numOrDash(r.enterprise_count)} 家`}
+                    </div>
+                    {extras.length > 0 && (
+                      <div className="truncate text-[11px] text-[var(--muted)]">{extras.join(" · ")}</div>
+                    )}
                   </div>
                   {/* 能打数字 + 条形 */}
                   <div className="min-w-0 flex-1">

@@ -154,6 +154,21 @@ _SEED_SEGMENTS: list[dict] = [
         "notes": "存量注塑厂/压合/化工厂中央真空系统改造，资格清单见 SEGMENTATION §四：应用点≥8；按系统集成切入，行业类目暂不圈名单。",
         "sort": 100,
     },
+    {
+        # 2026-11-15 用户拍板补建（记忆业务线④："国内外大品牌的真空泵维修、
+        # 配件、泵油都会搞"）——跨行业：不管什么行业，厂里装着进口泵就是客户。
+        # 名单来源=装机台账（待录 Excel）+竞对中标雷达（73 家在册），行业不圈
+        # 名单故 industry_keys=[]；统计显示 0 是诚实状态，名单随台账录入增长。
+        "name": "跨品牌维修客户",
+        "code": "cross_brand_service",
+        "keywords": ["莱宝", "普旭", "阿特拉斯", "爱发科", "真空泵维修"],
+        "industry_keys": [],
+        "business_lines": ["维修", "配件", "泵油"],
+        "priority": "P0",
+        "enabled": 1,
+        "notes": "厂里装着莱宝/普旭/阿特拉斯等进口泵的工厂——不管什么行业，泵到期/故障就是入口；原厂维修贵且慢，我们跨品牌接活。名单=装机台账（等录入）+竞对中标雷达。",
+        "sort": 20,
+    },
 ]
 
 
@@ -163,11 +178,12 @@ def _json_list(arr: list[str]) -> str:
 
 
 def seed_customer_segments(session: Session) -> int:
-    """客户群种子（SPEC-SEG2 §2，幂等）：DB 标记防重 + 名称查重双保险。
+    """客户群种子（SPEC-SEG2 §2 + 2026-11-15 补建跨品牌维修群，幂等）：
+    DB 标记防重 + 名称查重双保险。
 
-    首种写入 10 群并把 SyncWatermark[segment_seed] 落 ok；之后 cron/启动重跑
-    零写入。admin 删掉的群不被复活（标记命中即整段跳过）；标记丢失时按
-    名称查重不重复插。
+    首种写入种子全量并把 SyncWatermark[segment_seed] 落 ok；之后 cron/启动
+    重跑零写入。admin 删掉的群不被复活（标记命中即整段跳过）；标记丢失时
+    按名称查重不重复插（新增种子行靠清标记补种——2026-11-15 跨品牌群即此路）。
     """
     row = session.get(SyncWatermark, SEED_MARKER)
     if row is not None and row.last_status == "ok":
