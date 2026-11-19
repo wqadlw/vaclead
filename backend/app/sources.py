@@ -51,6 +51,9 @@ SOURCES: dict[str, SourceDef] = {
                   sla_job="sdgp", sla_label="山东政采采集", sla_hours=14,
                   search_url="https://www.ccgp-shandong.gov.cn/search"
                              "?title={keyword}&colCode=0301&area=370000"),
+        SourceDef("hunan", "湖南政采", "tender", aliases=("hunan_buyer",),
+                  sla_job="hunan", sla_label="湖南政采采集", sla_hours=26,
+                  search_url="http://www.ccgp-hunan.gov.cn/"),
         SourceDef("tender", "招标导入", "tender",
                   sla_job="hourly_tender", sla_hours=2),
         SourceDef("poi", "高德 POI 采集", "poi"),
@@ -76,6 +79,7 @@ ALIAS_LABELS: dict[str, str] = {
     "ggzy_buyer": "公采买家",
     "ccgp_buyer": "政采买家",
     "sdgp_buyer": "山东政采买家",
+    "hunan_buyer": "湖南政采买家",
 }
 
 

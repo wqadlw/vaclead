@@ -707,6 +707,157 @@ def run_sdgp_scan(max_pages: int = 3) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# SPEC-HUNAN：湖南政采（luban 平台，无关键词接口——当日块+本地词表过滤）
+# ---------------------------------------------------------------------------
+def run_hunan_scan() -> dict:
+    """湖南政采当日块扫描（SPEC-HUNAN，每日 06:00 错峰于 sdgp 05:40 后）。
+
+    luban 平台无关键词接口：fetch_home_blocks 拉当日最新块 → 本地
+    sdgp_terms 词表过滤（40 词与山东共用，同为标题库）→ 命中逐条：
+    采购人自标题抽取（extract_enterprise_name 双参签名，抽不到如实跳过
+    不发明归属）建档（source=hunan_buyer，省份=湖南省确定性映射只补空）
+    + apply_icp（建档即分类）+ tender 信号（base_score=30，url=luban
+    详情页真实链接可溯源——比山东 url=""强）。
+
+    详情电话自收敛：命中企业无 notice_contact 联系人时 fetch_detail →
+    extract_phones → Contact(source="hunan", role="notice_contact")，cap
+    30/轮（补齐即不再拉，详情失败不阻断主采集）。查重=Signal(url=详情链,
+    title, type) 三元组预查 + uq_signal_dedup 唯一约束兜底，幂等可重扫。
+    单记录短事务（SQLite 单写者——写事务绝不跨 HTTP）。
+    """
+    from .api.imports import apply_icp, extract_enterprise_name
+    from .collectors.hunan import (
+        detail_link,
+        fetch_detail,
+        fetch_home_blocks,
+        filter_by_terms,
+    )
+    from .db import SessionLocal
+    from .normalize import resolve_enterprise
+    from .sources import any_source_disabled
+    from .vertical import sdgp_terms
+
+    if any_source_disabled("hunan"):
+        return {"skipped_disabled": True}
+    stats: dict = {
+        "notices": 0, "hits": 0, "buyers": 0, "signals": 0,
+        "details": 0, "contacts_new": 0, "contacts_updated": 0,
+    }
+    terms = sdgp_terms()
+    if not terms:
+        logger.warning("hunan：sdgp_terms 词表为空，本轮优雅跳过")
+        return stats
+    blocks = fetch_home_blocks()
+    stats["notices"] = len(blocks)
+    hits = filter_by_terms(blocks, terms)
+    stats["hits"] = len(hits)
+    for block in hits:
+        title = (block.get("title") or "").strip()
+        article_id = (block.get("article_id") or "").strip()
+        if not title or not article_id:
+            continue
+        buyer = extract_enterprise_name(title, "")
+        if not buyer or len(buyer) < 4:
+            # 抽不到采购人如实跳过，不发明归属（sdgp/js/zj 同款）
+            logger.debug("hunan：标题「%s」抽不到采购人，跳过", title)
+            continue
+        detail_url = detail_link(article_id)
+        with SessionLocal() as s:
+            ent, is_new = resolve_enterprise(s, buyer, source="hunan_buyer")
+            # SPEC-BP BP0 同款：通道→省份确定性映射，只补空不覆盖
+            if not ent.province:
+                ent.province = "湖南省"
+            if is_new:
+                stats["buyers"] += 1
+            # W40 同款：建档即分类（首轮漏接，AG 补齐）
+            if ent.industry_key is None:
+                apply_icp(ent)
+            s.commit()  # 建档短事务先落：买手沉淀不因信号撞库丢失
+            exists = (
+                s.query(Signal)
+                .filter(
+                    Signal.enterprise_id == ent.id,
+                    Signal.url == detail_url,
+                    Signal.title == title,
+                    Signal.type == "tender",
+                )
+                .first()
+            )
+            # 详情电话自收敛（sdgp 同款，cap 30/轮）：该买家尚无公告电话
+            # 时拉详情抽号码——补齐即不再拉；重复公告也补历史。
+            _needs_phone = (
+                stats.get("details", 0) < 30
+                and s.query(Contact.id).filter(
+                    Contact.enterprise_id == ent.id,
+                    Contact.role == "notice_contact",
+                ).first() is None
+            )
+            if _needs_phone:
+                try:
+                    d = fetch_detail(article_id)
+                except Exception:  # noqa: BLE001 — 详情失败不阻断主采集
+                    d = None
+                if d and d.get("body_text"):
+                    stats["details"] = stats.get("details", 0) + 1
+                    from .phones import (
+                        dump_phones as _dump,
+                        extract_phones,
+                        load_phones,
+                    )
+                    with SessionLocal() as ds:
+                        phones = extract_phones(d["body_text"])
+                        if phones:
+                            exists_c = (
+                                ds.query(Contact)
+                                .filter(
+                                    Contact.enterprise_id == ent.id,
+                                    Contact.role == "notice_contact",
+                                )
+                                .first()
+                            )
+                            if exists_c is not None:
+                                merged = sorted(
+                                    set(load_phones(exists_c.phones_json)) | set(phones)
+                                )
+                                exists_c.phones_json = _dump(merged)
+                                ds.commit()
+                                stats["contacts_updated"] = (
+                                    stats.get("contacts_updated", 0) + 1
+                                )
+                            else:
+                                ds.add(Contact(
+                                    enterprise_id=ent.id, name="公告法定公开电话",
+                                    role="notice_contact", phones_json=_dump(phones),
+                                    source="hunan",
+                                ))
+                                ds.commit()
+                                stats["contacts_new"] = stats.get("contacts_new", 0) + 1
+            if exists is not None:
+                continue
+            s.add(Signal(
+                enterprise_id=ent.id,
+                type="tender",
+                title=title,
+                url=detail_url,
+                pub_date=block.get("pub_date"),
+                matched_terms="[]",
+                hit_part="title",
+                raw_excerpt=f"湖南政采采购公告｜{block.get('district_name') or '湖南省'}",
+                evidence_claim=title,
+                base_score=30.0,
+            ))
+            try:
+                s.commit()
+                stats["signals"] += 1
+            except IntegrityError:
+                s.rollback()
+                logger.warning(
+                    "hunan：信号「%s」撞 uq_signal_dedup，已跳过", title
+                )
+    return stats
+
+
+# ---------------------------------------------------------------------------
 # 回收站清空（SPEC-AM AM1）
 # ---------------------------------------------------------------------------
 def purge_deleted_sweep(retention_days: int = 30) -> dict:
@@ -781,6 +932,7 @@ def run_watermark_watchdog() -> dict:
         ("proposal_js", lambda: run_proposal_js_scan(max_pages=1)),
         ("proposal_zj", lambda: run_proposal_zj_scan(max_pages=1)),
         ("sdgp", lambda: run_sdgp_scan(max_pages=3)),
+        ("hunan", run_hunan_scan),
         ("health_refresh", lambda: _watchdog_health()),
         ("backup_sqlite", lambda: backup_sqlite("data/backups")),
     ]

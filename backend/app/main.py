@@ -413,6 +413,15 @@ async def lifespan(app: FastAPI):
         # 每轮仅 1-3 请求即熔断，成本低。单任务名双触发，看门狗/水印不变。
         _register_cron("sdgp", _sdgp_sweep, "5,12", 40)
 
+        def _hunan_sweep() -> dict:
+            from .jobs import run_hunan_scan
+
+            return run_hunan_scan()
+
+        # SPEC-HUNAN：湖南政采当日块（luban 平台无关键词接口，拉一次够；
+        # 06:00 错峰于 sdgp 05:40 后）
+        _register_cron("hunan", _hunan_sweep, 6, 0)
+
         def _contract_renewals_sweep() -> dict:
             from .api.contracts import check_contract_renewals
             from .db import SessionLocal as _SL
