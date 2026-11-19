@@ -4,6 +4,28 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-19 · 湖南列表接口破译（契约完整固化，实施放下一轮）
+
+**列表接口**：`POST /portal/searchHome`（无鉴权无验证码）——body：
+`{code: "160-396330"(栏目), subCodes: ["160-945988"](子分类), districtCode:
+"430000", pageSize: 10(实测上限 10), needTotal, isProvince: true}`——响应
+`{result: {data: {todayTotal, total: 33,538, children: [{title, articleId
+(加密串), pubDate(epoch ms), publishDateString, districtName}]}}}`。
+**日期全为当日**——searchHome 是"最新块"接口（分页/关键词字段全被忽略，
+实测 4 种分页字段+4 种关键词字段全无效）。
+
+**湖南接入模式定案（与山东不同）**：山东=关键词检索（词表驱动）；湖南=
+**每轮拉当日最新块（1-3 请求覆盖日增 18-300 条）→本地词表过滤→命中走
+/portal/detail 全文**。不需要词表请求，流量极省。total 223,730=湖南全量池。
+
+**契约固化**（scripts/hunan_cap.mjs/hunan_list_cap.mjs 保留可复跑）：
+详情 `GET /portal/detail?articleId=&parentId=&timestamp=毫秒`（无鉴权）；
+列表 `POST /portal/searchHome`（code 系统通过 /admin/category/home/headTab
+获取）；subCodes 语义枚举待实施轮（160-945988=项目信息招标类）。
+
+**下一轮实施**：hunan.py（searchHome 块拉取+词表过滤+详情全文+电话）
++ luban 四省（皖桂吉）逐省适配（组件同款 API 路径省定制）。
+
 ## 2026-11-19 · 全国政采分网普查（24 省）+ 湖南 luban 平台破译开局
 
 **用户连续追问"就没有其他信息源了"**——修正此前"分省镜像打住"的过早结论
