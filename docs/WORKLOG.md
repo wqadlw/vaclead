@@ -4,6 +4,46 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-21 · luban 三省参数捕获（皖桂吉，实施弹药固化）
+
+Playwright 首页捕获三省 `/portal/searchHome` 真实参数（组件同款模式通用，
+**各省 code/subCodes/districtCode 省定制**）：
+
+| 省 | 端点 | code | 意向公开子码 | districtCode | 池规模 |
+|---|---|---|---|---|---|
+| 广西 | zfcg.gxzf.gov.cn | 61-266648 | **ZcyAnnouncement10016** | 459900 | **意向 78,231** |
+| 吉林 | ccgp-jilin.gov.cn | ZcyAnnouncement1 / jilinCategory12-13 | ZcyAnnouncement10016（政采云统一） | 229900 | 待测 |
+| 湖南 | ccgp-hunan.gov.cn | 160-396330 | 160-945988（项目信息） | 430000 | 33,538 已接入 |
+
+**政采云 Zcy 体系发现**：意向公开子码 ZcyAnnouncement10016 在桂吉两省同款
+——Zcy 系省份（政采云平台）的子码体系统一，逐省适配成本进一步降低。
+安徽 searchHome 未捕获（路径或参数省定制，单独一轮）。
+
+**实施分级**（每省需实弹验证 detail 契约/正文位置/编码——不是一个泛化
+函数能一把梭）：广西意向池 78K 最大先接；吉林次之；安徽单独破译轮。
+捕获脚本 scripts/luban_cap.mjs 保留可复跑。
+
+## 2026-11-20 · SPEC-HUNAN 湖南政采接入（luban 平台四省同款首省落地）
+
+**实施**（单 Agent，照山东模式）：collectors/hunan.py（fetch_home_blocks
+POST /portal/searchHome 无鉴权/fetch_detail GET /portal/detail 正文在
+result.data.content HTML 直出——**实施时实弹确认字段位置不猜**，剥
+style/script 整块再剥标签 4623→3095 净文本抽 4 个 0731 真实座机/
+articleId 含 /+= quote(safe="") 三重红线断言）+ run_hunan_scan（当日块→
+sdgp_terms 40 词本地过滤→命中建档 hunan_buyer+湖南省确定性→tender 信号
+**url=详情真实链可溯源**[比山东 url=""强]→详情电话自收敛 cap 30）+
+注册表+06:00 cron+看门狗 stub 同步。
+
+**真库实弹**：当日块 10 条/词表命中 2（医疗设备×2，无采购人名如实跳过
+不发明）/二跑幂等 ✓。湖南信号进标讯中心/来源矩阵/水位仪表盘全 registry
+派生零前端改动。
+
+**门禁**：全量 **496**（483+13）✓ + build ✓。**源总数 14**（+hunan）。
+
+**下一轮**：luban 四省剩余（皖桂吉）逐省接入（组件同款，API 路径省定制
+——每省 Playwright 半天）+ 湖南 subCodes 其余子栏验证（160-876764 等可能
+=结果/合同类）。
+
 ## 2026-11-19 · 湖南列表接口破译（契约完整固化，实施放下一轮）
 
 **列表接口**：`POST /portal/searchHome`（无鉴权无验证码）——body：
