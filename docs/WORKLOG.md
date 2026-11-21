@@ -4,6 +4,36 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-21 · SPEC-LUBAN 吉林接入（第 19 源，配置一行+拍平泛化）
+
+**实弹**：吉林意向块（ZcyAnnouncement1+10016）**8 条直出且 purchaseName
+采购单位字段直出**（吉林省生态环境监测中心/白城师范学院）——**拍平加
+purchase_name 字段**（湖南/沪黔桂 children 无该键=None fallback 标题抽取；
+吉林直出无需抽取——安徽 author 模式的 luban 版）。run_luban_scan 买方
+=purchase_name 优先 fallback 抽取。LUBAN_PROVINCES+jilin 配置+sources
+注册（共用 sla_job=luban）。**漏注册教训（本人手动加配置时犯）**：
+LUBAN_PROVINCES 加了但 sources.py 未同步——/api/sources 不显示无 SLA，
+/spec 下 /api/segments 测试拦下（registry 完备性断言的价值实证）。
+
+**门禁**：全量 **518** ✓（+jilin registry 断言同步）+ 吉林首轮实弹 8 条
+（意向监控语义：命中已有企业才挂，零建档正确）。
+
+## 2026-11-21 · SPEC-AHUI 安徽政采接入（portal/category 形态第 2 省，18 源在线）
+
+**实施**（单 Agent）：collectors/anhui.py（POST /portal/category 标准分页
+无鉴权——**author 字段直接给采购人单位名无需标题抽取，数据比山东还全**；
+records 在 data.data；**HTTPS 必须——HTTP 全 301 CWAP-waf**；pageSize=20
+稳定 429→15 红线上墙[实弹发现]）+ run_anhui_scan（author 直接 resolve 建
+档 anhui_buyer+安徽省确定性 apply_icp/tender 信号 30 分/分页 cap 7×15=105
+条/轮空页即停）+ 注册表+06:20 错峰+看门狗 stub 同步。
+
+**实弹战果**：首轮 **79 家安徽买家建档**（芜湖市鸠江区教育局等）/99 条
+tender 信号（90 新档+9 落 resolve 命中的存量同名企业——安徽买家 ggzy 早
+采过，跨通道去重语义正确）/二跑幂等零新增。
+
+**门禁**：全量 **518**（509+9）✓ + build ✓ + 安徽源在线（18 源）✓。
+**河北/江西/重庆 HTTPS 重测候选记档**（301 假象修正——下轮普查修正）。
+
 ## 2026-11-21 · 安徽 SPA 破译进行中（API 面现形，参数待捕获）
 
 **安徽 bundle 逆推**（山东三步法第一二步成功）：首页非库 js 抓取 →
