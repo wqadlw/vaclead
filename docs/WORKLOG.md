@@ -4,6 +4,20 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-21 · 安徽 SPA 破译进行中（API 面现形，参数待捕获）
+
+**安徽 bundle 逆推**（山东三步法第一二步成功）：首页非库 js 抓取 →
+**cdnCache_prod.js 含 API 清单**：`/api/core/new/announcementList`（公告
+列表）+ articleCount/agencyIndexList/supplierIndexCount 等。**关键坑两个
+如实记档**：①**HTTP 全部 301 CWAP-waf**（安徽有 WAF 设备强制 HTTPS——
+此前 HTTP 试探的省份可能被 301 误判为不可用，普查结论部分修正）②HTTPS
+POST 返回 **500 系统出错**——路径现形但参数形态不对（categoryCode/pageNo
+与 code/subCodes 两种 luban 形态均 500——安徽参数结构待捕获）。③Playwright
+首页 10 秒内 announcementList 未被调（列表非首屏或需滚动/导航触发）——
+anhui_cap.mjs 保留，下轮滚动/导航专项。
+
+**全国分省破译地图更新**：安徽=API 路径现形+参数待捕（进度 50%）。
+
 ## 2026-11-21 · 信息源第三轮深挖探测终局（用户三问"就没有其他信息源"）
 
 用户排除山东三度追问。本轮探三个**从未碰过的方向**：
