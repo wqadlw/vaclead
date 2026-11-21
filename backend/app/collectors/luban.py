@@ -51,6 +51,15 @@ LUBAN_PROVINCES: dict[str, dict] = {
         "district": "459900", "province": "广西壮族自治区",
         "source_buyer": "guangxi_buyer",
     },
+    # 2026-11-21 实测接入：意向公开块（ZcyAnnouncement1+10016）直出
+    # purchaseName 采购单位——买方无需标题抽取（luban 拍平 purchase_name
+    # 优先，fallback 抽取）。
+    "jilin": {
+        "base": "http://www.ccgp-jilin.gov.cn",
+        "code": "ZcyAnnouncement1", "sub_codes": ["ZcyAnnouncement10016"],
+        "district": "229900", "province": "吉林省",
+        "source_buyer": "jilin_buyer",
+    },
 }
 
 SEARCH_HOME = "/portal/searchHome"   # POST 无鉴权（luban 列表组件）
@@ -201,6 +210,9 @@ def fetch_luban_home(prov_key: str, page_size: int = 10,
             "pub_date": (ch.get("publishDateString") or "").strip()[:10]
             or _ms_to_date(ch.get("pubDate")),
             "district_name": (ch.get("districtName") or "").strip() or None,
+            # 吉林等省直带采购单位名（purchaseName）——买方无需抽取；其他省 None
+            # 走标题抽取 fallback（run_luban_scan 统一：purchase_name 优先）。
+            "purchase_name": (ch.get("purchaseName") or "").strip() or None,
         })
     return blocks
 

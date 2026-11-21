@@ -132,6 +132,7 @@ def test_luban_fetch_home_ok_shanghai_no_district_key(monkeypatch):
         "article_id": "HMIZyWkowYu2W3WlOPJGBw==",
         "pub_date": "2026-11-21",
         "district_name": "上海市本级",
+        "purchase_name": None,  # 上海 children 无 purchaseName——吉林等省直出
     }
     assert urls[0].startswith("https://www.zfcg.sh.gov.cn/portal/searchHome")
     body = bodies[0]

@@ -901,7 +901,11 @@ def run_luban_scan() -> dict:
                 title = (block.get("title") or "").strip()
                 if not title:
                     continue
-                buyer = extract_enterprise_name(title, "")
+                # 买方单位：purchase_name 直出优先（吉林等省），fallback 标题抽取
+                buyer = (
+                    block.get("purchase_name")
+                    or extract_enterprise_name(title, "")
+                )
                 if not buyer or len(buyer) < 4:
                     # 抽不到采购人如实跳过，不发明归属（sdgp/hunan/js/zj 同款）
                     logger.debug("luban[%s]：标题「%s」抽不到采购人，跳过", prov_key, title)
