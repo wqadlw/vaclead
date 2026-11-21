@@ -54,6 +54,18 @@ SOURCES: dict[str, SourceDef] = {
         SourceDef("hunan", "湖南政采", "tender", aliases=("hunan_buyer",),
                   sla_job="hunan", sla_label="湖南政采采集", sla_hours=26,
                   search_url="http://www.ccgp-hunan.gov.cn/"),
+        # SPEC-LUBAN：政采云系三省意向公开（luban 平台配置驱动）——三源共用
+        # 一个 cron job luban，水位单 job_name="luban"，SLA 表 registry 派生
+        # 已按 sla_job 分组共一条（首轮登记者 shanghai 的 label 生效）。
+        SourceDef("shanghai", "上海政采", "tender", aliases=("shanghai_buyer",),
+                  sla_job="luban", sla_label="政采云意向采集", sla_hours=26,
+                  search_url="https://www.zfcg.sh.gov.cn/"),
+        SourceDef("guizhou", "贵州政采", "tender", aliases=("guizhou_buyer",),
+                  sla_job="luban", sla_label="政采云意向采集", sla_hours=26,
+                  search_url="http://www.ccgp-guizhou.gov.cn/"),
+        SourceDef("guangxi", "广西政采", "tender", aliases=("guangxi_buyer",),
+                  sla_job="luban", sla_label="政采云意向采集", sla_hours=26,
+                  search_url="https://zfcg.gxzf.gov.cn/"),
         SourceDef("tender", "招标导入", "tender",
                   sla_job="hourly_tender", sla_hours=2),
         SourceDef("poi", "高德 POI 采集", "poi"),
@@ -80,6 +92,9 @@ ALIAS_LABELS: dict[str, str] = {
     "ccgp_buyer": "政采买家",
     "sdgp_buyer": "山东政采买家",
     "hunan_buyer": "湖南政采买家",
+    "shanghai_buyer": "上海政采买家",
+    "guizhou_buyer": "贵州政采买家",
+    "guangxi_buyer": "广西政采买家",
 }
 
 

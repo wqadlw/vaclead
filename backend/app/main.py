@@ -422,6 +422,15 @@ async def lifespan(app: FastAPI):
         # 06:00 错峰于 sdgp 05:40 后）
         _register_cron("hunan", _hunan_sweep, 6, 0)
 
+        def _luban_sweep() -> dict:
+            from .jobs import run_luban_scan
+
+            return run_luban_scan()
+
+        # SPEC-LUBAN：政采云系三省（沪黔桂）意向公开——全量入库建档+proposal
+        # 信号（06:10 湖南后；三源共用单 job luban，单水位）
+        _register_cron("luban", _luban_sweep, 6, 10)
+
         def _contract_renewals_sweep() -> dict:
             from .api.contracts import check_contract_renewals
             from .db import SessionLocal as _SL

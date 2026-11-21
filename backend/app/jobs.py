@@ -858,6 +858,118 @@ def run_hunan_scan() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# SPEC-LUBAN：政采云系三省（沪黔桂）意向公开（luban 平台配置驱动，全量入库）
+# ---------------------------------------------------------------------------
+def run_luban_scan() -> dict:
+    """政采云三省（上海/贵州/广西）意向公开扫描（SPEC-LUBAN，每日 06:10）。
+
+    与湖南不同：意向标题无设备词——**全量入库**不过滤：fetch_luban_home
+    拉当日块 → 标题抽采购人（extract_enterprise_name，抽不到如实跳过不
+    发明归属）建档（source=xx_buyer，省份确定性映射只补空）+ apply_icp
+    （建档即分类）+ proposal 信号（base_score=25，url=""——三省 detail
+    契约未验证，意向详情链未破译；evidence=f"{title}（采购意向）"）。
+
+    遍历 LUBAN_PROVINCES：单省异常 continue 不串（try 包整省段）；
+    停用短路 any_source_disabled(省主 key) 逐省判断。查重三元组
+    (url="", title, type="proposal") 预查 + uq_signal_dedup 兜底，幂等
+    可重扫。单记录短事务（SQLite 单写者——写事务绝不跨 HTTP）。
+
+    totals：{prov: {notices, buyers, signals}, ..., total_notices,
+    total_buyers, total_signals}（每省分键便于诊断）。共用 luban job_name
+    单水位（三源 sla_job="luban" 共一条 SLA，水位不按省单独落）。
+    """
+    from .api.imports import apply_icp, extract_enterprise_name
+    from .collectors.luban import LUBAN_PROVINCES, fetch_luban_home
+    from .db import SessionLocal
+    from .normalize import resolve_enterprise
+    from .sources import any_source_disabled
+
+    stats: dict = {}
+    total_notices = 0
+    total_buyers = 0
+    total_signals = 0
+    for prov_key, cfg in LUBAN_PROVINCES.items():
+        prov_stats: dict = {"notices": 0, "buyers": 0, "signals": 0}
+        try:
+            if any_source_disabled(prov_key):
+                # 停用短路（SPEC-MULTI S1）：该省跳过不串他省
+                prov_stats["skipped_disabled"] = True
+                stats[prov_key] = prov_stats
+                continue
+            blocks = fetch_luban_home(prov_key)
+            prov_stats["notices"] = len(blocks)
+            for block in blocks:
+                title = (block.get("title") or "").strip()
+                if not title:
+                    continue
+                buyer = extract_enterprise_name(title, "")
+                if not buyer or len(buyer) < 4:
+                    # 抽不到采购人如实跳过，不发明归属（sdgp/hunan/js/zj 同款）
+                    logger.debug("luban[%s]：标题「%s」抽不到采购人，跳过", prov_key, title)
+                    continue
+                with SessionLocal() as s:
+                    ent, is_new = resolve_enterprise(
+                        s, buyer, source=cfg["source_buyer"]
+                    )
+                    # SPEC-BP BP0 同款：通道→省份确定性映射，只补空不覆盖
+                    if not ent.province:
+                        ent.province = cfg["province"]
+                    if is_new:
+                        prov_stats["buyers"] += 1
+                    # W40 同款：建档即分类（首轮漏接，AG 补齐）
+                    if ent.industry_key is None:
+                        apply_icp(ent)
+                    s.commit()  # 建档短事务先落：买手沉淀不因信号撞库丢失
+                    exists = (
+                        s.query(Signal)
+                        .filter(
+                            Signal.enterprise_id == ent.id,
+                            Signal.url == "",
+                            Signal.title == title,
+                            Signal.type == "proposal",
+                        )
+                        .first()
+                    )
+                    if exists is not None:
+                        continue
+                    s.add(Signal(
+                        enterprise_id=ent.id,
+                        type="proposal",
+                        title=title,
+                        url="",  # 三省 detail 契约未验证——意向详情链未破译
+                        pub_date=block.get("pub_date"),
+                        matched_terms="[]",
+                        hit_part="title",
+                        raw_excerpt=(
+                            f"{cfg['province']}政采采购意向"
+                            f"｜{block.get('district_name') or cfg['province']}"
+                        ),
+                        evidence_claim=f"{title}（采购意向）",
+                        base_score=25.0,
+                    ))
+                    try:
+                        s.commit()
+                        prov_stats["signals"] += 1
+                    except IntegrityError:
+                        s.rollback()
+                        logger.warning(
+                            "luban[%s]：信号「%s」撞 uq_signal_dedup，已跳过",
+                            prov_key, title,
+                        )
+        except Exception:  # noqa: BLE001 — 单省失败不串（try 包整省段）
+            logger.exception("luban：%s 省扫描失败，跳过不影响他省", prov_key)
+            prov_stats["error"] = True
+        stats[prov_key] = prov_stats
+        total_notices += prov_stats["notices"]
+        total_buyers += prov_stats["buyers"]
+        total_signals += prov_stats["signals"]
+    stats["total_notices"] = total_notices
+    stats["total_buyers"] = total_buyers
+    stats["total_signals"] = total_signals
+    return stats
+
+
+# ---------------------------------------------------------------------------
 # 回收站清空（SPEC-AM AM1）
 # ---------------------------------------------------------------------------
 def purge_deleted_sweep(retention_days: int = 30) -> dict:
@@ -933,6 +1045,7 @@ def run_watermark_watchdog() -> dict:
         ("proposal_zj", lambda: run_proposal_zj_scan(max_pages=1)),
         ("sdgp", lambda: run_sdgp_scan(max_pages=3)),
         ("hunan", run_hunan_scan),
+        ("luban", run_luban_scan),  # SPEC-LUBAN：沪黔桂意向公开（三源共用单 job）
         ("health_refresh", lambda: _watchdog_health()),
         ("backup_sqlite", lambda: backup_sqlite("data/backups")),
     ]
