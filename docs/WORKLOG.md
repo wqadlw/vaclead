@@ -48,6 +48,30 @@ anhui_cap.mjs 保留，下轮滚动/导航专项。
 
 **全国分省破译地图更新**：安徽=API 路径现形+参数待捕（进度 50%）。
 
+## 2026-11-21 · SPEC-MANUAL 采集主动化（用户拍板"定时任务改成主动的"）
+
+**语义边界**：信息采集类改主动触发（用户要的数据用户点）；系统运维/业务
+时钟类保留自动（备份/回收/雷达推送/耗材时钟——用户不会每天手点备份）。
+
+**后端**（单 Agent）：main.py 采集类 cron 注册全删（12 行：daily_incremental/
+hourly_tender/proposal 四省/sdgp/hunan/anhui/luban/notice_contacts/
+brand_extract——wrapper 函数保留备端点复用）；**8 个新手动端点**
+（daily-incremental/proposal-{gd,hb,js,zj}-scan/hunan-scan/anhui-scan/
+luban-scan，全部 admin+checkpoint+spawn+停用短路，参数透传 clamp——
+zj=2 是 cron 原配实弹值）；watchdog_jobs 11→2（只留 health_refresh+
+backup_sqlite——采集类退出看门狗）+ test_spec_ar stub 同步；**G4 启动
+补跑保留**（防长期停机数据断档兜底）；SPEC-GUARD 心跳哨兵保留（运维
+cron 仍需守护）。
+
+**前端**（并行 Agent）：/collect 重写为主动控制台——全源"立即采集"按钮
+（映射表覆盖 15 源：ggzy 默认词/ccgp 默认词/各 scan/luban 一端点四省/
+gongshang 同步特判/enrich 120s 超时）+ **双重防重复**（busyKeys+running
+kind 集合）+ **水位红标**（>26h"采集超期"UTC 解析防 8 小时时区偏差）+
+引导条 + 全国增量主按钮 + 总览"定时巡采"卡改"系统任务"。
+
+**实弹**：hunan/luban/anhui 三发主动触发全 done（湖南公告 10/安徽公告
+30），历史表实时记录。**551 全绿**（518+33）+ build ✓。
+
 ## 2026-11-21 · 信息源第三轮深挖探测终局（用户三问"就没有其他信息源"）
 
 用户排除山东三度追问。本轮探三个**从未碰过的方向**：
