@@ -70,6 +70,7 @@ def test_watchdog_recovers_stale_jobs(monkeypatch):
     monkeypatch.setattr(jobs_mod, "run_sdgp_scan", noop)  # SPEC-SDGP：山东政采（漏 stub=看门狗真实网络，测试变慢）
     monkeypatch.setattr(jobs_mod, "run_hunan_scan", noop)  # SPEC-HUNAN：湖南政采（规矩固化：watchdog 加任务=stub 加一行）
     monkeypatch.setattr(jobs_mod, "run_luban_scan", noop)  # SPEC-LUBAN：沪黔桂意向公开（watchdog 加任务=stub 加一行）
+    monkeypatch.setattr(jobs_mod, "run_anhui_scan", noop)  # SPEC-AHUI：安徽政采（watchdog 加任务=stub 加一行）
     monkeypatch.setattr(jobs_mod, "backup_sqlite", noop)
 
     with SessionLocal() as s:
@@ -91,7 +92,7 @@ def test_watchdog_recovers_stale_jobs(monkeypatch):
         s.commit()
 
     stats = run_watermark_watchdog()
-    assert stats["checked"] == 10  # SPEC-BR/BS/SDGP/HUNAN/LUBAN：js/zj/sdgp/hunan/luban 纳入关键日批看门狗
+    assert stats["checked"] == 11  # SPEC-BR/BS/SDGP/HUNAN/LUBAN/AHUI：js/zj/sdgp/hunan/luban/anhui 纳入关键日批看门狗
     assert stats["results"]["proposal_hb"] in ("recovered", "recover-failed")
     assert stats["results"]["health_refresh"] == "ok-today", "当日任务应跳过"
 

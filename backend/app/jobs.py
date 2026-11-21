@@ -975,6 +975,101 @@ def run_luban_scan() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# SPEC-AHUI：安徽政采（portal/category 形态，author 直带采购人——全量入库）
+# ---------------------------------------------------------------------------
+def run_anhui_scan(max_pages: int = 7) -> dict:
+    """安徽政采扫描（SPEC-AHUI，每日 06:20 错峰于 luban 06:10 后）。
+
+    与湖南/山东都不同：**author 字段直接给采购人单位名**——无需标题
+    抽取，author 直接 resolve 建档（source=anhui_buyer，省份=安徽省
+    确定性映射只补空）+ apply_icp（建档即分类）+ tender 信号
+    （base_score=30，url=""——详情页路由 /site/article 实弹 301 到 mall
+    首页非文章页，SPEC 约定验证不通回退；evidence=title）。
+
+    **全量入库**不过滤（意向/公告标题无设备词，同 luban 决策）；author
+    空的跳过计数（no_author_skipped）。分页循环 cap 7 页/轮×15 条=105
+    条/轮防长跑（pageNo 递增，空页即停——服务端第 1 页=最新；pageSize
+    实弹上限 15，20 稳定 429）。查重三元组 (url="", title,
+    type="tender") 预查 + uq_signal_dedup 唯一约束兜底，幂等可重扫。
+    单记录短事务（SQLite 单写者——写事务绝不跨 HTTP）。
+    """
+    from .api.imports import apply_icp
+    from .collectors.anhui import fetch_category
+    from .db import SessionLocal
+    from .normalize import resolve_enterprise
+    from .sources import any_source_disabled
+
+    if any_source_disabled("anhui"):
+        return {"skipped_disabled": True}
+    stats: dict = {
+        "pages": 0, "notices": 0, "buyers": 0, "signals": 0, "no_author_skipped": 0,
+    }
+    for page_no in range(1, max_pages + 1):
+        page = fetch_category(page_no=page_no)
+        records = page.get("records") or []
+        if not records:
+            break  # 空页即停（服务端第 1 页=最新，无效码也回空 data）
+        stats["pages"] += 1
+        stats["notices"] += len(records)
+        for rec in records:
+            title = (rec.get("title") or "").strip()
+            if not title:
+                continue
+            author = (rec.get("author") or "").strip()
+            if not author:
+                # author 空如实跳过计数，不发明归属（SPEC-AHUI 纪律）
+                stats["no_author_skipped"] += 1
+                continue
+            with SessionLocal() as s:
+                ent, is_new = resolve_enterprise(s, author, source="anhui_buyer")
+                # SPEC-BP BP0 同款：通道→省份确定性映射，只补空不覆盖
+                if not ent.province:
+                    ent.province = "安徽省"
+                if is_new:
+                    stats["buyers"] += 1
+                # W40 同款：建档即分类（首轮漏接，AG 补齐）
+                if ent.industry_key is None:
+                    apply_icp(ent)
+                s.commit()  # 建档短事务先落：买手沉淀不因信号撞库丢失
+                exists = (
+                    s.query(Signal)
+                    .filter(
+                        Signal.enterprise_id == ent.id,
+                        Signal.url == "",
+                        Signal.title == title,
+                        Signal.type == "tender",
+                    )
+                    .first()
+                )
+                if exists is not None:
+                    continue
+                s.add(Signal(
+                    enterprise_id=ent.id,
+                    type="tender",
+                    title=title,
+                    url="",
+                    pub_date=rec.get("pub_date"),
+                    matched_terms="[]",
+                    hit_part="title",
+                    raw_excerpt=(
+                        f"安徽政采{rec.get('path_name') or '采购公告'}"
+                        f"｜{rec.get('district_name') or '安徽省'}"
+                    ),
+                    evidence_claim=title,
+                    base_score=30.0,
+                ))
+                try:
+                    s.commit()
+                    stats["signals"] += 1
+                except IntegrityError:
+                    s.rollback()
+                    logger.warning(
+                        "anhui：信号「%s」撞 uq_signal_dedup，已跳过", title
+                    )
+    return stats
+
+
+# ---------------------------------------------------------------------------
 # 回收站清空（SPEC-AM AM1）
 # ---------------------------------------------------------------------------
 def purge_deleted_sweep(retention_days: int = 30) -> dict:
@@ -1051,6 +1146,7 @@ def run_watermark_watchdog() -> dict:
         ("sdgp", lambda: run_sdgp_scan(max_pages=3)),
         ("hunan", run_hunan_scan),
         ("luban", run_luban_scan),  # SPEC-LUBAN：沪黔桂意向公开（三源共用单 job）
+        ("anhui", run_anhui_scan),  # SPEC-AHUI：安徽政采（author 直带采购人）
         ("health_refresh", lambda: _watchdog_health()),
         ("backup_sqlite", lambda: backup_sqlite("data/backups")),
     ]

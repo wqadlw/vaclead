@@ -431,6 +431,15 @@ async def lifespan(app: FastAPI):
         # 信号（06:10 湖南后；三源共用单 job luban，单水位）
         _register_cron("luban", _luban_sweep, 6, 10)
 
+        def _anhui_sweep() -> dict:
+            from .jobs import run_anhui_scan
+
+            return run_anhui_scan()
+
+        # SPEC-AHUI：安徽政采 portal/category（author 直带采购人，全量入库
+        # 建档+tender 信号；06:20 错峰于 luban 06:10 后）
+        _register_cron("anhui", _anhui_sweep, 6, 20)
+
         def _contract_renewals_sweep() -> dict:
             from .api.contracts import check_contract_renewals
             from .db import SessionLocal as _SL
