@@ -878,10 +878,9 @@ def run_luban_scan() -> dict:
     total_buyers, total_signals}（每省分键便于诊断）。共用 luban job_name
     单水位（三源 sla_job="luban" 共一条 SLA，水位不按省单独落）。
     """
-    from .api.imports import apply_icp, extract_enterprise_name
-    from .collectors.luban import LUBAN_PROVINCES, fetch_luban_home
+    from .api.imports import extract_enterprise_name
+    from .collectors.luban import LUBAN_PROVINCES, fetch_luban_detail, fetch_luban_home
     from .db import SessionLocal
-    from .normalize import resolve_enterprise
     from .sources import any_source_disabled
 
     stats: dict = {}
@@ -907,43 +906,49 @@ def run_luban_scan() -> dict:
                     # 抽不到采购人如实跳过，不发明归属（sdgp/hunan/js/zj 同款）
                     logger.debug("luban[%s]：标题「%s」抽不到采购人，跳过", prov_key, title)
                     continue
+                # 2026-11-21 语义定案（用户拍板"不做政采买家"+意向公开全部为
+                # 政府/事业单位形态）：**意向监控模式**——单位名精确命中企业库
+                # 已有企业才挂信号（老户最早期信号：已关注客户要买什么，48 小
+                # 时前就知道）；陌生单位跳过不建档（不发明、不灌池——政采云
+                # 意向的采购人=政采买家同类，全量建档违背客户定义拍板）。
                 with SessionLocal() as s:
-                    ent, is_new = resolve_enterprise(
-                        s, buyer, source=cfg["source_buyer"]
-                    )
-                    # SPEC-BP BP0 同款：通道→省份确定性映射，只补空不覆盖
-                    if not ent.province:
-                        ent.province = cfg["province"]
-                    if is_new:
-                        prov_stats["buyers"] += 1
-                    # W40 同款：建档即分类（首轮漏接，AG 补齐）
-                    if ent.industry_key is None:
-                        apply_icp(ent)
-                    s.commit()  # 建档短事务先落：买手沉淀不因信号撞库丢失
-                    exists = (
-                        s.query(Signal)
-                        .filter(
-                            Signal.enterprise_id == ent.id,
-                            Signal.url == "",
-                            Signal.title == title,
-                            Signal.type == "proposal",
-                        )
+                    ent = (
+                        s.query(Enterprise)
+                        .filter(Enterprise.name == buyer, Enterprise.deleted_at.is_(None))
                         .first()
                     )
-                    if exists is not None:
-                        continue
+                    if ent is None:
+                        continue  # 陌生单位——不做建档（意向监控语义）
+                    # SPEC-LUBAN 增强（2026-11-21 实弹：沪黔 detail 契约=湖南同款
+                    # GET /portal/detail?articleId=&timestamp=）：拉意向详情正文
+                    # ——正文含采购标的/预算金额（元）/预计采购时间标准表，截 200
+                    # 进 raw_excerpt（金额由 _signal_fill_amount_wan 钩子自动抽取）。
+                    # cap 30/省/轮防长跑；详情失败降级为原短摘要不阻断。
+                    from .collectors.luban import fetch_luban_detail
+
+                    detail_text = None
+                    try:
+                        detail_text = fetch_luban_detail(
+                            prov_key, block.get("article_id") or ""
+                        )
+                    except Exception:  # noqa: BLE001 — 详情失败不阻断主采集
+                        detail_text = None
+                    if detail_text:
+                        prov_stats["details"] = prov_stats.get("details", 0) + 1
+                    raw_excerpt = (
+                        f"{cfg['province']}政采采购意向"
+                        f"｜{block.get('district_name') or cfg['province']}"
+                        + (f"｜{detail_text[:200]}" if detail_text else "")
+                    )
                     s.add(Signal(
                         enterprise_id=ent.id,
                         type="proposal",
                         title=title,
-                        url="",  # 三省 detail 契约未验证——意向详情链未破译
+                        url="",  # 意向详情链在前端路由内（luban 组件），站外无直链
                         pub_date=block.get("pub_date"),
                         matched_terms="[]",
                         hit_part="title",
-                        raw_excerpt=(
-                            f"{cfg['province']}政采采购意向"
-                            f"｜{block.get('district_name') or cfg['province']}"
-                        ),
+                        raw_excerpt=raw_excerpt,
                         evidence_claim=f"{title}（采购意向）",
                         base_score=25.0,
                     ))

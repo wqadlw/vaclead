@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -53,6 +54,7 @@ LUBAN_PROVINCES: dict[str, dict] = {
 }
 
 SEARCH_HOME = "/portal/searchHome"   # POST 无鉴权（luban 列表组件）
+DETAIL_URL = "/portal/detail"        # GET 无鉴权（详情正文，湖南契约通用）
 REQUEST_INTERVAL_S = 1.5             # 礼貌间隔（sdgp/ggzy/hunan 同款）
 MAX_RETRIES = 2
 _UA = "vaclead-acquisition/1.0 (+research; contact: local self-hosted)"
@@ -201,3 +203,51 @@ def fetch_luban_home(prov_key: str, page_size: int = 10,
             "district_name": (ch.get("districtName") or "").strip() or None,
         })
     return blocks
+
+
+def fetch_luban_detail(prov_key: str, article_id: str,
+                       client: httpx.Client | None = None) -> str | None:
+    """拉意向公告详情正文（2026-11-21 实弹：沪黔同款 GET /portal/detail
+    ?articleId=&timestamp= 湖南契约通用；响应 result.data.content 为含
+    CSS 的 HTML——剥 style/script 整块再剥标签压空白）。
+
+    正文含采购标的/预算金额（意向公开政策标准格式）——抽到的文本截 200
+    进 Signal.raw_excerpt，金额由 _signal_fill_amount_wan 钩子自动抽取。
+    失败/冷却/空 content 一律 None。"""
+    cfg = LUBAN_PROVINCES.get(prov_key)
+    if cfg is None:
+        return None
+    from .resilience import get_health
+
+    health = get_health(prov_key)
+    if health.is_blocked():
+        return None
+    try:
+        import time as _t
+
+        headers = {"User-Agent": _UA, "Accept": "application/json, text/plain, */*"}
+        params = {
+            "articleId": article_id,
+            "timestamp": int(_t.time() * 1000),
+        }
+        if client is not None:
+            resp = client.get(f"{cfg['base']}{DETAIL_URL}", params=params, headers=headers)
+        else:
+            with httpx.Client(timeout=httpx.Timeout(20.0), trust_env=False) as own:
+                resp = own.get(f"{cfg['base']}{DETAIL_URL}", params=params, headers=headers)
+        if resp.status_code != 200:
+            health.mark_bad()
+            return None
+        inner = (resp.json().get("result") or {}).get("data") or {}
+        content = inner.get("content") or ""
+        if not content:
+            return None
+        # 剥 style/script 整块（意向正文头部是大段 CSS），再剥标签压空白；
+        # &nbsp; 实体替换空格（意向正文表格填充高频）
+        content = re.sub(r"<(style|script)[^>]*>.*?</\1>", " ", content, flags=re.S | re.I)
+        content = content.replace("&nbsp;", " ").replace("&amp;", "&")
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", content)).strip()
+        return text[:2000] or None
+    except (httpx.HTTPError, ValueError):
+        health.mark_bad()
+        return None

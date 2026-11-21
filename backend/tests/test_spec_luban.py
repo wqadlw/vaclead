@@ -284,80 +284,100 @@ def _fake_blocks_for(suffix: str) -> dict[str, list[dict]]:
 
 
 def test_luban_scan_semantics(monkeypatch, client, admin_headers):
-    """全量入库：建档（xx_buyer+省确定性只补空）+ proposal 信号
-    （url=""，evidence=标题（采购意向））+ 幂等二跑零新增。"""
+    """2026-11-21 语义定案（用户拍板"不做政采买家"+意向全为政采买家形态）：
+    **意向监控模式**——单位名精确命中企业库已有企业才挂 proposal 信号
+    （老户最早期信号）；陌生单位跳过不建档不发明。"""
     from app import jobs as jobs_mod
+
+    # 预置已有企业（命中路径）：三省首条标题的企业名
+    seeded = {}
+    with SessionLocal() as s:
+        for nm, src, prov in [
+            ("上海联影医疗器械有限公司", "poi", "上海市"),
+            ("贵州共赢机械设备有限公司", "poi", "贵州省"),
+            ("广西绿城真空装备有限公司", "poi", "广西壮族自治区"),
+        ]:
+            e = Enterprise(name=nm, source=src, province=prov)
+            s.add(e)
+            s.flush()
+            seeded[nm] = e.id
+        s.commit()
 
     blocks = _fake_blocks_for("污水处理站")
     monkeypatch.setattr(
         "app.collectors.luban.fetch_luban_home",
         lambda prov_key, page_size=10, client=None: blocks.get(prov_key, []),
     )
+    # 共享测试库残留清理：旧语义跑过的同名信号会让新语义 add 撞 uq 静默回滚
+    with SessionLocal() as s:
+        s.query(Signal).filter(Signal.title.like("%污水处理站采购意向%")).delete(
+            synchronize_session=False
+        )
+        s.commit()
 
     stats = jobs_mod.run_luban_scan()
-    assert stats["shanghai"] == {"notices": 2, "buyers": 1, "signals": 1}
-    assert stats["guizhou"] == {"notices": 1, "buyers": 1, "signals": 1}
-    assert stats["guangxi"] == {"notices": 1, "buyers": 1, "signals": 1}
+    assert stats["shanghai"] == {"notices": 2, "buyers": 0, "signals": 1}
+    assert stats["guizhou"] == {"notices": 1, "buyers": 0, "signals": 1}
+    assert stats["guangxi"] == {"notices": 1, "buyers": 0, "signals": 1}
     assert stats["total_notices"] == 4
-    assert stats["total_buyers"] == 3
+    assert stats["total_buyers"] == 0, "新语义：不再建档（意向监控）"
     assert stats["total_signals"] == 3
 
     with SessionLocal() as s:
         ent = s.query(Enterprise).filter(
-            Enterprise.name == "上海联影医疗器械有限公司"
+            Enterprise.id == seeded["上海联影医疗器械有限公司"]
         ).one()
-        assert ent.source == "shanghai_buyer"
-        assert ent.province == "上海市"  # 确定性映射
+        assert ent.source == "poi", "命中已有企业——source 不被改写"
+        assert ent.province == "上海市"
         sig = (
             s.query(Signal)
             .filter(Signal.enterprise_id == ent.id, Signal.type == "proposal")
             .one()
         )
         assert sig.title == "上海联影医疗器械有限公司污水处理站采购意向"
-        assert sig.url == ""  # 三省 detail 契约未验证——意向详情链未破译
+        assert sig.url == ""  # 意向详情链在前端路由内
         assert sig.base_score == 25.0
         assert sig.pub_date == "2026-11-21"
         assert sig.evidence_claim == "上海联影医疗器械有限公司污水处理站采购意向（采购意向）"
         assert sig.hit_part == "title"
-        assert sig.raw_excerpt == "上海市政采采购意向｜上海市本级"
 
-        gz = s.query(Enterprise).filter(
-            Enterprise.name == "贵州共赢机械设备有限公司"
-        ).one()
-        assert gz.source == "guizhou_buyer" and gz.province == "贵州省"
-        gx = s.query(Enterprise).filter(
-            Enterprise.name == "广西绿城真空装备有限公司"
-        ).one()
-        assert gx.source == "guangxi_buyer"
-        assert gx.province == "广西壮族自治区"
-        ent_ids = [ent.id, gz.id, gx.id]
-
-    # 二跑幂等：信号与买家建档均不增（无 buyer 的「真空获得设备」永不建档）
+    # 二跑幂等：信号零新增
     stats2 = jobs_mod.run_luban_scan()
     assert stats2["total_notices"] == 4
-    assert stats2["total_buyers"] == 0
     assert stats2["total_signals"] == 0
     assert stats2["shanghai"] == {"notices": 2, "buyers": 0, "signals": 0}
 
     # 清理（防毒化本模块后续用例）
     with SessionLocal() as s:
-        s.query(Signal).filter(Signal.enterprise_id.in_(ent_ids)).delete(
+        s.query(Signal).filter(Signal.enterprise_id.in_(list(seeded.values()))).delete(
             synchronize_session=False
         )
         s.query(EnterpriseAlias).filter(
-            EnterpriseAlias.enterprise_id.in_(ent_ids)
+            EnterpriseAlias.enterprise_id.in_(list(seeded.values()))
         ).delete(synchronize_session=False)
-        s.query(Enterprise).filter(Enterprise.id.in_(ent_ids)).delete(
+        s.query(Enterprise).filter(Enterprise.id.in_(list(seeded.values()))).delete(
             synchronize_session=False
         )
         s.commit()
 
 
 def test_luban_scan_province_failure_isolated(monkeypatch):
-    """单省炸不串：贵州 fetch 抛异常 → 贵州记 error，沪桂照常入库。"""
+    """单省炸不串（2026-11-21 意向监控语义）：贵州 fetch 抛异常 → 贵州记
+    error，沪桂照常——预置企业命中的才挂信号（buyers 恒 0 不建档）。"""
     from app import jobs as jobs_mod
 
     blocks = _fake_blocks_for("实验室改造")
+    # 共享库残留清理 + 预置命中企业（新语义：命中已有企业才挂信号）
+    with SessionLocal() as s:
+        s.query(Signal).filter(Signal.title.like("%实验室改造采购意向%")).delete(
+            synchronize_session=False
+        )
+        s.commit()
+        for nm, prov in [("上海联影医疗器械有限公司", "上海市"),
+                         ("广西绿城真空装备有限公司", "广西壮族自治区")]:
+            if not s.query(Enterprise).filter(Enterprise.name == nm).first():
+                s.add(Enterprise(name=nm, source="poi", province=prov))
+        s.commit()
 
     def boom_or_ok(prov_key, page_size=10, client=None):
         if prov_key == "guizhou":
@@ -371,19 +391,20 @@ def test_luban_scan_province_failure_isolated(monkeypatch):
     stats = jobs_mod.run_luban_scan()  # 不应抛异常
     assert stats["guizhou"]["error"] is True
     assert stats["guizhou"]["signals"] == 0
-    assert stats["shanghai"] == {"notices": 2, "buyers": 1, "signals": 1}
-    assert stats["guangxi"] == {"notices": 1, "buyers": 1, "signals": 1}
+    assert stats["shanghai"] == {"notices": 2, "buyers": 0, "signals": 1}
+    assert stats["guangxi"] == {"notices": 1, "buyers": 0, "signals": 1}
     assert stats["total_notices"] == 3  # 只计健康省
-    assert stats["total_buyers"] == 2
+    assert stats["total_buyers"] == 0
     assert stats["total_signals"] == 2
 
     with SessionLocal() as s:
         names = ["上海联影医疗器械有限公司", "广西绿城真空装备有限公司"]
-        ids = [
-            e.id for e in s.query(Enterprise)
-            .filter(Enterprise.name.in_(names)).all()
-        ]
-        assert len(ids) == 2, "贵州炸档后沪桂建档不受影响"
+        ents = s.query(Enterprise).filter(Enterprise.name.in_(names)).all()
+        assert len(ents) == 2, "贵州炸档后沪桂信号不受影响"
+        ids = [e.id for e in ents]
+        assert s.query(Signal).filter(
+            Signal.enterprise_id.in_(ids), Signal.type == "proposal"
+        ).count() == 2, "两省各挂一条意向信号"
         s.query(Signal).filter(Signal.enterprise_id.in_(ids)).delete(
             synchronize_session=False
         )
@@ -397,7 +418,8 @@ def test_luban_scan_province_failure_isolated(monkeypatch):
 
 
 def test_luban_scan_disabled_per_province(monkeypatch):
-    """逐省停用短路：停 guangxi → 该省 skipped_disabled 不打网络，沪黔照常。"""
+    """逐省停用短路：停 guangxi → 该省 skipped_disabled 不打网络，沪黔照常。
+    （2026-11-21 意向监控语义：预置命中企业才挂信号——buyers 恒 0。）"""
     from app import jobs as jobs_mod
 
     blocks = _fake_blocks_for("数据中心")
@@ -409,6 +431,10 @@ def test_luban_scan_disabled_per_province(monkeypatch):
 
     monkeypatch.setattr("app.collectors.luban.fetch_luban_home", spy)
     with SessionLocal() as s:
+        for nm in ["上海联影医疗器械有限公司", "贵州共赢机械设备有限公司"]:
+            if not s.query(Enterprise).filter(Enterprise.name == nm).first():
+                s.add(Enterprise(name=nm, source="poi"))
+        s.commit()
         kv = s.get(SettingsKV, "source_disabled")
         if kv is None:
             s.add(SettingsKV(key="source_disabled", value='["guangxi"]'))
