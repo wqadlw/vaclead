@@ -4,6 +4,34 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-21 · SPEC-LUBAN 政采云三省意向接入（沪黔桂一次落地，17 源在线）
+
+**泛化落地**（单 Agent 照 SPEC-LUBAN）：luban.py 配置驱动（LUBAN_PROVINCES
+三省六元组：base/code/sub_codes/district/province/source_buyer）+
+fetch_luban_home（searchHome 同款 district 空则不带键——上海实测）+
+run_luban_scan（**全量入库不过滤**——意向标题无设备词；建档 xx_buyer+
+省确定性只补空+apply_icp/proposal 信号 25 分；try 包整省段单省失败不串；
+逐省停用短路）+ sources +3 源共用 sla_job=luban + cron 06:10 +
+watchdog stub 同步。
+
+**实弹战果**：三省当日块 33 条 / **12 新建档**（上海徐汇水务 ICP 40/
+安顺市西秀区人民医院 medical_health——分类自动）/ 14 信号 / **二跑幂等
+零新增**。落库实证：source/province/industry 确定性全对。
+
+**门禁**：全量 **509**（496+13）✓ + build ✓ + 实弹 ✓。**源总数 17**。
+
+## 2026-11-21 · luban 语义定案：意向监控模式（用户拍板"不做政采买家"延伸）
+
+**语义冲突暴露**：run_luban_scan 原为"全量入库"（湖南模式）——但政采云
+意向的采购人=政采买家同类（政法委/公路养护中心/学校），全量建档违背
+"不做政采买家"拍板。**语义定案：意向监控模式**——单位名精确命中企业库
+已有企业才挂 proposal 信号（老户最早期信号：已关注客户要买什么，48 小
+时前就知道）；陌生单位跳过不建档不发明（不灌池）。沪黔 detail 契约实弹
+=湖南同款（GET /portal/detail?articleId=&timestamp=）——fetch_luban_
+detail 剥 style/script + &nbsp; 替换，正文截 200 进 raw_excerpt（金额
+由 _signal_fill_amount_wan 钩子自动抽取）。测试重写：预置命中+陌生跳过
+对照 + 共享库残留清理纪律。**已并入下方 Zcy 双省段**（同一轮工作）。
+
 ## 2026-11-21 · 政采云 Zcy 体系双省打通（上海 83K + 贵州 150K 意向池）
 
 **杠杆兑现**：湖南破译的 /portal/searchHome 在**上海/贵州**同款验证成功
