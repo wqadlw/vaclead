@@ -4,6 +4,19 @@
 > **摸底 → 调研（GitHub/最佳实践）→ SPEC（DDL/契约级）→ 实施 → 门禁（测试+审查+构建）→ 沉淀（本文档+STUDY/记忆）**。
 > 本日志为追加式（append-only），每条工作块记录：日期 / 负责 Agent / 任务 / 做了什么 / 关键决策与理由 / 踩坑 / 产出位置。
 
+## 2026-11-21 · 广西意向公开接入·detail 最后一公里（进行中如实记档）
+
+searchHome 列表接口已通（当日意向 13 条直出：桂平公路养护中心/信息中心/
+动物疫病预防控制中心——**日增 4 条，全量 78K 是历史池**）。detail 最后一
+公里未破：POST /portal/detail 返回 success 但 data=null（articleId 有效）；
+GET /portal/getDetail 404；首页 HTML 只有 parentId 引用（SPA 组件内渲染
+详情路由）——**待 Playwright 专项**：首页真点一条公告捕获详情路由+XHR
+（gx_detail_cap.mjs 脚本已建，首页无"采购意向"链接文本需改定位策略）。
+
+**入库策略已定**（detail 破译后即用）：意向日增仅 4 条 → **全量入库**
+（标题无设备词，词表过滤失效——建档 guangxi_buyer+单位名+意向正文抽标
+的）；不是"过滤后入库"模式。历史 78K 池不回填（只进增量）。
+
 ## 2026-11-21 · luban 三省参数捕获（皖桂吉，实施弹药固化）
 
 Playwright 首页捕获三省 `/portal/searchHome` 真实参数（组件同款模式通用，
